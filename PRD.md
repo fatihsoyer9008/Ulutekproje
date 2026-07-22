@@ -1,5 +1,5 @@
-# PRD — Yapay Zeka Destekli Kişisel Finans Asistanı (MVP)
-**Doküman Sahibi:** Product Management & Mimari Ekibi
+# PRD — Yapay Zeka Destekli Kişisel Finans Asistanı
+**Doküman Sahibi:** Takım Kaptanı & Mimari Ekibi
 **Versiyon:** 1.0
 **Tarih:** 22 Temmuz 2026
 **Durum:** Geliştirmeye Hazır (Dev-Ready)
@@ -21,7 +21,7 @@ Türkiye ve benzer enflasyonist ekonomilerde bireysel bütçe yönetimi, hane ha
 
 Bu durum şu sonuçları doğurur:
 
-- **"Üşengeçlik faktörü":** Kullanıcılar ilk 3-7 gün düzenli veri girer, ardından uygulamayı terk eder (yüksek churn).
+- **"Süreksizlik Eksikliği":** Kullanıcılar ilk 3-7 gün düzenli veri girer, ardından uygulamayı terk eder (yüksek churn).
 - **Veri kalitesi düşüklüğü:** Elle girilen kategoriler tutarsızdır (ör. "market" bir gün "gıda", bir gün "diğer" olarak işaretlenir).
 - **Gizlilik endişesi:** Finansal verilerini bulut sunuculara yükleyen uygulamalara güvenmeyen, hassas kullanıcı segmenti mevcuttur.
 - **Ekonomik kırılganlık dönemlerinde** anlık ve doğru harcama görünürlüğüne olan ihtiyaç artmıştır; kullanıcılar "ay sonunu nasıl getiririm" sorusuna gerçek zamanlı yanıt arar.
@@ -32,7 +32,7 @@ Bu durum şu sonuçları doğurur:
 
 ## 3. Ürün Vizyonu ve Hedefleri (Goals)
 
-**Vizyon:** "Fişini göster, gerisini bize bırak." Kullanıcının bütçesini takip etmek için hiçbir manuel veri girişi yapmasına gerek kalmayan, tamamen özel (private) ve internetsiz çalışabilen bir finans asistanı olmak.
+**Vizyon:** "Fişini göster, gerisini bize bırak." Kullanıcının bütçesini takip etmek için manuel veri girişini minimuma indirerek tamamen hibrit bir şekilde uygulamanın çalışmasını sağlar.
 
 ### Ürün Hedefleri (MVP)
 | # | Hedef | Ölçüt |
