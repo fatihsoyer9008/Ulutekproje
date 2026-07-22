@@ -39,7 +39,7 @@ Bu durum şu sonuçları doğurur:
 |---|-------|-------|
 | G1 | Manuel veri girişini minimuma indirmek | Fiş taramadan işlem kaydına kadar geçen süre < 10 sn |
 | G2 | Gizliliği taviz vermeden korumak | Sıfır ağ isteği (Gemini API çağrısı hariç) — veri asla cihazdan kalıcı olarak dışarı çıkmaz |
-| G3 | Offline-first deneyim sunmak | İnternet olmadan da (regex ile) temel fiş okuma çalışabilmeli |
+| G3 | Offline deneyim sunmak | İnternet olmadan da (regex ile) temel fiş okuma çalışabilmeli |
 | G4 | Kategori doğruluğunu artırmak | Hibrit (regex + LLM) yaklaşımla ≥ %85 doğru otomatik kategori ataması |
 | G5 | 30 günde çalışan bir MVP çıkarmak | Tüm P0 kullanıcı hikayeleri kabul kriterleriyle tamamlanmış olmalı |
 
@@ -53,15 +53,15 @@ Bu durum şu sonuçları doğurur:
 - Kamera ile fiş tarama (google_ml_kit ile on-device OCR)
 - OCR çıktısının regex tabanlı hızlı ayrıştırması (tutar, tarih, mağaza adı)
 - Regex'in çözemediği/güven skoru düşük fişler için Gemini API'ye (google_generative_ai) fallback ile gönderilip yapılandırılmış JSON (kategori, kalemler, toplam tutar) olarak geri alınması
-- Otomatik kategorizasyon (önceden tanımlı kategori seti: Market, Ulaşım, Fatura, Eğlence, Sağlık, Giyim, Diğer)
+- Otomatik kategorizasyon (ihtiyaç, eğlence, yatırım vb.)
 - Kullanıcının OCR/LLM sonucunu onaylama veya manuel düzeltme ekranı (insan doğrulama katmanı — "human-in-the-loop")
 - Manuel işlem ekleme (fişi olmayan harcamalar için — kamera olmadan da uygulama kullanılabilmeli)
 - Lokal veritabanı (Isar/Hive) ile tüm işlemlerin cihazda saklanması
-- Aylık/haftalık harcama özeti ve kategori bazlı grafik (basit dashboard)
+- Günlük/Aylık/Haftalık/Yıllık harcama özeti ve kategori bazlı grafik (basit dashboard)
 - Bütçe limiti belirleme ve limit aşıldığında lokal bildirim
 - İşlem listesi: filtreleme (kategori, tarih aralığı), arama, düzenleme, silme
 - .env dosyası ile API key yönetimi (build-time secret injection)
-- Tek kullanıcı, tek cihaz, onboarding akışı (hesap oluşturma yok — giriş/kayıt ekranı yok)
+- Tek kullanıcı, tek cihaz ve onboarding.
 
 **Teknik Kapsam:**
 - Multi-package Flutter mimarisi: `core_ui`, `finance_database`, `receipt_ai_scanner`, `app_main`
