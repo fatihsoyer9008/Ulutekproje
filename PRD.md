@@ -326,7 +326,43 @@ Backend olmadığından üçüncü parti analitik SDK'ları (Firebase Analytics 
 
 ---
 
-## 16. Release Planı (30 İş Günü)
+## 16. Risk Analizi ve Azaltma Stratejileri (Risk Assessment & Mitigation)
+
+Proje geliştirme sürecinde karşılaşılabilecek başlıca riskler teknik, performans ve güvenlik başlıkları altında değerlendirilmiştir. Her risk için uygulanacak azaltma stratejileri aşağıda özetlenmiştir.
+
+### 16.1 Teknik Riskler
+
+| Risk | Azaltma Stratejisi |
+|------|--------------------|
+| OCR'ın düşük kaliteli fişleri okuyamaması | Kullanıcıya yeniden tarama önerilir ve manuel giriş seçeneği sunulur. |
+| Regex ayrıştırıcısının karmaşık fişlerde yetersiz kalması | Güven skoru eşik değerin altına düştüğünde Gemini API devreye alınır. |
+| Gemini API gecikmesi veya kota sınırı | Timeout uygulanır, kullanıcı regex sonucu ile devam ederek manuel düzenleme yapabilir. |
+
+### 16.2 Performans Riskleri
+
+| Risk | Azaltma Stratejisi |
+|------|--------------------|
+| Düşük donanımlı cihazlarda performans kaybı | Farklı cihaz segmentlerinde test yapılır, uzun işlemler için yüklenme göstergesi ve iptal seçeneği sunulur. |
+| İnternet bağlantısının bulunmaması | OCR ve regex çevrimdışı çalışmaya devam eder, LLM analizi devre dışı bırakılır. |
+
+### 16.3 Güvenlik Riskleri
+
+| Risk | Azaltma Stratejisi |
+|------|--------------------|
+| API anahtarının istemci uygulamasında bulunması | MVP'de `.env` ve `--dart-define` kullanılacaktır. Üretim sürümünde proxy tabanlı anahtar yönetimine geçilmesi planlanmaktadır. |
+| Yanlış kategori önerisi nedeniyle kullanıcı güveninin azalması | Son karar kullanıcıya bırakılır, hiçbir işlem onay olmadan kaydedilmez. |
+
+### Risk Öncelikleri
+
+Aşağıdaki riskler MVP geliştirme sürecinde öncelikli olarak takip edilecektir:
+
+- OCR doğruluğunun farklı fiş formatlarında yeterli seviyeye ulaşması.
+- Gemini API'nin gecikme ve kota sınırlamalarının kullanıcı deneyimine etkisi.
+- Düşük donanımlı cihazlarda uygulama performansının korunması.
+
+Bu riskler her sprint sonunda gözden geçirilecek ve gerekli durumlarda azaltma stratejileri güncellenecektir.
+
+## 17. Release Planı (30 İş Günü)
 
 | Faz | Gün Aralığı | Ana Çıktılar |
 |-----|-------------|--------------|
@@ -341,7 +377,7 @@ Backend olmadığından üçüncü parti analitik SDK'ları (Firebase Analytics 
 
 ---
 
-## 17. (Opsiyonel) Veritabanı Şeması — Taslak
+## 18. (Opsiyonel) Veritabanı Şeması — Taslak
 
 ```
 Collection: Transaction
@@ -365,7 +401,7 @@ Collection: BudgetLimit
 - notifiedAt100Percent: bool
 ```
 
-## 18. (Opsiyonel) Kullanıcı Kabul Kriterleri — Genel Definition of Done
+## 19. (Opsiyonel) Kullanıcı Kabul Kriterleri — Genel Definition of Done
 
 MVP'nin "tamamlandı" sayılabilmesi için:
 - [ ] Tüm P0 user story'ler kabul kriterleriyle birlikte test edilmiş ve geçmiş olmalı.
@@ -375,7 +411,7 @@ MVP'nin "tamamlandı" sayılabilmesi için:
 - [ ] En az 2 farklı cihaz segmentinde (düşük/orta donanım) performans NFR'leri karşılanmalı.
 - [ ] Gizlilik Ekranı, kullanıcıya veri akışını net şekilde açıklıyor olmalı.
 
-## 19. (Opsiyonel) Monitoring / Log Stratejisi
+## 20. (Opsiyonel) Monitoring / Log Stratejisi
 
 - Üretimde merkezi sunucu log toplama **yoktur** (backend yok).
 - Hata ayıklama için lokal crash log (örn. Sentry'nin self-hosted olmayan SDK'sı **kullanılmamalı** — gizlilik ilkesiyle çelişir); bunun yerine cihaz üzerinde tutulan, kullanıcı isteğiyle dışa aktarılabilen bir "Destek Log Dosyası" (ör. son 50 hata kaydı) önerilir.
