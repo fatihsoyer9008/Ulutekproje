@@ -1,5 +1,5 @@
-name: fis_uygulamasi
-description: "A new Flutter project."
+name: app_main
+description: "Main presentation package for the personal finance application."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -34,17 +34,15 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  core_ui:
+    path: ../core_ui
+  fl_chart: ^1.1.1
+  intl: ^0.20.2
+  table_calendar: ^3.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
-  core_ui:
-    path: ../core_ui
-  finance_database:
-    path: ../finance_database
-  receipt_ai_scanner:
-    path: ../receipt_ai_scanner
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

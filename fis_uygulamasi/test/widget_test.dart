@@ -1,30 +1,31 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+import 'package:app_main/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:fis_uygulamasi/main.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  setUpAll(() async {
+    await initializeDateFormatting('tr_TR');
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  testWidgets('dashboard and navigation render', (tester) async {
+    await tester.pumpWidget(const FinanceApp());
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    expect(find.text('Kontrol sende.'), findsOneWidget);
+    expect(find.text('₺32.760,00'), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.insights_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Genel İstatistik'), findsOneWidget);
+  });
+
+  testWidgets('expense screen exposes OCR action', (tester) async {
+    await tester.pumpWidget(const FinanceApp());
+    await tester.tap(find.text('Gider Gir'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('ocr_camera_button')), findsOneWidget);
+    expect(find.text('Abonelikler'), findsOneWidget);
   });
 }
