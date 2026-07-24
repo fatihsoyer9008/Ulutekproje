@@ -32,7 +32,7 @@ Bu durum şu sonuçları doğurur:
 
 ## 3. Ürün Vizyonu ve Hedefleri (Goals)
 
-**Vizyon:** "Fişini göster, gerisini bize bırak." Kullanıcının bütçesini takip etmek için manuel veri girişini minimuma indirerek tamamen hibrit bir şekilde uygulamanın çalışmasını sağlar.
+**Vizyon:** Kullanıcının bütçesini takip etmek için manuel veri girişini minimuma indirerek tamamen hibrit bir şekilde uygulamanın çalışmasını sağlar.
 
 ### Ürün Hedefleri (MVP)
 | # | Hedef | Ölçüt |
