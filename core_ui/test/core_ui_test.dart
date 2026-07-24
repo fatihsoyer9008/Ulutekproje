@@ -1,12 +1,15 @@
+import 'package:core_ui/core_ui.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:core_ui/core_ui.dart';
-
 void main() {
-  test('adds one to input values', () {
-    final calculator = Calculator();
-    expect(calculator.addOne(2), 3);
-    expect(calculator.addOne(-7), -6);
-    expect(calculator.addOne(0), 1);
+  testWidgets('AppCard renders its child', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: AppCard(child: Text('İçerik'))),
+      ),
+    );
+
+    expect(find.text('İçerik'), findsOneWidget);
   });
 }
