@@ -87,11 +87,10 @@ Bu durum şu sonuçları doğurur:
 
 ## 5. Kullanıcı Profili (Target Persona)
 
-Bu uygulama, gelir ve giderlerini düzenli şekilde takip etmek isteyen, finansal farkındalığını artırmayı hedefleyen ve manuel veri girişine minimum zaman ayırmak isteyen bireyleri hedeflemektedir. Ürün, farklı yaş grupları ve mesleklerden kullanıcılar tarafından kullanılabilecek şekilde tasarlanmıştır.
+Bu uygulama, gelir ve giderlerini düzenli şekilde takip etmek isteyen, finansal farkındalığını artırmayı hedefleyen ve manuel veri girişine minimum zaman ayırmak isteyen bireyleri hedeflemektedir. Ürün, farklı yaş grupları ve mesleklerden kullanıcılar tarafından kullanılabilecek şekilde tasarlanmıştır. 
 Günlük, haftalık veya aylık harcamalarını takip etmek isteyen bireyler.
 Finansal verilerinin gizliliğine önem veren ve verilerinin cihaz üzerinde saklanmasını tercih eden kullanıcılar.
 Hızlı, kolay ve düşük etkileşim gerektiren bir bütçe yönetimi deneyimi bekleyen kullanıcılar.
----
 
 ## 6. Kullanıcı Hikayeleri (User Stories) ve Kabul Kriterleri
 
