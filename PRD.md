@@ -13,7 +13,7 @@ Bu doküman, kullanıcıların manuel harcama girişi yapma zorunluluğunu ortad
 
 Bu doküman; vizyon, kapsam, kullanıcı hikayeleri, teknik mimari, NFR'ler, ekip dağılımı ve başarı metriklerini içerir. Amaç, hem yönetim kademesine sunulabilecek kadar stratejik hem de mühendislik ekibinin doğrudan sprint planlamasına dökebileceği kadar teknik bir referans oluşturmaktır.
 
----
+----
 
 ## 2. Problem Tanımı
 
