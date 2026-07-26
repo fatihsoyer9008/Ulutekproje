@@ -1,6 +1,9 @@
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+
+import 'receipt_text_normalizer.dart';
 
 /// Opens the back camera, captures a receipt and extracts its raw text on-device.
 class ReceiptScannerScreen extends StatefulWidget {
@@ -104,9 +107,15 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
       final photo = await controller.takePicture();
       final inputImage = InputImage.fromFilePath(photo.path);
       final recognizedText = await _textRecognizer.processImage(inputImage);
+      final normalizedText = kDebugMode
+          ? normalizeAndLogReceiptText(
+              recognizedText.text,
+              logger: debugPrint,
+            )
+          : normalizeReceiptText(recognizedText.text);
 
       if (!mounted) return;
-      await _showRecognizedText(recognizedText.text);
+      await _showRecognizedText(normalizedText);
     } on CameraException catch (error) {
       _showMessage(_cameraErrorMessage(error));
     } catch (error) {

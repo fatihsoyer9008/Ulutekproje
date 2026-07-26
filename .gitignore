@@ -1,0 +1,5 @@
+#Codex/Claude/Antigravity Skills - Ignore them
+.agents/
+.claude/
+agent/
+skills-lock.json
