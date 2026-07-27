@@ -1,6 +1,8 @@
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
+import '../../features/transaction_draft/model/transaction_draft.dart';
+import '../../features/transaction_draft/presentation/transaction_draft_page.dart';
 
 class ExpenseScreen extends StatelessWidget {
   const ExpenseScreen({super.key});
@@ -63,6 +65,17 @@ class ExpenseScreen extends StatelessWidget {
                 ),
               ],
             ),
+             const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  key: const Key('manual_entry_button'),
+                  onPressed: () => _openManualEntry(context),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Fişim yok, elle gireceğim. '),
+                  style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                  ),
+            ),
+            
             const SizedBox(height: 30),
             Text('Abonelikler', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
@@ -99,6 +112,13 @@ class ExpenseScreen extends StatelessWidget {
         builder: (_) => const ReceiptScannerScreen(),
       ),
     );
+  }
+  void _openManualEntry(BuildContext context) {
+  Navigator.of(context).push<TransactionDraft>(
+    MaterialPageRoute(
+      builder: (_) => const TransactionDraftPage(),
+    ),
+  );
   }
 }
 
