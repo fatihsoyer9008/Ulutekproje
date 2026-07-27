@@ -1,0 +1,2 @@
+"""Receipt Parser FastAPI application."""
+
