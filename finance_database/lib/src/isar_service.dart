@@ -11,10 +11,7 @@ class IsarService {
 
     final dir = await getApplicationDocumentsDirectory();
 
-    _instance = await Isar.open(
-      [TransactionEntitySchema],
-      directory: dir.path,
-    );
+    _instance = await Isar.open([TransactionEntitySchema], directory: dir.path);
 
     return _instance!;
   }
