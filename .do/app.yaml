@@ -1,0 +1,22 @@
+name: ulutekproje-api
+region: fra
+services:
+  - name: receipt-parser-api
+    github:
+      repo: fatihsoyer9008/Ulutekproje
+      branch: main
+      deploy_on_push: true
+    source_dir: backend
+    environment_slug: python
+    build_command: pip install -r requirements.txt
+    run_command: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    http_port: 8080
+    health_check:
+      http_path: /health
+    envs:
+      - key: APP_ENV
+        value: production
+        scope: RUN_TIME
+      - key: USE_DUMMY_PARSER
+        value: "true"
+        scope: RUN_TIME
