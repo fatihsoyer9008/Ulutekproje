@@ -13,7 +13,7 @@ class ReceiptScannerScreen extends StatefulWidget {
     this.confidenceThreshold = ReceiptLowConfidenceWarning.defaultThreshold,
     super.key,
   }) : assert(confidenceScore == null ||
-            (confidenceScore! >= 0 && confidenceScore! <= 1)),
+            (confidenceScore >= 0 && confidenceScore <= 1)),
        assert(confidenceThreshold >= 0 && confidenceThreshold <= 1);
 
   /// Confidence produced by the receipt parser, expressed from 0 to 1.
