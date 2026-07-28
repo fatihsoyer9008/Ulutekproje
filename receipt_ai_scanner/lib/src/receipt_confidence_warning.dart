@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 class ReceiptLowConfidenceWarning extends StatelessWidget {
   const ReceiptLowConfidenceWarning({
     required this.confidenceScore,
+    this.isParseSuccessful = true,
     this.threshold = defaultThreshold,
     super.key,
   }) : assert(confidenceScore >= 0 && confidenceScore <= 1),
@@ -15,9 +16,10 @@ class ReceiptLowConfidenceWarning extends StatelessWidget {
   static const defaultThreshold = .70;
 
   final double confidenceScore;
+  final bool isParseSuccessful;
   final double threshold;
 
-  bool get isLowConfidence => confidenceScore < threshold;
+  bool get isLowConfidence => !isParseSuccessful || confidenceScore < threshold;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +29,8 @@ class ReceiptLowConfidenceWarning extends StatelessWidget {
     return Semantics(
       container: true,
       liveRegion: true,
-      label: 'Uyarı: Tutar veya kurum adından tam emin olamadık, lütfen kontrol edin',
+      label:
+          'Uyarı: Tutar veya kurum adından tam emin olamadık, lütfen kontrol edin',
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(12),

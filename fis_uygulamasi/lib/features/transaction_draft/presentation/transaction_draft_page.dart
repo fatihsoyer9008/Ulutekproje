@@ -1,6 +1,7 @@
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
 import '../model/transaction_draft.dart';
 import '../model/turkish_money.dart';
@@ -9,9 +10,16 @@ class TransactionDraftPage extends StatefulWidget {
   const TransactionDraftPage({
     super.key,
     this.initialDraft = const TransactionDraft.empty(),
-  });
+    this.confidenceScore,
+    this.isParseSuccessful = true,
+  }) : assert(
+         confidenceScore == null ||
+             (confidenceScore >= 0 && confidenceScore <= 1),
+       );
 
   final TransactionDraft initialDraft;
+  final double? confidenceScore;
+  final bool isParseSuccessful;
 
   @override
   State<TransactionDraftPage> createState() => _TransactionDraftPageState();
@@ -70,6 +78,15 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
           children: [
             const _DraftHeader(),
             const SizedBox(height: 20),
+            if (widget.confidenceScore case final score?) ...[
+              ReceiptLowConfidenceWarning(
+                confidenceScore: score,
+                isParseSuccessful: widget.isParseSuccessful,
+              ),
+              if (!widget.isParseSuccessful ||
+                  score < ReceiptLowConfidenceWarning.defaultThreshold)
+                const SizedBox(height: 16),
+            ],
             AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
