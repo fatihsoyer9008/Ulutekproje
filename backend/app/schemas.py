@@ -1,12 +1,10 @@
 from datetime import datetime
-from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from typing import Literal, Optional
 
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 class ReceiptParserRequest(BaseModel):
-    """Cihaz içi OCR tarafından çıkarılan ham fiş metni."""
-
     ocr_text: str = Field(min_length=1, max_length=30_000)
 
     @field_validator("ocr_text")
@@ -17,21 +15,36 @@ class ReceiptParserRequest(BaseModel):
             raise ValueError("OCR metni boş olamaz")
         return normalized
 
-
 class ReceiptItem(BaseModel):
     name: str = Field(min_length=1)
     price_minor: int = Field(ge=0, description="Kuruş cinsinden ürün fiyatı")
     category: str = Field(min_length=1)
 
-
 class ReceiptParserResponse(BaseModel):
-    """Flutter ve veritabanı katmanlarının ortak fiş sözleşmesi."""
-
-    merchant: str = Field(min_length=1)
-    total_amount_minor: int = Field(ge=0, description="Kuruş cinsinden toplam")
+    merchant: Optional[str] = Field(default=None, min_length=1)
+    total_amount_minor: Optional[int] = Field(default=None, ge=0)
+    
     currency: Literal["TRY"] = "TRY"
-    date: datetime | None = None
-    category: str = Field(min_length=1)
-    confidence_score: float = Field(ge=0, le=1)
-    is_parse_successful: bool
+    date: Optional[datetime] = None
+    category: Optional[str] = None
     items: list[ReceiptItem] = Field(default_factory=list)
+
+    is_parse_successful: bool = Field(
+        ..., 
+        description="Kurum, tarih ve tutar tam ve doğru okunabildiyse true, aksi halde false."
+    )
+    confidence_score: float = Field(
+        ...,
+        ge=0,
+        le=1,
+        description="OCR metninden çıkarılan verilerin genel güvenilirlik skoru (0.0 ile 1.0 arası)."
+    )
+
+    @model_validator(mode="after")
+    def validate_success_consistency(self) -> "ReceiptParserResponse":
+        required_values = (self.merchant, self.date, self.total_amount_minor)
+        if self.is_parse_successful and any(value is None for value in required_values):
+            raise ValueError(
+                "Başarılı ayrıştırma için kurum, tarih ve toplam tutar zorunludur"
+            )
+        return self

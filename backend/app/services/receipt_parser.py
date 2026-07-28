@@ -1,58 +1,43 @@
 from typing import Protocol
-
 from google import genai
 from google.genai import types
 
-from app.schemas import (
-    ReceiptItem,
-    ReceiptParserRequest,
-    ReceiptParserResponse,
-)
+from app.schemas import ReceiptItem, ReceiptParserRequest, ReceiptParserResponse
 
-# Gemini'nin her istek için izlemesi gereken sabit kurallar. Kullanıcıdan
-# gelen OCR metni bu talimata karıştırılmaz; yalnızca `contents` alanına gider.
+# Sistem talimatı alan isimleri (merchant, total_amount_minor) ile güncellendi
 SYSTEM_INSTRUCTION = """
-Sen Türkçe perakende fişlerini ayrıştıran bir asistansın.
+Sen bir finansal veri ayrıştırıcısısın. Görevin sana verilen karmaşık OCR fiş metinlerini analiz edip istenen JSON şemasına uygun olarak döndürmektir. 
 
-OCR metninden yalnızca fişte açıkça bulunan bilgileri çıkar. Tahmin veya
-uydurma yapma. Tüm para değerlerini TL değil kuruş cinsinden tam sayı olarak
-döndür. Tarih belirsizse null kullan. Ayrıştırma güvenilir değilse
-is_parse_successful=false yap ve gerçekçi bir confidence_score belirle.
-
-Yanıtı her zaman tanımlanan JSON şemasına uygun üret.
+KESİN KURALLAR:
+1. HALÜSİNASYON YASAKTIR: Sadece ve sadece OCR metninde geçen bilgileri kullan. Uydurma yapma.
+2. BAŞARI DURUMU (is_parse_successful): Eğer fişin ait olduğu kurum (merchant), işlem tarihi (date) ve toplam tutar (total_amount_minor) net bir şekilde metinden çıkarılabiliyorsa is_parse_successful değerini true yap. Eksikse false yap.
+3. GÜVEN SKORU (confidence_score): Verilerin kesinliğine göre 0.0 ile 1.0 arasında bir değer ver. Parasal tutarları kuruş (int) olarak yaz.
 """.strip()
 
-
 class ReceiptParserError(RuntimeError):
-    """Raised when a receipt cannot be parsed by the configured provider."""
-
+    pass
 
 class ReceiptParserService(Protocol):
     async def parse(self, request: ReceiptParserRequest) -> ReceiptParserResponse:
-        """Parse normalized OCR text into the shared receipt contract."""
-
+        pass
 
 class DummyReceiptParserService:
     async def parse(self, request: ReceiptParserRequest) -> ReceiptParserResponse:
         del request
+        # Eski sözleşme değerlerine geri dönüldü
         return ReceiptParserResponse(
             merchant="Örnek Süpermarket",
             total_amount_minor=2550,
             currency="TRY",
-            date=None,
+            date="2026-07-28",
             category="Market",
             confidence_score=0.99,
             is_parse_successful=True,
             items=[
                 ReceiptItem(name="Süt 1L", price_minor=1200, category="Gıda"),
-                ReceiptItem(
-                    name="Tam Buğday Ekmek",
-                    price_minor=1350,
-                    category="Fırın",
-                ),
+                ReceiptItem(name="Ekmek", price_minor=1350, category="Fırın"),
             ],
         )
-
 
 class GeminiReceiptParserService:
     def __init__(self, *, api_key: str, model: str) -> None:
