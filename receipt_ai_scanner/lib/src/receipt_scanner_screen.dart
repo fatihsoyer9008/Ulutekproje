@@ -4,10 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 import 'receipt_text_normalizer.dart';
+import 'receipt_confidence_warning.dart';
 
 /// Opens the back camera, captures a receipt and extracts its raw text on-device.
 class ReceiptScannerScreen extends StatefulWidget {
-  const ReceiptScannerScreen({super.key});
+  const ReceiptScannerScreen({
+    this.confidenceScore,
+    this.confidenceThreshold = ReceiptLowConfidenceWarning.defaultThreshold,
+    super.key,
+  }) : assert(confidenceScore == null ||
+            (confidenceScore! >= 0 && confidenceScore! <= 1)),
+       assert(confidenceThreshold >= 0 && confidenceThreshold <= 1);
+
+  /// Confidence produced by the receipt parser, expressed from 0 to 1.
+  ///
+  /// This is nullable because the current OCR-only flow does not yet produce a
+  /// parser score. Pass the score once the parsing pipeline is available.
+  final double? confidenceScore;
+  final double confidenceThreshold;
 
   @override
   State<ReceiptScannerScreen> createState() =>
@@ -115,7 +129,10 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
           : normalizeReceiptText(recognizedText.text);
 
       if (!mounted) return;
-      await _showRecognizedText(normalizedText);
+      await _showRecognizedText(
+        normalizedText,
+        confidenceScore: widget.confidenceScore,
+      );
     } on CameraException catch (error) {
       _showMessage(_cameraErrorMessage(error));
     } catch (error) {
@@ -125,7 +142,10 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     }
   }
 
-  Future<void> _showRecognizedText(String text) async {
+  Future<void> _showRecognizedText(
+    String text, {
+    required double? confidenceScore,
+  }) async {
     final visibleText =
         text.trim().isEmpty ? 'Fiş üzerinde okunabilir metin bulunamadı.' : text;
 
@@ -157,6 +177,14 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                   ],
                 ),
                 const Divider(),
+                if (confidenceScore != null) ...[
+                  ReceiptLowConfidenceWarning(
+                    confidenceScore: confidenceScore,
+                    threshold: widget.confidenceThreshold,
+                  ),
+                  if (confidenceScore < widget.confidenceThreshold)
+                    const SizedBox(height: 16),
+                ],
                 Expanded(
                   child: SingleChildScrollView(
                     child: SelectableText(visibleText),
