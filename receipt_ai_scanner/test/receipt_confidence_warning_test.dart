@@ -7,13 +7,12 @@ void main() {
       'Tutar veya kurum adından tam emin olamadık, lütfen kontrol edin';
 
   Widget buildSubject(double score) => MaterialApp(
-        home: Scaffold(
-          body: ReceiptLowConfidenceWarning(confidenceScore: score),
-        ),
-      );
+    home: Scaffold(body: ReceiptLowConfidenceWarning(confidenceScore: score)),
+  );
 
-  testWidgets('shows the warning below the 70 percent threshold',
-      (tester) async {
+  testWidgets('shows the warning below the 70 percent threshold', (
+    tester,
+  ) async {
     await tester.pumpWidget(buildSubject(.69));
 
     expect(find.text(warningText), findsOneWidget);
@@ -24,5 +23,22 @@ void main() {
     await tester.pumpWidget(buildSubject(.70));
 
     expect(find.text(warningText), findsNothing);
+  });
+
+  testWidgets('shows the warning when parsing was unsuccessful', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: ReceiptLowConfidenceWarning(
+            confidenceScore: .90,
+            isParseSuccessful: false,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text(warningText), findsOneWidget);
   });
 }

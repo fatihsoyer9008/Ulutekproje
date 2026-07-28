@@ -1,17 +1,22 @@
-# fis_uygulamasi
+# FişKon Flutter uygulaması
 
-A new Flutter project.
+## OCR ve backend yapılandırması
 
-## Getting Started
+Android emülatöründe backend varsayılan olarak
+`http://10.0.2.2:8000` adresinden çağrılır. Fiziksel cihazda veya yayınlanmış
+backend ile çalışırken API adresini `dart-define` ile verin:
 
-This project is a starting point for a Flutter application.
+```powershell
+flutter run --dart-define=RECEIPT_API_BASE_URL=https://api-adresiniz
+```
 
-A few resources to get you started if this is your first Flutter project:
+Akış: kamera ile fiş tarama → cihaz içi OCR → FastAPI ayrıştırma → kullanıcı
+onay ekranı. HTTP erişimi yalnız debug Android manifestinde yerel geliştirme
+için açıktır; yayın ortamında HTTPS kullanılmalıdır.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Kontroller
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```powershell
+flutter analyze
+flutter test
+```
