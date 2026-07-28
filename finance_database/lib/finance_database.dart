@@ -1,5 +1,5 @@
-/// A Calculator.
-class Calculator {
-  /// Returns [value] plus 1.
-  int addOne(int value) => value + 1;
-}
+library;
+
+export 'src/isar_service.dart';
+export 'src/models/transaction_entity.dart';
+export 'src/repository/transaction_repository.dart';

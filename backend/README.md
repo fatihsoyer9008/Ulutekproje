@@ -1,0 +1,73 @@
+# Receipt Parser API
+
+Flutter uygulaması ile ilerideki fiş ayrıştırma servisi arasındaki FastAPI iskeleti.
+
+## Yerelde çalıştırma
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Sunucu çalıştığında `http://127.0.0.1:8000/health` adresi `status: ok` döndürür.
+
+## Fiş ayrıştırma
+
+`POST /api/v1/parse-receipt` uç noktası cihaz içi OCR metnini alır:
+
+```json
+{
+  "ocr_text": "MİGROS TOPLAM 220,50 TL"
+}
+```
+
+Yerel frontend geliştirmesinde `.env` içindeki `USE_DUMMY_PARSER=true` bırakılabilir.
+Gerçek Gemini ayrıştırmasını kullanmak için:
+
+```dotenv
+GEMINI_API_KEY=your-api-key
+GEMINI_MODEL=gemini-3.5-flash-lite
+USE_DUMMY_PARSER=false
+```
+
+API anahtarını içeren `.env` dosyası Git tarafından yok sayılır; bu dosyayı commit etmeyin.
+
+Telefonun aynı Wi-Fi ağından sunucuya erişmesi gerekiyorsa Uvicorn'u
+`--host 0.0.0.0` ile başlatın ve Flutter tarafında bilgisayarın yerel IP adresini kullanın.
+
+## DigitalOcean App Platform ile yayınlama ve Swagger testi
+
+Proje kökündeki `.do/app.yaml`, DigitalOcean App Platform ayarlarını içerir.
+DigitalOcean panelinde GitHub reposunu bağlayın ve App Spec olarak bu dosyayı
+kullanın. `GEMINI_API_KEY` değerini yalnızca DigitalOcean panelindeki ortam
+değişkenlerine **Encrypt** seçeneğiyle girin; GitHub'a eklemeyin.
+
+İlk Flutter/Postman testi için `USE_DUMMY_PARSER=true` bırakılabilir. Gerçek
+Gemini ayrıştırması için DigitalOcean ortam değişkenlerinde
+`USE_DUMMY_PARSER=false` yapın ve geçerli bir `GEMINI_API_KEY` tanımlayın.
+
+Deploy tamamlandıktan sonra aşağıdaki adresleri kullanın:
+
+```text
+https://<digitalocean-servis-adresi>/health
+https://<digitalocean-servis-adresi>/docs
+```
+
+Swagger'da `POST /api/v1/parse-receipt` endpoint'ini açıp şu gövdeyle
+**Try it out** ve **Execute** seçeneklerini kullanın:
+
+```json
+{
+  "ocr_text": "MİGROS\nTOPLAM 220,50 TL"
+}
+```
+
+## Testler
+
+```powershell
+pip install -r requirements-dev.txt
+pytest
+```
