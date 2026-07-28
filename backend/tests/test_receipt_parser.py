@@ -1,6 +1,8 @@
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from pydantic import ValidationError
 
 from app.schemas import ReceiptParserRequest, ReceiptParserResponse
 from app.services.receipt_parser import (
@@ -123,3 +125,46 @@ async def test_broken_ocr(mock_client_class):
     
     assert res.is_parse_successful is False
     assert res.confidence_score < 0.5
+
+
+@pytest.mark.parametrize("missing_field", ["merchant", "date", "total_amount_minor"])
+def test_successful_response_rejects_missing_required_field(missing_field):
+    payload = {
+        "merchant": "Örnek Süpermarket",
+        "date": "2026-07-28T00:00:00",
+        "total_amount_minor": 2550,
+        "currency": "TRY",
+        "category": "Market",
+        "is_parse_successful": True,
+        "confidence_score": 0.95,
+        "items": [],
+    }
+    payload[missing_field] = None
+
+    with pytest.raises(ValidationError):
+        ReceiptParserResponse.model_validate(payload)
+
+
+@pytest.mark.parametrize("score", [-0.01, 1.01])
+def test_confidence_score_must_be_between_zero_and_one(score):
+    with pytest.raises(ValidationError):
+        ReceiptParserResponse(
+            merchant=None,
+            total_amount_minor=None,
+            date=None,
+            category=None,
+            is_parse_successful=False,
+            confidence_score=score,
+        )
+
+
+def test_total_amount_minor_cannot_be_negative():
+    with pytest.raises(ValidationError):
+        ReceiptParserResponse(
+            merchant=None,
+            total_amount_minor=-1,
+            date=None,
+            category=None,
+            is_parse_successful=False,
+            confidence_score=0.1,
+        )
