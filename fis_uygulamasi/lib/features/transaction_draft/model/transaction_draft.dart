@@ -1,34 +1,42 @@
+import 'turkish_money.dart';
+
 class TransactionDraft {
   const TransactionDraft({
     required this.institutionName,
     required this.category,
-    required this.amount,
+    required this.amountInMinor,
   });
 
   const TransactionDraft.empty()
     : institutionName = '',
       category = '',
-      amount = null;
+      amountInMinor = null;
 
   final String institutionName;
   final String category;
-  final double? amount;
+  final int? amountInMinor;
 
   factory TransactionDraft.fromJson(Map<String, dynamic> json) {
     return TransactionDraft(
       institutionName: json['merchant_name']?.toString().trim() ?? '',
       category: json['category']?.toString().trim() ?? '',
-      amount: _parseAmount(json['amount']),
+      amountInMinor: _parseAmountInMinor(json),
     );
   }
 
-  static double? _parseAmount(Object? value) {
-    if (value is num) {
-      return value.toDouble();
-    }
+  Map<String, dynamic> toJson() => {
+    'merchant_name': institutionName,
+    'category': category,
+    'amountInMinor': amountInMinor,
+  };
 
-    return double.tryParse(
-      value?.toString().trim().replaceAll(',', '.') ?? '',
-    );
+  static int? _parseAmountInMinor(Map<String, dynamic> json) {
+    final minorValue = json['amountInMinor'] ?? json['amount_in_minor'];
+    if (minorValue != null) {
+      return minorValue is int
+          ? minorValue
+          : int.tryParse(minorValue.toString().trim());
+    }
+    return parseMajorAmountToMinor(json['amount']);
   }
 }
