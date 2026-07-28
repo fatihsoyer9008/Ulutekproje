@@ -6,12 +6,15 @@ import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 import '../model/transaction_draft.dart';
 import '../model/turkish_money.dart';
 
+enum TransactionDraftPageMode { manual, ocrReview }
+
 class TransactionDraftPage extends StatefulWidget {
   const TransactionDraftPage({
     super.key,
     this.initialDraft = const TransactionDraft.empty(),
     this.confidenceScore,
     this.isParseSuccessful = true,
+    this.mode = TransactionDraftPageMode.ocrReview,
   }) : assert(
          confidenceScore == null ||
              (confidenceScore >= 0 && confidenceScore <= 1),
@@ -20,6 +23,7 @@ class TransactionDraftPage extends StatefulWidget {
   final TransactionDraft initialDraft;
   final double? confidenceScore;
   final bool isParseSuccessful;
+  final TransactionDraftPageMode mode;
 
   @override
   State<TransactionDraftPage> createState() => _TransactionDraftPageState();
@@ -69,22 +73,30 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('İşlemi Kontrol Et')),
+    appBar: AppBar(
+      title: Text(
+        widget.mode == TransactionDraftPageMode.manual
+            ? 'Manuel Gider Ekle'
+            : 'İşlemi Kontrol Et',
+      ),
+    ),
     body: SafeArea(
       child: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            const _DraftHeader(),
+            _DraftHeader(mode: widget.mode),
             const SizedBox(height: 20),
-            if (widget.confidenceScore case final score?) ...[
+            if (widget.mode == TransactionDraftPageMode.ocrReview &&
+                widget.confidenceScore != null) ...[
               ReceiptLowConfidenceWarning(
-                confidenceScore: score,
+                confidenceScore: widget.confidenceScore!,
                 isParseSuccessful: widget.isParseSuccessful,
               ),
               if (!widget.isParseSuccessful ||
-                  score < ReceiptLowConfidenceWarning.defaultThreshold)
+                  widget.confidenceScore! <
+                      ReceiptLowConfidenceWarning.defaultThreshold)
                 const SizedBox(height: 16),
             ],
             AppCard(
@@ -183,7 +195,11 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
               key: const Key('confirm_draft_button'),
               onPressed: _confirmDraft,
               icon: const Icon(Icons.check_rounded),
-              label: const Text('Onayla'),
+              label: Text(
+                widget.mode == TransactionDraftPageMode.manual
+                    ? 'Gideri Kaydet'
+                    : 'Onayla',
+              ),
             ),
           ),
         ],
@@ -193,17 +209,21 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
 }
 
 class _DraftHeader extends StatelessWidget {
-  const _DraftHeader();
+  const _DraftHeader({required this.mode});
+
+  final TransactionDraftPageMode mode;
 
   @override
   Widget build(BuildContext context) => Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const CircleAvatar(
+      CircleAvatar(
         radius: 28,
         backgroundColor: AppColors.mint,
         child: Icon(
-          Icons.receipt_long_outlined,
+          mode == TransactionDraftPageMode.manual
+              ? Icons.edit_note_rounded
+              : Icons.receipt_long_outlined,
           color: AppColors.primary,
           size: 28,
         ),
@@ -219,8 +239,8 @@ class _DraftHeader extends StatelessWidget {
                 color: AppColors.mint,
                 borderRadius: BorderRadius.circular(99),
               ),
-              child: const Text(
-                'TASLAK',
+              child: Text(
+                mode == TransactionDraftPageMode.manual ? 'MANUEL' : 'TASLAK',
                 style: TextStyle(
                   color: AppColors.primaryDark,
                   fontSize: 12,
@@ -230,13 +250,17 @@ class _DraftHeader extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Fiş bilgilerini kontrol edin',
+              mode == TransactionDraftPageMode.manual
+                  ? 'Gider bilgilerini girin'
+                  : 'Fiş bilgilerini kontrol edin',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 4),
-            const Text(
-              'Kaydetmeden önce yapay zekânın çıkardığı bilgileri '
-              'düzenleyebilirsiniz.',
+            Text(
+              mode == TransactionDraftPageMode.manual
+                  ? 'Kurum, kategori ve tutar bilgilerini elle ekleyin.'
+                  : 'Kaydetmeden önce yapay zekânın çıkardığı bilgileri '
+                        'düzenleyebilirsiniz.',
               style: TextStyle(color: AppColors.muted),
             ),
           ],

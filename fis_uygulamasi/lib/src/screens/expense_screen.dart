@@ -75,6 +75,16 @@ class ExpenseScreen extends StatelessWidget {
             ),
           ],
         ),
+        const SizedBox(height: 14),
+        OutlinedButton.icon(
+          key: const Key('manual_entry_button'),
+          onPressed: () => _openManualEntry(context),
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('Fişim yok, elle gireceğim'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(52),
+          ),
+        ),
         const SizedBox(height: 30),
         Text('Abonelikler', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),
@@ -143,6 +153,15 @@ class ExpenseScreen extends StatelessWidget {
   Future<String?> _launchReceiptScanner(BuildContext context) {
     return Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => const ReceiptScannerScreen()),
+    );
+  }
+
+  Future<void> _openManualEntry(BuildContext context) async {
+    await Navigator.of(context).push<TransactionDraft>(
+      MaterialPageRoute(
+        builder: (_) =>
+            const TransactionDraftPage(mode: TransactionDraftPageMode.manual),
+      ),
     );
   }
 

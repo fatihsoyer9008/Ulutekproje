@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image/image.dart' as image_lib;
 
 import 'receipt_text_normalizer.dart';
 
@@ -104,9 +107,9 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     setState(() => _isScanning = true);
 
     try {
+      await _prepareCameraForReceipt(controller);
       final photo = await controller.takePicture();
-      final inputImage = InputImage.fromFilePath(photo.path);
-      final recognizedText = await _textRecognizer.processImage(inputImage);
+      final recognizedText = await _recognizeReceiptText(photo);
       final normalizedText = kDebugMode
           ? normalizeAndLogReceiptText(recognizedText.text, logger: debugPrint)
           : normalizeReceiptText(recognizedText.text);
@@ -125,10 +128,56 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     }
   }
 
+  Future<void> _prepareCameraForReceipt(CameraController controller) async {
+    try {
+      await controller.setFocusMode(FocusMode.auto);
+      await controller.setFocusPoint(const Offset(.5, .5));
+      await controller.setExposureMode(ExposureMode.auto);
+      await controller.setExposurePoint(const Offset(.5, .5));
+      await controller.setFlashMode(FlashMode.auto);
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+    } on CameraException {
+      // Some devices do not expose every focus/exposure control. Capturing can
+      // still continue with the camera's existing defaults.
+    }
+  }
+
+  Future<RecognizedText> _recognizeReceiptText(XFile photo) async {
+    final originalResult = await _textRecognizer.processImage(
+      InputImage.fromFilePath(photo.path),
+    );
+    if (originalResult.text.trim().isNotEmpty) return originalResult;
+
+    final enhancedPath = '${photo.path}.ocr.jpg';
+    final enhancedFile = File(enhancedPath);
+    try {
+      final decoded = image_lib.decodeImage(await photo.readAsBytes());
+      if (decoded == null) return originalResult;
+
+      final oriented = image_lib.bakeOrientation(decoded);
+      final grayscale = image_lib.grayscale(oriented);
+      await enhancedFile.writeAsBytes(
+        image_lib.encodeJpg(grayscale, quality: 95),
+        flush: true,
+      );
+      return await _textRecognizer.processImage(
+        InputImage.fromFilePath(enhancedPath),
+      );
+    } on Exception {
+      return originalResult;
+    } finally {
+      if (await enhancedFile.exists()) {
+        await enhancedFile.delete();
+      }
+    }
+  }
+
   Future<bool> _showRecognizedText(String text) async {
-    final visibleText = text.trim().isEmpty
-        ? 'Fiş üzerinde okunabilir metin bulunamadı.'
-        : text;
+    final hasReadableText = text.trim().isNotEmpty;
+    final visibleText = hasReadableText
+        ? text
+        : 'Fiş üzerinde okunabilir metin bulunamadı. Fişi düz bir zemine '
+              'yerleştirip iyi ışıkta ve kamerayı sabit tutarak tekrar deneyin.';
 
     return await showModalBottomSheet<bool>(
           context: context,
@@ -168,11 +217,18 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                       width: double.infinity,
                       child: FilledButton.icon(
                         key: const Key('continue_with_ocr_button'),
-                        onPressed: text.trim().isEmpty
-                            ? null
-                            : () => Navigator.pop(context, true),
-                        icon: const Icon(Icons.arrow_forward_rounded),
-                        label: const Text('Bilgileri Kontrol Et'),
+                        onPressed: () =>
+                            Navigator.pop(context, hasReadableText),
+                        icon: Icon(
+                          hasReadableText
+                              ? Icons.arrow_forward_rounded
+                              : Icons.refresh_rounded,
+                        ),
+                        label: Text(
+                          hasReadableText
+                              ? 'Bilgileri Kontrol Et'
+                              : 'Tekrar Tara',
+                        ),
                       ),
                     ),
                   ],

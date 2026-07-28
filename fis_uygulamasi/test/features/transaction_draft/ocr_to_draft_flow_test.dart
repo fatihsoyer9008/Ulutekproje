@@ -29,7 +29,7 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const Key('manual_entry_button')), findsNothing);
+    expect(find.byKey(const Key('manual_entry_button')), findsOneWidget);
     await tester.tap(find.byKey(const Key('ocr_camera_button')));
     await tester.pumpAndSettle();
 
@@ -38,6 +38,21 @@ void main() {
     expect(find.widgetWithText(TextFormField, 'MİGROS'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'Market'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, '25,50'), findsOneWidget);
+  });
+
+  testWidgets('manual entry uses manual copy instead of AI draft copy', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: ExpenseScreen()));
+
+    await tester.tap(find.byKey(const Key('manual_entry_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Manuel Gider Ekle'), findsOneWidget);
+    expect(find.text('MANUEL'), findsOneWidget);
+    expect(find.text('Gider bilgilerini girin'), findsOneWidget);
+    expect(find.textContaining('yapay zekânın çıkardığı'), findsNothing);
+    expect(find.text('TASLAK'), findsNothing);
   });
 
   testWidgets('shows the confidence warning for an unsuccessful parse', (
