@@ -43,8 +43,6 @@ dependencies:
   http: ^1.5.0
   receipt_ai_scanner:
     path: ../receipt_ai_scanner
-  finance_database:
-    path: ../finance_database
   table_calendar: ^3.2.0
 
 dev_dependencies:

@@ -1,7 +1,8 @@
 import '../models/transaction_draft.dart';
 import '../models/transaction_entity.dart';
 
-/// Converts UI/OCR drafts to database entities and back.
+/// UI/OCR taslaklarını Isar varlıklarına ve Isar varlıklarını taslaklara
+/// dönüştürür.
 class TransactionDraftMapper {
   const TransactionDraftMapper._();
 
@@ -18,7 +19,7 @@ class TransactionDraftMapper {
     final effectiveCreatedAt = createdAt ?? now;
 
     return TransactionEntity()
-      ..amountInMinor = _amountToMinor(draft.amount)
+      ..amountInMinor = _safeAmountInMinor(draft.amountInMinor)
       ..category = _categoryFromDraft(draft.category)
       ..date = date ?? now
       ..merchantName = _nullIfBlank(draft.institutionName)
@@ -29,15 +30,15 @@ class TransactionDraftMapper {
       ..updatedAt = updatedAt ?? effectiveCreatedAt;
   }
 
-  static TransactionDraft toDraft(TransactionEntity entity) =>
-      TransactionDraft(
-        institutionName: entity.merchantName?.trim() ?? '',
-        category: _categoryToDraft(entity.category),
-        amount: entity.amountInMinor < 0 ? 0 : entity.amountInMinor / 100,
-      );
+  static TransactionDraft toDraft(TransactionEntity entity) {
+    return TransactionDraft(
+      institutionName: entity.merchantName?.trim() ?? '',
+      category: _categoryToDraft(entity.category),
+      amountInMinor: _safeAmountInMinor(entity.amountInMinor),
+    );
+  }
 }
 
-/// Extension: Draft -> Entity
 extension TransactionDraftEntityMapper on TransactionDraft {
   TransactionEntity toTransactionEntity({
     TransactionSource source = TransactionSource.manual,
@@ -57,25 +58,17 @@ extension TransactionDraftEntityMapper on TransactionDraft {
   );
 }
 
-/// Extension: Entity -> Draft
 extension TransactionEntityDraftMapper on TransactionEntity {
   TransactionDraft toTransactionDraft() => TransactionDraftMapper.toDraft(this);
 }
 
-/// Maximum value supported by Isar Int64.
 const _maxIsarInt = 9223372036854775807;
 
-/// Converts ₺ value to kuruş.
-int _amountToMinor(double? amount) {
-  if (amount == null || !amount.isFinite || amount <= 0) return 0;
-
-  final scaledAmount = amount * 100;
-  if (!scaledAmount.isFinite) return _maxIsarInt;
-
-  return scaledAmount.round().clamp(0, _maxIsarInt);
+int _safeAmountInMinor(int? amountInMinor) {
+  if (amountInMinor == null || amountInMinor <= 0) return 0;
+  return amountInMinor.clamp(0, _maxIsarInt);
 }
 
-/// Converts blank strings to null.
 String? _nullIfBlank(String? value) {
   final trimmed = value?.trim();
   return trimmed == null || trimmed.isEmpty ? null : trimmed;
@@ -86,25 +79,19 @@ TransactionCategory _categoryFromDraft(String category) {
     case 'market':
     case 'marketalisverisi':
       return TransactionCategory.market;
-  
     case 'ulasim':
     case 'tasima':
     case 'tasimacilik':
       return TransactionCategory.ulasim;
-
     case 'fatura':
     case 'faturalar':
       return TransactionCategory.fatura;
-
     case 'eglence':
       return TransactionCategory.eglence;
-
     case 'saglik':
       return TransactionCategory.saglik;
-
     case 'giyim':
       return TransactionCategory.giyim;
-
     default:
       return TransactionCategory.diger;
   }
