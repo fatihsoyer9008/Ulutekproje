@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../model/transaction_draft.dart';
+import '../model/turkish_money.dart';
 
 class TransactionDraftPage extends StatefulWidget {
   const TransactionDraftPage({
@@ -35,8 +36,11 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
       text: widget.initialDraft.category,
     );
 
+    final initialAmount = widget.initialDraft.amountInMinor;
     _amountController = TextEditingController(
-      text: widget.initialDraft.amount?.toStringAsFixed(2) ?? '',
+      text: initialAmount == null
+          ? ''
+          : formatMinorAsTurkishLira(initialAmount),
     );
   }
 
@@ -56,9 +60,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
     final confirmedDraft = TransactionDraft(
       institutionName: _institutionController.text.trim(),
       category: _categoryController.text.trim(),
-      amount: double.parse(
-        _amountController.text.trim().replaceAll(',', '.'),
-      ),
+      amountInMinor: parseTurkishLiraToMinor(_amountController.text)!,
     );
 
     Navigator.of(context).pop(confirmedDraft);
@@ -128,7 +130,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                 decoration: const InputDecoration(
                   labelText: 'Tutar',
                   hintText: '0,00',
-                  suffixText: '₺',
+                  suffixText: 'TL',
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: const TextInputType.numberWithOptions(
@@ -136,19 +138,17 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                 ),
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(
-                    RegExp(r'[0-9,.]'),
+                    RegExp(r'[0-9,.\s]'),
                   ),
                 ],
                 validator: (value) {
-                  final amount = double.tryParse(
-                    value?.trim().replaceAll(',', '.') ?? '',
-                  );
+                  final amountInMinor = parseTurkishLiraToMinor(value);
 
-                  if (amount == null) {
+                  if (amountInMinor == null) {
                     return 'Geçerli bir tutar giriniz';
                   }
 
-                  if (amount <= 0) {
+                  if (amountInMinor <= 0) {
                     return 'Tutar sıfırdan büyük olmalıdır';
                   }
 
