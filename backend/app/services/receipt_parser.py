@@ -9,6 +9,19 @@ from app.schemas import (
     ReceiptParserResponse,
 )
 
+# Gemini'nin her istek için izlemesi gereken sabit kurallar. Kullanıcıdan
+# gelen OCR metni bu talimata karıştırılmaz; yalnızca `contents` alanına gider.
+SYSTEM_INSTRUCTION = """
+Sen Türkçe perakende fişlerini ayrıştıran bir asistansın.
+
+OCR metninden yalnızca fişte açıkça bulunan bilgileri çıkar. Tahmin veya
+uydurma yapma. Tüm para değerlerini TL değil kuruş cinsinden tam sayı olarak
+döndür. Tarih belirsizse null kullan. Ayrıştırma güvenilir değilse
+is_parse_successful=false yap ve gerçekçi bir confidence_score belirle.
+
+Yanıtı her zaman tanımlanan JSON şemasına uygun üret.
+""".strip()
+
 
 class ReceiptParserError(RuntimeError):
     """Raised when a receipt cannot be parsed by the configured provider."""
@@ -52,11 +65,8 @@ class GeminiReceiptParserService:
         try:
             response = await async_client.models.generate_content(
                 model=self._model,
-                contents=self._build_prompt(request.ocr_text),
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ReceiptParserResponse,
-                ),
+                contents=request.ocr_text,
+                config=self._generation_config(),
             )
 
             if response.parsed is not None:
@@ -72,12 +82,9 @@ class GeminiReceiptParserService:
             await async_client.aclose()
 
     @staticmethod
-    def _build_prompt(ocr_text: str) -> str:
-        return (
-            "Aşağıdaki Türkçe fiş OCR metninden kurum, toplam tutar, tarih, "
-            "kategori ve ürünleri çıkar. Tüm para değerlerini TL değil kuruş "
-            "cinsinden tam sayı olarak döndür. Belirsiz tarih için null kullan. "
-            "Sonuç güvenilir değilse is_parse_successful=false yap ve gerçekçi "
-            "bir confidence_score belirle.\n\nOCR METNİ:\n"
-            f"{ocr_text}"
+    def _generation_config() -> types.GenerateContentConfig:
+        return types.GenerateContentConfig(
+            system_instruction=SYSTEM_INSTRUCTION,
+            response_mime_type="application/json",
+            response_schema=ReceiptParserResponse,
         )
