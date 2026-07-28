@@ -1,3 +1,4 @@
+import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,20 +7,18 @@ import '../model/turkish_money.dart';
 
 class TransactionDraftPage extends StatefulWidget {
   const TransactionDraftPage({
-  super.key,
-  this.initialDraft = const TransactionDraft.empty(),
-});
+    super.key,
+    this.initialDraft = const TransactionDraft.empty(),
+  });
 
   final TransactionDraft initialDraft;
 
   @override
-  State<TransactionDraftPage> createState() =>
-      _TransactionDraftPageState();
+  State<TransactionDraftPage> createState() => _TransactionDraftPageState();
 }
 
 class _TransactionDraftPageState extends State<TransactionDraftPage> {
   final _formKey = GlobalKey<FormState>();
-
   late final TextEditingController _institutionController;
   late final TextEditingController _categoryController;
   late final TextEditingController _amountController;
@@ -27,15 +26,12 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   @override
   void initState() {
     super.initState();
-
     _institutionController = TextEditingController(
       text: widget.initialDraft.institutionName,
     );
-
     _categoryController = TextEditingController(
       text: widget.initialDraft.category,
     );
-
     final initialAmount = widget.initialDraft.amountInMinor;
     _amountController = TextEditingController(
       text: initialAmount == null
@@ -53,134 +49,182 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   }
 
   void _confirmDraft() {
-    if (!(_formKey.currentState?.validate() ?? false)) {
-      return;
-    }
-
-    final confirmedDraft = TransactionDraft(
-      institutionName: _institutionController.text.trim(),
-      category: _categoryController.text.trim(),
-      amountInMinor: parseTurkishLiraToMinor(_amountController.text)!,
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    Navigator.of(context).pop(
+      TransactionDraft(
+        institutionName: _institutionController.text.trim(),
+        category: _categoryController.text.trim(),
+        amountInMinor: parseTurkishLiraToMinor(_amountController.text)!,
+      ),
     );
-
-    Navigator.of(context).pop(confirmedDraft);
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('İşlemi Kontrol Et'),
-      ),
-      body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              Text(
-                'Fiş bilgilerini kontrol edin',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Yapay zekânın çıkardığı bilgileri kaydetmeden önce '
-                'düzenleyebilirsiniz.',
-              ),
-              const SizedBox(height: 24),
-              TextFormField(
-                key: const Key('institution_name_field'),
-                controller: _institutionController,
-                decoration: const InputDecoration(
-                  labelText: 'Kurum Adı',
-                  hintText: 'Örneğin: Migros',
-                  border: OutlineInputBorder(),
-                ),
-                textInputAction: TextInputAction.next,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Kurum adı zorunludur';
-                  }
-
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                key: const Key('category_field'),
-                controller: _categoryController,
-                decoration: const InputDecoration(
-                  labelText: 'Kategori',
-                  hintText: 'Örneğin: Market',
-                  border: OutlineInputBorder(),
-                ),
-                textInputAction: TextInputAction.next,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Kategori zorunludur';
-                  }
-
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                key: const Key('amount_field'),
-                controller: _amountController,
-                decoration: const InputDecoration(
-                  labelText: 'Tutar',
-                  hintText: '0,00',
-                  suffixText: 'TL',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(
-                    RegExp(r'[0-9,.\s]'),
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('İşlemi Kontrol Et')),
+    body: SafeArea(
+      child: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            const _DraftHeader(),
+            const SizedBox(height: 20),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'İşlem bilgileri',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Alanları kontrol edin, gerekirse düzenleyin.',
+                    style: TextStyle(color: AppColors.muted),
+                  ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    key: const Key('institution_name_field'),
+                    controller: _institutionController,
+                    decoration: const InputDecoration(
+                      labelText: 'Kurum Adı',
+                      hintText: 'Örneğin: Migros',
+                      prefixIcon: Icon(Icons.storefront_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    textInputAction: TextInputAction.next,
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Kurum adı zorunludur'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const Key('category_field'),
+                    controller: _categoryController,
+                    decoration: const InputDecoration(
+                      labelText: 'Kategori',
+                      hintText: 'Örneğin: Market',
+                      prefixIcon: Icon(Icons.category_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    textInputAction: TextInputAction.next,
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Kategori zorunludur'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const Key('amount_field'),
+                    controller: _amountController,
+                    decoration: const InputDecoration(
+                      labelText: 'Tutar',
+                      hintText: '0,00',
+                      prefixIcon: Icon(Icons.payments_outlined),
+                      suffixText: 'TL',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9,.\s]')),
+                    ],
+                    validator: (value) {
+                      final amountInMinor = parseTurkishLiraToMinor(value);
+                      if (amountInMinor == null) {
+                        return 'Geçerli bir tutar giriniz';
+                      }
+                      if (amountInMinor <= 0) {
+                        return 'Tutar sıfırdan büyük olmalıdır';
+                      }
+                      return null;
+                    },
                   ),
                 ],
-                validator: (value) {
-                  final amountInMinor = parseTurkishLiraToMinor(value);
-
-                  if (amountInMinor == null) {
-                    return 'Geçerli bir tutar giriniz';
-                  }
-
-                  if (amountInMinor <= 0) {
-                    return 'Tutar sıfırdan büyük olmalıdır';
-                  }
-
-                  return null;
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                key: const Key('cancel_draft_button'),
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Vazgeç'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: FilledButton(
-                key: const Key('confirm_draft_button'),
-                onPressed: _confirmDraft,
-                child: const Text('Onayla'),
               ),
             ),
           ],
         ),
       ),
-    );
-  }
+    ),
+    bottomNavigationBar: SafeArea(
+      minimum: const EdgeInsets.all(20),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              key: const Key('cancel_draft_button'),
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close_rounded),
+              label: const Text('Vazgeç'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: FilledButton.icon(
+              key: const Key('confirm_draft_button'),
+              onPressed: _confirmDraft,
+              icon: const Icon(Icons.check_rounded),
+              label: const Text('Onayla'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _DraftHeader extends StatelessWidget {
+  const _DraftHeader();
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const CircleAvatar(
+        radius: 28,
+        backgroundColor: AppColors.mint,
+        child: Icon(
+          Icons.receipt_long_outlined,
+          color: AppColors.primary,
+          size: 28,
+        ),
+      ),
+      const SizedBox(width: 14),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.mint,
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: const Text(
+                'TASLAK',
+                style: TextStyle(
+                  color: AppColors.primaryDark,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Fiş bilgilerini kontrol edin',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Kaydetmeden önce yapay zekânın çıkardığı bilgileri '
+              'düzenleyebilirsiniz.',
+              style: TextStyle(color: AppColors.muted),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
 }
