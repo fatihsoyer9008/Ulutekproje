@@ -12,6 +12,7 @@ dependencies:
   flutter:
     sdk: flutter
   google_mlkit_text_recognition: ^0.16.0
+  image: ^4.5.4
 
 dev_dependencies:
   flutter_test:

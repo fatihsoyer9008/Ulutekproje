@@ -1,30 +1,17 @@
+import 'dart:io';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image/image.dart' as image_lib;
 
 import 'receipt_text_normalizer.dart';
-import 'receipt_confidence_warning.dart';
 import 'camera_failure.dart';
 
 /// Opens the back camera, captures a receipt and extracts its raw text on-device.
 class ReceiptScannerScreen extends StatefulWidget {
-  const ReceiptScannerScreen({
-    this.confidenceScore,
-    this.confidenceThreshold = ReceiptLowConfidenceWarning.defaultThreshold,
-    super.key,
-  }) : assert(
-         confidenceScore == null ||
-             (confidenceScore >= 0 && confidenceScore <= 1),
-       ),
-       assert(confidenceThreshold >= 0 && confidenceThreshold <= 1);
-
-  /// Confidence produced by the receipt parser, expressed from 0 to 1.
-  ///
-  /// This is nullable because the current OCR-only flow does not yet produce a
-  /// parser score. Pass the score once the parsing pipeline is available.
-  final double? confidenceScore;
-  final double confidenceThreshold;
+  const ReceiptScannerScreen({super.key});
 
   @override
   State<ReceiptScannerScreen> createState() => _ReceiptScannerScreenState();
@@ -128,18 +115,18 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     setState(() => _isScanning = true);
 
     try {
+      await _prepareCameraForReceipt(controller);
       final photo = await controller.takePicture();
-      final inputImage = InputImage.fromFilePath(photo.path);
-      final recognizedText = await _textRecognizer.processImage(inputImage);
+      final recognizedText = await _recognizeReceiptText(photo);
       final normalizedText = kDebugMode
           ? normalizeAndLogReceiptText(recognizedText.text, logger: debugPrint)
           : normalizeReceiptText(recognizedText.text);
 
       if (!mounted) return;
-      await _showRecognizedText(
-        normalizedText,
-        confidenceScore: widget.confidenceScore,
-      );
+      final shouldContinue = await _showRecognizedText(normalizedText);
+      if (shouldContinue && mounted) {
+        Navigator.of(context).pop(normalizedText);
+      }
     } on CameraException catch (error) {
       _showMessage(_cameraErrorMessage(error));
     } catch (error) {
@@ -149,61 +136,116 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     }
   }
 
-  Future<void> _showRecognizedText(
-    String text, {
-    required double? confidenceScore,
-  }) async {
-    final visibleText = text.trim().isEmpty
-        ? 'Fiş üzerinde okunabilir metin bulunamadı.'
-        : text;
+  Future<void> _prepareCameraForReceipt(CameraController controller) async {
+    try {
+      await controller.setFocusMode(FocusMode.auto);
+      await controller.setFocusPoint(const Offset(.5, .5));
+      await controller.setExposureMode(ExposureMode.auto);
+      await controller.setExposurePoint(const Offset(.5, .5));
+      await controller.setFlashMode(FlashMode.auto);
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+    } on CameraException {
+      // Some devices do not expose every focus/exposure control. Capturing can
+      // still continue with the camera's existing defaults.
+    }
+  }
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: FractionallySizedBox(
-          heightFactor: .72,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+  Future<RecognizedText> _recognizeReceiptText(XFile photo) async {
+    final originalResult = await _textRecognizer.processImage(
+      InputImage.fromFilePath(photo.path),
+    );
+    if (originalResult.text.trim().isNotEmpty) return originalResult;
+
+    final enhancedPath = '${photo.path}.ocr.jpg';
+    final enhancedFile = File(enhancedPath);
+    try {
+      final decoded = image_lib.decodeImage(await photo.readAsBytes());
+      if (decoded == null) return originalResult;
+
+      final oriented = image_lib.bakeOrientation(decoded);
+      final grayscale = image_lib.grayscale(oriented);
+      await enhancedFile.writeAsBytes(
+        image_lib.encodeJpg(grayscale, quality: 95),
+        flush: true,
+      );
+      return await _textRecognizer.processImage(
+        InputImage.fromFilePath(enhancedPath),
+      );
+    } on Exception {
+      return originalResult;
+    } finally {
+      if (await enhancedFile.exists()) {
+        await enhancedFile.delete();
+      }
+    }
+  }
+
+  Future<bool> _showRecognizedText(String text) async {
+    final hasReadableText = text.trim().isNotEmpty;
+    final visibleText = hasReadableText
+        ? text
+        : 'Fiş üzerinde okunabilir metin bulunamadı. Fişi düz bir zemine '
+              'yerleştirip iyi ışıkta ve kamerayı sabit tutarak tekrar deneyin.';
+
+    return await showModalBottomSheet<bool>(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          builder: (context) => SafeArea(
+            child: FractionallySizedBox(
+              heightFactor: .72,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Okunan Fiş Metni',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Kapat',
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    const Divider(),
                     Expanded(
-                      child: Text(
-                        'Okunan Fiş Metni',
-                        style: Theme.of(context).textTheme.titleLarge,
+                      child: SingleChildScrollView(
+                        child: SelectableText(visibleText),
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Kapat',
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        key: const Key('continue_with_ocr_button'),
+                        onPressed: () =>
+                            Navigator.pop(context, hasReadableText),
+                        icon: Icon(
+                          hasReadableText
+                              ? Icons.arrow_forward_rounded
+                              : Icons.refresh_rounded,
+                        ),
+                        label: Text(
+                          hasReadableText
+                              ? 'Bilgileri Kontrol Et'
+                              : 'Tekrar Tara',
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                const Divider(),
-                if (confidenceScore != null) ...[
-                  ReceiptLowConfidenceWarning(
-                    confidenceScore: confidenceScore,
-                    threshold: widget.confidenceThreshold,
-                  ),
-                  if (confidenceScore < widget.confidenceThreshold)
-                    const SizedBox(height: 16),
-                ],
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: SelectableText(visibleText),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
-    );
+        ) ??
+        false;
   }
 
   void _showCameraError(CameraFailure failure) {
