@@ -38,5 +38,17 @@ void main() {
       final draft = TransactionDraft.fromJson({'amount': '1234.56'});
       expect(draft.amountInMinor, 123456);
     });
+
+    test('reads the current FastAPI receipt response contract', () {
+      final draft = TransactionDraft.fromJson({
+        'merchant': 'MİGROS',
+        'total_amount_minor': 22050,
+        'category': 'Market',
+      });
+
+      expect(draft.institutionName, 'MİGROS');
+      expect(draft.amountInMinor, 22050);
+      expect(draft.category, 'Market');
+    });
   });
 }

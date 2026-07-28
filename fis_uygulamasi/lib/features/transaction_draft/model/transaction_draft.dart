@@ -18,7 +18,8 @@ class TransactionDraft {
 
   factory TransactionDraft.fromJson(Map<String, dynamic> json) {
     return TransactionDraft(
-      institutionName: json['merchant_name']?.toString().trim() ?? '',
+      institutionName:
+          (json['merchant'] ?? json['merchant_name'])?.toString().trim() ?? '',
       category: json['category']?.toString().trim() ?? '',
       amountInMinor: _parseAmountInMinor(json),
     );
@@ -31,7 +32,10 @@ class TransactionDraft {
   };
 
   static int? _parseAmountInMinor(Map<String, dynamic> json) {
-    final minorValue = json['amountInMinor'] ?? json['amount_in_minor'];
+    final minorValue =
+        json['total_amount_minor'] ??
+        json['amountInMinor'] ??
+        json['amount_in_minor'];
     if (minorValue != null) {
       return minorValue is int
           ? minorValue
