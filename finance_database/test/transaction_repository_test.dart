@@ -153,4 +153,168 @@ void main() {
       expect(fetched, isNull);
     });
   });
+  group('TransactionRepository analiz sorguları', () {
+    TransactionEntity transaction({
+      required int amountInMinor,
+      required TransactionCategory category,
+      required DateTime date,
+      TransactionType transactionType = TransactionType.expense,
+    }) {
+      return TransactionEntity()
+        ..transactionType = transactionType
+        ..amountInMinor = amountInMinor
+        ..category = category
+        ..date = date
+        ..source = TransactionSource.manual;
+    }
+
+    test('tarih aralığını gün sınırlarıyla filtreler ve azalan sıralar',
+        () async {
+      await repository.addTransaction(transaction(
+        amountInMinor: 100,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 10),
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 200,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 11, 23, 59, 59, 999),
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 210,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 11, 23, 59, 59, 999, 999),
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 10000,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 11, 12),
+        transactionType: TransactionType.income,
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 300,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 12),
+      ));
+
+      final results = await repository.getTransactionsBetween(
+        DateTime(2026, 7, 10, 14),
+        DateTime(2026, 7, 11, 8),
+      );
+
+      expect(
+        results.map((item) => item.amountInMinor).toList(),
+        equals([210, 200, 10000, 100]),
+      );
+
+      final expenses = await repository.getExpensesBetween(
+        DateTime(2026, 7, 10, 14),
+        DateTime(2026, 7, 11, 8),
+      );
+
+      expect(
+        expenses.map((item) => item.amountInMinor).toList(),
+        equals([210, 200, 100]),
+      );
+    });
+
+    test('son yedi günün toplamlarını boş günler dahil döndürür', () async {
+      await repository.addTransaction(transaction(
+        amountInMinor: 1250,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 23, 9),
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 250,
+        category: TransactionCategory.ulasim,
+        date: DateTime(2026, 7, 29, 18),
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 50000,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 29, 10),
+        transactionType: TransactionType.income,
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 999,
+        category: TransactionCategory.fatura,
+        date: DateTime(2026, 7, 22, 23),
+      ));
+
+      final totals = await repository.getWeeklyDailyTotals(
+        referenceDate: DateTime(2026, 7, 29, 12),
+      );
+
+      expect(totals, hasLength(7));
+      expect(totals[DateTime(2026, 7, 23)], equals(1250));
+      expect(totals[DateTime(2026, 7, 29)], equals(250));
+      expect(totals[DateTime(2026, 7, 24)], equals(0));
+    });
+
+    test('ayın kategori toplamlarını sadece ay içindeki işlemlerle hesaplar',
+        () async {
+      await repository.addTransaction(transaction(
+        amountInMinor: 1000,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 1),
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 500,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 29, 23),
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 250,
+        category: TransactionCategory.ulasim,
+        date: DateTime(2026, 7, 15),
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 50000,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 15, 12),
+        transactionType: TransactionType.income,
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 900,
+        category: TransactionCategory.fatura,
+        date: DateTime(2026, 6, 30, 23),
+      ));
+
+      final totals = await repository.getCurrentMonthCategoryTotals(
+        referenceDate: DateTime(2026, 7, 29),
+      );
+
+      expect(
+       totals,
+       equals({
+          TransactionCategory.market: 1500,
+          TransactionCategory.ulasim: 250,
+        }),
+      );
+    });
+    
+    test('başlangıç tarihi bitiş tarihinden sonra ise boş liste döndürmelidir', () async {
+      await repository.addTransaction(transaction(
+        amountInMinor: 5000,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 15),
+      ));
+
+      final results = await repository.getTransactionsBetween(
+        DateTime(2026, 7, 29), // Start > End
+        DateTime(2026, 7, 1),
+      );
+
+      expect(results, isEmpty);
+    });
+
+    test('boş veritabanında haftalık toplamlar 7 elemanlı ve tüm değerleri 0 dönmelidir', () async {
+      final totals = await repository.getWeeklyDailyTotals(
+        referenceDate: DateTime(2026, 7, 29),
+      );
+
+      expect(totals, hasLength(7));
+      expect(totals.values.every((amount) => amount == 0), isTrue);
+    });
+  });
 }

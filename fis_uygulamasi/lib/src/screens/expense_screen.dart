@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
+import '../../features/transaction_draft/presentation/receipt_analysis_page.dart';
 import '../../features/transaction_draft/presentation/transaction_draft_page.dart';
 
 typedef ReceiptScanLauncher = Future<String?> Function(BuildContext context);
@@ -146,18 +147,20 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     );
     if (!context.mounted || rawText == null || rawText.trim().isEmpty) return;
 
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
     unawaited(
-      showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const Center(child: CircularProgressIndicator()),
+      rootNavigator.push<void>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => const ReceiptAnalysisPage(),
+        ),
       ),
     );
 
     try {
       final result = await (widget.parseReceipt ?? _parseReceipt)(rawText);
       if (!context.mounted) return;
-      Navigator.of(context, rootNavigator: true).pop();
+      rootNavigator.pop();
 
       final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
         MaterialPageRoute(
@@ -179,7 +182,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       debugPrint('Fiş ayrıştırma hatası: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (!context.mounted) return;
-      Navigator.of(context, rootNavigator: true).pop();
+      rootNavigator.pop();
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
