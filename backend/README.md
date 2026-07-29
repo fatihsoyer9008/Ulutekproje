@@ -90,3 +90,31 @@ Swagger'da `POST /api/v1/parse-receipt` endpoint'ini açıp şu gövdeyle
 pip install -r requirements-dev.txt
 pytest
 ```
+
+## Auth altyapısını yerelde çalıştırma
+
+Kimlik doğrulama altyapısı PostgreSQL ve Redis kullanır. Proje kökünde:
+
+```powershell
+docker compose up -d postgres redis mailpit
+cd backend
+Copy-Item .env.example .env
+.\.venv\Scripts\Activate.ps1
+alembic upgrade head
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Yerel SMTP mesajları `http://127.0.0.1:8025` adresindeki Mailpit arayüzünde
+görülebilir. Auth uç noktaları Swagger'da `/api/v1/auth` etiketi altında
+listelenir.
+
+Geliştirme ortamındaki örnek JWT ve HMAC secret değerleri production için
+geçerli değildir. `APP_ENV=production` kullanıldığında uygulama zayıf secret
+ve kapalı e-posta teslimatıyla başlamayı reddeder.
+
+Migration durumunu kontrol etmek için:
+
+```powershell
+alembic current
+alembic upgrade head
+```

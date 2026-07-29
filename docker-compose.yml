@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-receipt_app}
+      POSTGRES_USER: ${POSTGRES_USER:-receipt_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-postgres-password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-receipt_app} -d ${POSTGRES_DB:-receipt_app}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "no"
+      - --requirepass
+      - ${REDIS_PASSWORD:-local-redis-password}
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - -a
+        - ${REDIS_PASSWORD:-local-redis-password}
+        - ping
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-receipt_app}:${POSTGRES_PASSWORD:-local-postgres-password}@postgres:5432/${POSTGRES_DB:-receipt_app}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-local-redis-password}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-local-development-jwt-secret-change-me}
+      SECURITY_HMAC_SECRET: ${SECURITY_HMAC_SECRET:-local-development-hmac-secret-change-me}
+      EMAIL_DELIVERY_MODE: smtp
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      APP_DEEP_LINK_BASE_URL: fiskon://auth
+      USE_DUMMY_PARSER: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+volumes:
+  postgres_data:
