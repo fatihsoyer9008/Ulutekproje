@@ -1,8 +1,7 @@
-import 'dart:convert';
-
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
+import '../../../core/network/api_client.dart';
 import '../model/transaction_draft.dart';
 
 class ReceiptParseResult {
@@ -52,58 +51,45 @@ class ReceiptParserException implements Exception {
 }
 
 class ReceiptParserClient {
-  ReceiptParserClient({required String baseUrl, http.Client? client})
-    : _client = client ?? http.Client(),
-      _endpoint = Uri.parse(
-        '${baseUrl.replaceFirst(RegExp(r'/$'), '')}/api/v1/parse-receipt',
-      );
+  // ignore: prefer_initializing_formals
+  ReceiptParserClient({required ApiClient apiClient}) : _apiClient = apiClient;
 
-  final http.Client _client;
-  final Uri _endpoint;
+  static const _endpoint = '/api/v1/parse-receipt';
+  final ApiClient _apiClient;
 
   Future<ReceiptParseResult> parse(String ocrText) async {
     if (ocrText.trim().isEmpty) {
       throw const ReceiptParserException('OCR metni boş olamaz.');
     }
 
-    late final http.Response response;
     try {
       debugPrint('Receipt API POST: $_endpoint');
-      response = await _client
-          .post(
-            _endpoint,
-            headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode({'ocr_text': ocrText}),
-          )
-          .timeout(const Duration(seconds: 30));
-    } on Exception catch (error) {
-      debugPrint('Receipt API bağlantı hatası ($_endpoint): $error');
-      throw ReceiptParserException('Fiş servisine bağlanılamadı: $error');
-    }
-
-    if (response.statusCode != 200) {
-      debugPrint(
-        'Receipt API hata cevabı ($_endpoint): ${response.statusCode} ${response.body}',
+      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+        _endpoint,
+        data: {'ocr_text': ocrText},
       );
-      throw ReceiptParserException(
-        'Fiş servisi ${response.statusCode} koduyla yanıt verdi.',
-      );
-    }
-
-    try {
-      final body = jsonDecode(utf8.decode(response.bodyBytes));
-      if (body is! Map<String, dynamic>) {
-        throw const FormatException('JSON nesnesi bekleniyordu.');
+      final body = response.data;
+      if (body == null) {
+        throw const ReceiptParserException('Fiş servisi boş cevap döndürdü.');
       }
       return ReceiptParseResult.fromJson(body);
     } on ReceiptParserException {
       rethrow;
+    } on DioException catch (error) {
+      debugPrint('Receipt API bağlantı hatası ($_endpoint): $error');
+      final statusCode = error.response?.statusCode;
+      if (statusCode != null) {
+        throw ReceiptParserException(
+          'Fiş servisi $statusCode koduyla yanıt verdi.',
+        );
+      }
+      throw ReceiptParserException(
+        'Fiş servisine bağlanılamadı: ${error.message}',
+      );
     } on FormatException catch (error) {
       throw ReceiptParserException(
         'Fiş servisi geçersiz JSON döndürdü: $error',
       );
     }
   }
-
-  void close() => _client.close();
 }
