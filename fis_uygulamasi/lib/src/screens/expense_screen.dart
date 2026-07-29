@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:core_ui/core_ui.dart';
+import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
-import '../../features/transaction_draft/model/transaction_draft.dart';
 import '../../features/transaction_draft/presentation/transaction_draft_page.dart';
 
 typedef ReceiptScanLauncher = Future<String?> Function(BuildContext context);
@@ -17,10 +17,16 @@ const _receiptApiBaseUrl = String.fromEnvironment(
 );
 
 class ExpenseScreen extends StatelessWidget {
-  const ExpenseScreen({super.key, this.scanReceipt, this.parseReceipt});
+  const ExpenseScreen({
+    super.key,
+    this.scanReceipt,
+    this.parseReceipt,
+    this.saveTransaction,
+  });
 
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
+  final Future<void> Function(TransactionEntity transaction)? saveTransaction;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -130,7 +136,7 @@ class ExpenseScreen extends StatelessWidget {
       if (!context.mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
 
-      await Navigator.of(context).push<TransactionDraft>(
+      final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
         MaterialPageRoute(
           builder: (_) => TransactionDraftPage(
             initialDraft: result.draft,
@@ -138,6 +144,12 @@ class ExpenseScreen extends StatelessWidget {
             isParseSuccessful: result.isParseSuccessful,
           ),
         ),
+      );
+      if (!context.mounted) return;
+      await _saveDraft(
+        context,
+        confirmedDraft,
+        source: TransactionSource.ocrLlm,
       );
     } on Exception catch (error) {
       if (!context.mounted) return;
@@ -157,12 +169,46 @@ class ExpenseScreen extends StatelessWidget {
   }
 
   Future<void> _openManualEntry(BuildContext context) async {
-    await Navigator.of(context).push<TransactionDraft>(
+    final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
       MaterialPageRoute(
         builder: (_) =>
             const TransactionDraftPage(mode: TransactionDraftPageMode.manual),
       ),
     );
+    if (!context.mounted) return;
+    await _saveDraft(context, confirmedDraft, source: TransactionSource.manual);
+  }
+
+  Future<void> _saveDraft(
+    BuildContext context,
+    TransactionDraft? draft, {
+    required TransactionSource source,
+  }) async {
+    final save = saveTransaction;
+    if (draft == null || save == null) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await save(
+        draft.toTransactionEntity(
+          source: source,
+          transactionType: TransactionType.expense,
+        ),
+      );
+      if (!context.mounted) return;
+
+      Navigator.of(context).pop();
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Gider başarıyla kaydedildi.')),
+        );
+    } on Exception catch (error) {
+      if (!context.mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('Gider kaydedilemedi: $error')));
+    }
   }
 
   Future<ReceiptParseResult> _parseReceipt(String rawText) async {

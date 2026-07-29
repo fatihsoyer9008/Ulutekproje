@@ -11,6 +11,7 @@ void main() {
             amountInMinor: 1250,
           ).toTransactionEntity(
             source: TransactionSource.ocrLlm,
+            transactionType: TransactionType.income,
             date: DateTime(2026, 7, 28),
             createdAt: DateTime(2026, 7, 27),
             rawOcrText: ' receipt ',
@@ -21,6 +22,7 @@ void main() {
       expect(entity.category, TransactionCategory.market);
       expect(entity.merchantName, 'Migros');
       expect(entity.source, TransactionSource.ocrLlm);
+      expect(entity.transactionType, TransactionType.income);
       expect(entity.date, DateTime(2026, 7, 28));
       expect(entity.createdAt, DateTime(2026, 7, 27));
       expect(entity.updatedAt, DateTime(2026, 7, 27));
@@ -40,6 +42,7 @@ void main() {
       expect(entity.category, TransactionCategory.diger);
       expect(entity.merchantName, isNull);
       expect(entity.source, TransactionSource.manual);
+      expect(entity.transactionType, TransactionType.expense);
       expect(entity.rawOcrText, isNull);
       expect(entity.note, isNull);
       expect(entity.updatedAt, DateTime(2026, 7, 27));
