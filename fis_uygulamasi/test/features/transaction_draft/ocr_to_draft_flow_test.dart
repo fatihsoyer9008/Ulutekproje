@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
 import 'package:app_main/features/transaction_draft/model/transaction_draft.dart';
 import 'package:app_main/src/screens/expense_screen.dart';
@@ -5,6 +7,45 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('shows changing analysis messages while the API is pending', (
+    tester,
+  ) async {
+    final response = Completer<ReceiptParseResult>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExpenseScreen(
+          scanReceipt: (_) async => 'OCR metni',
+          parseReceipt: (_) => response.future,
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('ocr_camera_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byKey(const Key('receipt_analysis_page')), findsOneWidget);
+    expect(find.text('Gider Ekle'), findsNothing);
+    expect(find.text('Fişiniz inceleniyor...'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 2900));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Rakamlar tek tek doğrulanıyor...'), findsOneWidget);
+
+    response.complete(
+      const ReceiptParseResult(
+        draft: TransactionDraft.empty(),
+        normalizedOcrText: 'OCR metni',
+        confidenceScore: 0.9,
+        isParseSuccessful: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('receipt_analysis_page')), findsNothing);
+    expect(find.text('İşlemi Kontrol Et'), findsOneWidget);
+  });
+
   testWidgets('opens the populated confirmation page after OCR parsing', (
     tester,
   ) async {
