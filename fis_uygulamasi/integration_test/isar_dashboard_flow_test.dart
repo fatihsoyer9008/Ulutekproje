@@ -59,15 +59,13 @@ void main() {
         ),
       );
 
-      await _pumpUntilFound(
+      await _pumpUntilTextContains(
         tester,
-        find.byKey(const Key('total_balance')),
+        const Key('total_balance'),
+        '100,00',
       );
 
-      expect(
-        _textOf(tester, const Key('total_balance')),
-        contains('100,00'),
-      );
+      expect(_textOf(tester, const Key('total_balance')), contains('100,00'));
 
       // Uygulama arayüzünden gider ekle.
       await tester.tap(find.text('Gider Gir'));
@@ -80,27 +78,15 @@ void main() {
         find.byKey(const Key('institution_name_field')),
         'Entegrasyon Test Market',
       );
-      await tester.enterText(
-        find.byKey(const Key('category_field')),
-        'Market',
-      );
-      await tester.enterText(
-        find.byKey(const Key('amount_field')),
-        '25,00',
-      );
+      await tester.enterText(find.byKey(const Key('category_field')), 'Market');
+      await tester.enterText(find.byKey(const Key('amount_field')), '25,00');
 
       await tester.tap(find.byKey(const Key('confirm_draft_button')));
 
       // Kaydın ardından Dashboard'a dönülmeli ve bakiye ₺25 azalmalı.
-      await _pumpUntilFound(
-        tester,
-        find.byKey(const Key('total_balance')),
-      );
+      await _pumpUntilTextContains(tester, const Key('total_balance'), '75,00');
 
-      expect(
-        _textOf(tester, const Key('total_balance')),
-        contains('75,00'),
-      );
+      expect(_textOf(tester, const Key('total_balance')), contains('75,00'));
 
       // Hesap Hareketleri sekmesinde yeni gider görünmeli.
       await tester.tap(
@@ -110,10 +96,7 @@ void main() {
         ),
       );
 
-      await _pumpUntilFound(
-        tester,
-        find.text('Entegrasyon Test Market'),
-      );
+      await _pumpUntilFound(tester, find.text('Entegrasyon Test Market'));
 
       expect(find.text('-₺25,00'), findsOneWidget);
 
@@ -133,10 +116,7 @@ void main() {
   );
 }
 
-Future<void> _pumpUntilFound(
-  WidgetTester tester,
-  Finder finder,
-) async {
+Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
   for (var attempt = 0; attempt < 30; attempt++) {
     await tester.pump(const Duration(milliseconds: 200));
 
@@ -151,6 +131,24 @@ Future<void> _pumpUntilFound(
 String _textOf(WidgetTester tester, Key key) {
   final text = tester.widget<Text>(find.byKey(key));
   return text.data ?? '';
+}
+
+Future<void> _pumpUntilTextContains(
+  WidgetTester tester,
+  Key key,
+  String expected,
+) async {
+  for (var attempt = 0; attempt < 30; attempt++) {
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final finder = find.byKey(key);
+    if (finder.evaluate().isNotEmpty &&
+        _textOf(tester, key).contains(expected)) {
+      return;
+    }
+  }
+
+  throw TestFailure('Beklenen metin bulunamadı: key=$key, expected=$expected');
 }
 
 TransactionEntity _income(String merchant, int amountInMinor) {

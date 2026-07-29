@@ -40,12 +40,14 @@ void main() {
 
     await tester.pumpWidget(
       FinanceApp(
+        transactionStream: Stream.value(const <TransactionEntity>[]),
         scanReceipt: (_) async {
           scanLaunchCount++;
           return null;
         },
       ),
     );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Gider Gir'));
     await tester.pumpAndSettle();
 
@@ -57,7 +59,13 @@ void main() {
   testWidgets('returning from the camera keeps the expense screen open', (
     tester,
   ) async {
-    await tester.pumpWidget(FinanceApp(scanReceipt: (_) async => null));
+    await tester.pumpWidget(
+      FinanceApp(
+        transactionStream: Stream.value(const <TransactionEntity>[]),
+        scanReceipt: (_) async => null,
+      ),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Gider Gir'));
     await tester.pumpAndSettle();
 
