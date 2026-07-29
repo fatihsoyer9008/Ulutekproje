@@ -3,7 +3,6 @@ import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'src/app/finance_app.dart';
-import 'src/screens/dashboard_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,25 +10,33 @@ Future<void> main() async {
   final isar = await IsarService.getInstance();
   final transactionRepository = TransactionRepository(isar);
   runApp(
-    FinanceApp(transactionLoader: transactionRepository.getAllTransactions),
+    FinanceApp(
+      transactionStream: transactionRepository.watchAllTransactions(),
+      saveTransaction: (transaction) async {
+        await transactionRepository.addTransaction(transaction);
+      },
+    ),
   );
 }
 
 class FinanceApp extends StatelessWidget {
   const FinanceApp({
     super.key,
-    this.transactionLoader = _emptyTransactionLoader,
+    this.transactionStream = const Stream<List<TransactionEntity>>.empty(),
+    this.saveTransaction,
   });
 
-  final TransactionLoader transactionLoader;
+  final Stream<List<TransactionEntity>> transactionStream;
+  final Future<void> Function(TransactionEntity transaction)? saveTransaction;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Cüzdanım',
     debugShowCheckedModeBanner: false,
     theme: AppTheme.light,
-    home: FinanceHome(transactionLoader: transactionLoader),
+    home: FinanceHome(
+      transactionStream: transactionStream,
+      saveTransaction: saveTransaction,
+    ),
   );
 }
-
-Future<List<TransactionEntity>> _emptyTransactionLoader() async => [];

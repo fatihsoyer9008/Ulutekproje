@@ -23,6 +23,11 @@ class TransactionRepository {
     return await _isar.transactionEntitys.where().findAll();
   }
 
+  /// Mevcut işlemleri ve veritabanındaki sonraki değişiklikleri yayınlar.
+  Stream<List<TransactionEntity>> watchAllTransactions() {
+    return _isar.transactionEntitys.where().watch(fireImmediately: true);
+  }
+
   /// ID'ye göre tek bir işlemi getirir.
   Future<TransactionEntity?> getTransactionById(Id id) async {
     return await _isar.transactionEntitys.get(id);

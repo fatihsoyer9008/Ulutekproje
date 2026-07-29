@@ -1,6 +1,8 @@
 import 'package:core_ui/core_ui.dart';
+import 'package:finance_database/finance_database.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../models/ui_models.dart';
 
@@ -9,6 +11,52 @@ class StatisticsScreen extends StatelessWidget {
     super.key,
     this.categories = const [],
     this.monthlySpending = const [],
+    this.transactionStream,
+  });
+
+  final List<CategorySummary> categories;
+  final List<MonthlySpending> monthlySpending;
+  final Stream<List<TransactionEntity>>? transactionStream;
+
+  @override
+  Widget build(BuildContext context) {
+    final stream = transactionStream;
+    if (stream == null) {
+      return _StatisticsContent(
+        categories: categories,
+        monthlySpending: monthlySpending,
+      );
+    }
+
+    return StreamBuilder<List<TransactionEntity>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(child: Text('İstatistikler yüklenemedi.'));
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final expenses = snapshot.data!
+            .where(
+              (transaction) =>
+                  transaction.transactionType == TransactionType.expense,
+            )
+            .toList();
+        return _StatisticsContent(
+          categories: _categorySummaries(expenses),
+          monthlySpending: _monthlySpending(expenses),
+        );
+      },
+    );
+  }
+}
+
+class _StatisticsContent extends StatelessWidget {
+  const _StatisticsContent({
+    required this.categories,
+    required this.monthlySpending,
   });
 
   final List<CategorySummary> categories;
@@ -63,6 +111,92 @@ class StatisticsScreen extends StatelessWidget {
     ],
   );
 }
+
+List<MonthlySpending> _monthlySpending(List<TransactionEntity> transactions) {
+  if (transactions.isEmpty) return const [];
+
+  final now = DateTime.now();
+  return [
+    for (var monthOffset = 5; monthOffset >= 0; monthOffset--)
+      _monthlyTotal(transactions, DateTime(now.year, now.month - monthOffset)),
+  ];
+}
+
+MonthlySpending _monthlyTotal(
+  List<TransactionEntity> transactions,
+  DateTime month,
+) {
+  final total = transactions
+      .where(
+        (transaction) =>
+            transaction.date.year == month.year &&
+            transaction.date.month == month.month,
+      )
+      .fold<int>(0, (sum, transaction) => sum + transaction.amountInMinor);
+  return MonthlySpending(DateFormat.MMM('tr_TR').format(month), total);
+}
+
+List<CategorySummary> _categorySummaries(List<TransactionEntity> transactions) {
+  if (transactions.isEmpty) return const [];
+
+  final totals = <TransactionCategory, int>{};
+  for (final transaction in transactions) {
+    totals.update(
+      transaction.category,
+      (total) => total + transaction.amountInMinor,
+      ifAbsent: () => transaction.amountInMinor,
+    );
+  }
+  final overallTotal = totals.values.fold<int>(0, (sum, value) => sum + value);
+  final summaries = [
+    for (final entry in totals.entries)
+      CategorySummary(
+        _categoryName(entry.key),
+        _formatTry(entry.value),
+        overallTotal == 0 ? 0 : entry.value / overallTotal,
+        _categoryColor(entry.key),
+        _categoryIcon(entry.key),
+      ),
+  ];
+  summaries.sort((first, second) => second.progress.compareTo(first.progress));
+  return summaries;
+}
+
+String _formatTry(int amountInMinor) => NumberFormat.currency(
+  locale: 'tr_TR',
+  symbol: '₺',
+  decimalDigits: 2,
+).format(amountInMinor / 100);
+
+String _categoryName(TransactionCategory category) => switch (category) {
+  TransactionCategory.market => 'Market',
+  TransactionCategory.ulasim => 'Ulaşım',
+  TransactionCategory.fatura => 'Fatura',
+  TransactionCategory.eglence => 'Eğlence',
+  TransactionCategory.saglik => 'Sağlık',
+  TransactionCategory.giyim => 'Giyim',
+  TransactionCategory.diger => 'Diğer',
+};
+
+Color _categoryColor(TransactionCategory category) => switch (category) {
+  TransactionCategory.market => AppColors.primary,
+  TransactionCategory.ulasim => AppColors.blue,
+  TransactionCategory.fatura => AppColors.expense,
+  TransactionCategory.eglence => AppColors.blue,
+  TransactionCategory.saglik => AppColors.income,
+  TransactionCategory.giyim => AppColors.warning,
+  TransactionCategory.diger => AppColors.muted,
+};
+
+IconData _categoryIcon(TransactionCategory category) => switch (category) {
+  TransactionCategory.market => Icons.shopping_basket_outlined,
+  TransactionCategory.ulasim => Icons.directions_bus_outlined,
+  TransactionCategory.fatura => Icons.receipt_long_outlined,
+  TransactionCategory.eglence => Icons.movie_outlined,
+  TransactionCategory.saglik => Icons.health_and_safety_outlined,
+  TransactionCategory.giyim => Icons.checkroom_outlined,
+  TransactionCategory.diger => Icons.category_outlined,
+};
 
 class _Chart extends StatelessWidget {
   const _Chart({required this.monthlySpending});

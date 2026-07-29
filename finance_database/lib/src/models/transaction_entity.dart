@@ -4,6 +4,8 @@ part 'transaction_entity.g.dart';
 
 enum TransactionSource { ocrRegex, ocrLlm, manual }
 
+enum TransactionType { expense, income }
+
 enum TransactionCategory {
   market,
   ulasim,
@@ -17,6 +19,9 @@ enum TransactionCategory {
 @collection
 class TransactionEntity {
   Id id = Isar.autoIncrement;
+
+  @Enumerated(EnumType.name)
+  TransactionType transactionType = TransactionType.expense;
 
   /// Kuruş cinsinden (12,50 TL → 1250). Float hatasını önler.
   late int amountInMinor;

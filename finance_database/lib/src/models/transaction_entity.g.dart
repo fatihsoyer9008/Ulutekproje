@@ -59,8 +59,14 @@ const TransactionEntitySchema = CollectionSchema(
       type: IsarType.string,
       enumMap: _TransactionEntitysourceEnumValueMap,
     ),
-    r'updatedAt': PropertySchema(
+    r'transactionType': PropertySchema(
       id: 8,
+      name: r'transactionType',
+      type: IsarType.string,
+      enumMap: _TransactionEntitytransactionTypeEnumValueMap,
+    ),
+    r'updatedAt': PropertySchema(
+      id: 9,
       name: r'updatedAt',
       type: IsarType.dateTime,
     )
@@ -105,6 +111,7 @@ int _transactionEntityEstimateSize(
     }
   }
   bytesCount += 3 + object.source.name.length * 3;
+  bytesCount += 3 + object.transactionType.name.length * 3;
   return bytesCount;
 }
 
@@ -122,7 +129,8 @@ void _transactionEntitySerialize(
   writer.writeString(offsets[5], object.note);
   writer.writeString(offsets[6], object.rawOcrText);
   writer.writeString(offsets[7], object.source.name);
-  writer.writeDateTime(offsets[8], object.updatedAt);
+  writer.writeString(offsets[8], object.transactionType.name);
+  writer.writeDateTime(offsets[9], object.updatedAt);
 }
 
 TransactionEntity _transactionEntityDeserialize(
@@ -145,7 +153,10 @@ TransactionEntity _transactionEntityDeserialize(
   object.source = _TransactionEntitysourceValueEnumMap[
           reader.readStringOrNull(offsets[7])] ??
       TransactionSource.ocrRegex;
-  object.updatedAt = reader.readDateTime(offsets[8]);
+  object.transactionType = _TransactionEntitytransactionTypeValueEnumMap[
+          reader.readStringOrNull(offsets[8])] ??
+      TransactionType.expense;
+  object.updatedAt = reader.readDateTime(offsets[9]);
   return object;
 }
 
@@ -177,6 +188,10 @@ P _transactionEntityDeserializeProp<P>(
               reader.readStringOrNull(offset)] ??
           TransactionSource.ocrRegex) as P;
     case 8:
+      return (_TransactionEntitytransactionTypeValueEnumMap[
+              reader.readStringOrNull(offset)] ??
+          TransactionType.expense) as P;
+    case 9:
       return (reader.readDateTime(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -210,6 +225,14 @@ const _TransactionEntitysourceValueEnumMap = {
   r'ocrRegex': TransactionSource.ocrRegex,
   r'ocrLlm': TransactionSource.ocrLlm,
   r'manual': TransactionSource.manual,
+};
+const _TransactionEntitytransactionTypeEnumValueMap = {
+  r'expense': r'expense',
+  r'income': r'income',
+};
+const _TransactionEntitytransactionTypeValueEnumMap = {
+  r'expense': TransactionType.expense,
+  r'income': TransactionType.income,
 };
 
 Id _transactionEntityGetId(TransactionEntity object) {
@@ -1267,6 +1290,142 @@ extension TransactionEntityQueryFilter
   }
 
   QueryBuilder<TransactionEntity, TransactionEntity, QAfterFilterCondition>
+      transactionTypeEqualTo(
+    TransactionType value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'transactionType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterFilterCondition>
+      transactionTypeGreaterThan(
+    TransactionType value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'transactionType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterFilterCondition>
+      transactionTypeLessThan(
+    TransactionType value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'transactionType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterFilterCondition>
+      transactionTypeBetween(
+    TransactionType lower,
+    TransactionType upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'transactionType',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterFilterCondition>
+      transactionTypeStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'transactionType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterFilterCondition>
+      transactionTypeEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'transactionType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterFilterCondition>
+      transactionTypeContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'transactionType',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterFilterCondition>
+      transactionTypeMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'transactionType',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterFilterCondition>
+      transactionTypeIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'transactionType',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterFilterCondition>
+      transactionTypeIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'transactionType',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterFilterCondition>
       updatedAtEqualTo(DateTime value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
@@ -1444,6 +1603,20 @@ extension TransactionEntityQuerySortBy
   }
 
   QueryBuilder<TransactionEntity, TransactionEntity, QAfterSortBy>
+      sortByTransactionType() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'transactionType', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterSortBy>
+      sortByTransactionTypeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'transactionType', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterSortBy>
       sortByUpdatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'updatedAt', Sort.asc);
@@ -1586,6 +1759,20 @@ extension TransactionEntityQuerySortThenBy
   }
 
   QueryBuilder<TransactionEntity, TransactionEntity, QAfterSortBy>
+      thenByTransactionType() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'transactionType', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterSortBy>
+      thenByTransactionTypeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'transactionType', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QAfterSortBy>
       thenByUpdatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'updatedAt', Sort.asc);
@@ -1659,6 +1846,14 @@ extension TransactionEntityQueryWhereDistinct
   }
 
   QueryBuilder<TransactionEntity, TransactionEntity, QDistinct>
+      distinctByTransactionType({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'transactionType',
+          caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionEntity, QDistinct>
       distinctByUpdatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'updatedAt');
@@ -1725,6 +1920,13 @@ extension TransactionEntityQueryProperty
       sourceProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'source');
+    });
+  }
+
+  QueryBuilder<TransactionEntity, TransactionType, QQueryOperations>
+      transactionTypeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'transactionType');
     });
   }
 

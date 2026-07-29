@@ -1,9 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:isar/isar.dart';
 
 // Projenin barrel/export dosyası ve modelleri
-import 'package:finance_database/finance_database.dart'; 
+import 'package:finance_database/finance_database.dart';
 
 void main() {
   late Directory tempDir;
@@ -42,14 +43,14 @@ void main() {
       await isar.clear();
     });
   });
-  
+
   // 4. TEST SENARYOLARI (CRUD)
   group('TransactionRepository CRUD Testleri', () {
-    
     // Test 1: Ekleme & ID ile Getirme
     test('Transaction ekleme ve ID ile getirme senaryosu', () async {
       final newTransaction = TransactionEntity()
-        ..amountInMinor = 1250 // 12.50 TL
+        ..amountInMinor =
+            1250 // 12.50 TL
         ..category = TransactionCategory.market
         ..date = DateTime.now()
         ..source = TransactionSource.manual
@@ -84,6 +85,32 @@ void main() {
       final list = await repository.getAllTransactions();
 
       expect(list.length, equals(2));
+    });
+
+    test('Yeni kayıtları stream üzerinden anlık yayınlar', () async {
+      final transactions = StreamIterator(repository.watchAllTransactions());
+
+      expect(await transactions.moveNext(), isTrue);
+      expect(transactions.current, isEmpty);
+
+      final transaction = TransactionEntity()
+        ..transactionType = TransactionType.income
+        ..amountInMinor = 1250
+        ..category = TransactionCategory.market
+        ..date = DateTime.now()
+        ..source = TransactionSource.manual;
+
+      await repository.addTransaction(transaction);
+
+      expect(await transactions.moveNext(), isTrue);
+      expect(transactions.current, hasLength(1));
+      expect(transactions.current.single.amountInMinor, 1250);
+      expect(
+        transactions.current.single.transactionType,
+        TransactionType.income,
+      );
+
+      await transactions.cancel();
     });
 
     // Test 3: Güncelleme
@@ -125,6 +152,5 @@ void main() {
       final fetched = await repository.getTransactionById(id);
       expect(fetched, isNull);
     });
-
   });
 }
