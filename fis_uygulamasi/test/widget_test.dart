@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_main/main.dart';
+import 'package:app_main/src/screens/expense_screen.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,11 +33,35 @@ void main() {
     expect(find.text('Genel İstatistik'), findsOneWidget);
   });
 
-  testWidgets('expense screen exposes OCR action', (tester) async {
-    await tester.pumpWidget(const FinanceApp());
+  testWidgets('dashboard expense action starts the scanner only once', (
+    tester,
+  ) async {
+    var scanLaunchCount = 0;
+
+    await tester.pumpWidget(
+      FinanceApp(
+        scanReceipt: (_) async {
+          scanLaunchCount++;
+          return null;
+        },
+      ),
+    );
     await tester.tap(find.text('Gider Gir'));
     await tester.pumpAndSettle();
 
+    expect(scanLaunchCount, 1);
+    await tester.pump(const Duration(seconds: 1));
+    expect(scanLaunchCount, 1);
+  });
+
+  testWidgets('returning from the camera keeps the expense screen open', (
+    tester,
+  ) async {
+    await tester.pumpWidget(FinanceApp(scanReceipt: (_) async => null));
+    await tester.tap(find.text('Gider Gir'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ExpenseScreen), findsOneWidget);
     expect(find.byKey(const Key('ocr_camera_button')), findsOneWidget);
     expect(find.text('Abonelikler'), findsOneWidget);
   });
@@ -75,6 +100,7 @@ void main() {
     await tester.pumpWidget(
       FinanceApp(
         transactionStream: transactions.stream,
+        scanReceipt: (_) async => null,
         saveTransaction: (transaction) async {
           savedTransactions.add(transaction);
           transactions.add(List.of(savedTransactions));

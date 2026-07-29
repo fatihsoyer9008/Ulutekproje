@@ -10,11 +10,13 @@ class DashboardScreen extends StatelessWidget {
   const DashboardScreen({
     required this.transactionStream,
     this.saveTransaction,
+    this.scanReceipt,
     super.key,
   });
 
   final Stream<List<TransactionEntity>> transactionStream;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
+  final ReceiptScanLauncher? scanReceipt;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -45,7 +47,11 @@ class DashboardScreen extends StatelessWidget {
               isPrimary: false,
               onPressed: () => _open(
                 context,
-                ExpenseScreen(saveTransaction: saveTransaction),
+                ExpenseScreen(
+                  saveTransaction: saveTransaction,
+                  scanReceipt: scanReceipt,
+                  openScannerOnStart: true,
+                ),
               ),
             ),
           ),

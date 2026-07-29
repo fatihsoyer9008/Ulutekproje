@@ -17,17 +17,38 @@ const _receiptApiBaseUrl = String.fromEnvironment(
   defaultValue: 'http://10.0.2.2:8000',
 );
 
-class ExpenseScreen extends StatelessWidget {
+class ExpenseScreen extends StatefulWidget {
   const ExpenseScreen({
     super.key,
     this.scanReceipt,
     this.parseReceipt,
     this.saveTransaction,
+    this.openScannerOnStart = false,
   });
 
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
+  final bool openScannerOnStart;
+
+  @override
+  State<ExpenseScreen> createState() => _ExpenseScreenState();
+}
+
+class _ExpenseScreenState extends State<ExpenseScreen> {
+  bool _initialScannerOpened = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.openScannerOnStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _initialScannerOpened) return;
+        _initialScannerOpened = true;
+        unawaited(_openReceiptScanner(context));
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -121,7 +142,9 @@ class ExpenseScreen extends StatelessWidget {
   );
 
   Future<void> _openReceiptScanner(BuildContext context) async {
-    final rawText = await (scanReceipt ?? _launchReceiptScanner)(context);
+    final rawText = await (widget.scanReceipt ?? _launchReceiptScanner)(
+      context,
+    );
     if (!context.mounted || rawText == null || rawText.trim().isEmpty) return;
 
     final rootNavigator = Navigator.of(context, rootNavigator: true);
@@ -135,7 +158,7 @@ class ExpenseScreen extends StatelessWidget {
     );
 
     try {
-      final result = await (parseReceipt ?? _parseReceipt)(rawText);
+      final result = await (widget.parseReceipt ?? _parseReceipt)(rawText);
       if (!context.mounted) return;
       rootNavigator.pop();
 
@@ -190,7 +213,7 @@ class ExpenseScreen extends StatelessWidget {
     TransactionDraft? draft, {
     required TransactionSource source,
   }) async {
-    final save = saveTransaction;
+    final save = widget.saveTransaction;
     if (draft == null || save == null) return;
 
     final messenger = ScaffoldMessenger.of(context);

@@ -3,6 +3,7 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import '../screens/calendar_screen.dart';
 import '../screens/dashboard_screen.dart';
+import '../screens/expense_screen.dart';
 import '../screens/savings_screen.dart';
 import '../screens/statistics_screen.dart';
 import '../screens/transactions_screen.dart';
@@ -11,11 +12,13 @@ class FinanceHome extends StatefulWidget {
   const FinanceHome({
     required this.transactionStream,
     this.saveTransaction,
+    this.scanReceipt,
     super.key,
   });
 
   final Stream<List<TransactionEntity>> transactionStream;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
+  final ReceiptScanLauncher? scanReceipt;
 
   @override
   State<FinanceHome> createState() => _FinanceHomeState();
@@ -52,6 +55,7 @@ class _FinanceHomeState extends State<FinanceHome> {
       DashboardScreen(
         transactionStream: _transactionStream,
         saveTransaction: widget.saveTransaction,
+        scanReceipt: widget.scanReceipt,
       ),
       StatisticsScreen(transactionStream: _transactionStream),
       const SavingsScreen(),

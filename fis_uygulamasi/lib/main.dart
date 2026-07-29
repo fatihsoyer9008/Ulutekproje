@@ -3,6 +3,7 @@ import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'src/app/finance_app.dart';
+import 'src/screens/expense_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,10 +25,12 @@ class FinanceApp extends StatelessWidget {
     super.key,
     this.transactionStream = const Stream<List<TransactionEntity>>.empty(),
     this.saveTransaction,
+    this.scanReceipt,
   });
 
   final Stream<List<TransactionEntity>> transactionStream;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
+  final ReceiptScanLauncher? scanReceipt;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -37,6 +40,7 @@ class FinanceApp extends StatelessWidget {
     home: FinanceHome(
       transactionStream: transactionStream,
       saveTransaction: saveTransaction,
+      scanReceipt: scanReceipt,
     ),
   );
 }
