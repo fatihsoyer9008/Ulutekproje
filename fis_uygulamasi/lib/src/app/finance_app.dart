@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:core_ui/core_ui.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
@@ -13,13 +11,13 @@ import '../screens/transactions_screen.dart';
 
 class FinanceHome extends StatefulWidget {
   const FinanceHome({
-    required this.transactionStream,
+    required this.transactions,
     this.saveTransaction,
     this.scanReceipt,
     super.key,
   });
 
-  final Stream<List<TransactionEntity>> transactionStream;
+  final List<TransactionEntity> transactions;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
 
@@ -30,11 +28,6 @@ class FinanceHome extends StatefulWidget {
 class _FinanceHomeState extends State<FinanceHome> {
   int _index = 0;
 
-  late Stream<List<TransactionEntity>> _transactionStream;
-  StreamController<List<TransactionEntity>>? _transactionController;
-  StreamSubscription<List<TransactionEntity>>? _transactionSubscription;
-  List<TransactionEntity>? _latestTransactions;
-
   static const _titles = [
     'Günaydın, Deniz',
     'İstatistikler',
@@ -44,84 +37,17 @@ class _FinanceHomeState extends State<FinanceHome> {
   ];
 
   @override
-  void initState() {
-    super.initState();
-    _connectTransactionStream(widget.transactionStream);
-  }
-
-  @override
-  void didUpdateWidget(covariant FinanceHome oldWidget) {
-    super.didUpdateWidget(oldWidget);
-
-    if (oldWidget.transactionStream != widget.transactionStream) {
-      _connectTransactionStream(widget.transactionStream);
-    }
-  }
-
-  void _connectTransactionStream(
-    Stream<List<TransactionEntity>> source,
-  ) {
-    _transactionSubscription?.cancel();
-    _transactionController?.close();
-
-    _latestTransactions = null;
-
-    late StreamController<List<TransactionEntity>> controller;
-
-    controller = StreamController<List<TransactionEntity>>.broadcast(
-      sync: true,
-      onListen: () {
-        final latest = _latestTransactions;
-
-        if (latest != null && !controller.isClosed) {
-          controller.add(latest);
-        }
-      },
-    );
-
-    _transactionController = controller;
-    _transactionStream = controller.stream;
-
-    _transactionSubscription = source.listen(
-      (transactions) {
-        _latestTransactions = transactions;
-
-        if (!controller.isClosed) {
-          controller.add(transactions);
-        }
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        if (!controller.isClosed) {
-          controller.addError(error, stackTrace);
-        }
-      },
-      onDone: () {
-        if (!controller.isClosed) {
-          controller.close();
-        }
-      },
-    );
-  }
-
-  @override
-  void dispose() {
-    _transactionSubscription?.cancel();
-    _transactionController?.close();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final screens = [
       DashboardScreen(
-        transactionStream: _transactionStream,
+        transactions: widget.transactions,
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
       ),
-      StatisticsScreen(transactionStream: _transactionStream),
+      StatisticsScreen(transactions: widget.transactions),
       const SavingsScreen(),
       const CalendarScreen(),
-      TransactionsScreen(transactionStream: _transactionStream),
+      TransactionsScreen(transactions: widget.transactions),
     ];
 
     return AppShell(

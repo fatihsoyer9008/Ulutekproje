@@ -15,21 +15,12 @@ Future<void> main() async {
 
   runApp(
     FinanceApp(
-      transactionStream: _transactionStream(transactionRepository),
+      transactionStream: transactionRepository.watchAllTransactions(),
       saveTransaction: (transaction) async {
         await transactionRepository.addTransaction(transaction);
       },
     ),
   );
-}
-
-/// Uygulama ilk açıldığında mevcut Isar verisini hemen verir,
-/// ardından yeni değişiklikleri repository stream'inden dinler.
-Stream<List<TransactionEntity>> _transactionStream(
-  TransactionRepository repository,
-) async* {
-  yield await repository.getAllTransactions();
-  yield* repository.watchAllTransactions();
 }
 
 class FinanceApp extends StatelessWidget {
@@ -49,10 +40,31 @@ class FinanceApp extends StatelessWidget {
     title: 'Cüzdanım',
     debugShowCheckedModeBanner: false,
     theme: AppTheme.light,
-    home: FinanceHome(
-      transactionStream: transactionStream,
-      saveTransaction: saveTransaction,
-      scanReceipt: scanReceipt,
+    home: StreamBuilder<List<TransactionEntity>>(
+      stream: transactionStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Scaffold(
+            body: Center(
+              child: Text('İşlemler yüklenemedi.'),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        return FinanceHome(
+          transactions: snapshot.requireData,
+          saveTransaction: saveTransaction,
+          scanReceipt: scanReceipt,
+        );
+      },
     ),
   );
 }
