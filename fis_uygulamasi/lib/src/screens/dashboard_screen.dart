@@ -6,33 +6,15 @@ import 'package:intl/intl.dart';
 import 'expense_screen.dart';
 import 'income_screen.dart';
 
-typedef TransactionLoader = Future<List<TransactionEntity>> Function();
+class DashboardScreen extends StatelessWidget {
+  const DashboardScreen({
+    required this.transactionStream,
+    this.saveTransaction,
+    super.key,
+  });
 
-class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({required this.transactionLoader, super.key});
-
-  final TransactionLoader transactionLoader;
-
-  @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
-}
-
-class _DashboardScreenState extends State<DashboardScreen> {
-  late Future<List<TransactionEntity>> _transactions;
-
-  @override
-  void initState() {
-    super.initState();
-    _transactions = widget.transactionLoader();
-  }
-
-  @override
-  void didUpdateWidget(covariant DashboardScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.transactionLoader != widget.transactionLoader) {
-      _transactions = widget.transactionLoader();
-    }
-  }
+  final Stream<List<TransactionEntity>> transactionStream;
+  final Future<void> Function(TransactionEntity transaction)? saveTransaction;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -41,7 +23,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       const Text('Finansal durumun'),
       Text('Kontrol sende.', style: Theme.of(context).textTheme.headlineMedium),
       const SizedBox(height: 22),
-      _BalanceCard(transactions: _transactions),
+      _BalanceCard(transactions: transactionStream),
       const SizedBox(height: 16),
       Row(
         children: [
@@ -49,7 +31,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: PrimaryActionButton(
               label: 'Gelir Gir',
               icon: Icons.south_west_rounded,
-              onPressed: () => _open(context, const IncomeScreen()),
+              onPressed: () => _open(
+                context,
+                IncomeScreen(saveTransaction: saveTransaction),
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -58,7 +43,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               label: 'Gider Gir',
               icon: Icons.north_east_rounded,
               isPrimary: false,
-              onPressed: () => _open(context, const ExpenseScreen()),
+              onPressed: () => _open(
+                context,
+                ExpenseScreen(saveTransaction: saveTransaction),
+              ),
             ),
           ),
         ],
@@ -109,7 +97,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 class _BalanceCard extends StatelessWidget {
   const _BalanceCard({required this.transactions});
 
-  final Future<List<TransactionEntity>> transactions;
+  final Stream<List<TransactionEntity>> transactions;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -145,10 +133,18 @@ class _BalanceCard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        FutureBuilder<List<TransactionEntity>>(
-          future: transactions,
+        StreamBuilder<List<TransactionEntity>>(
+          stream: transactions,
           builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
+            if (snapshot.hasError) {
+              return const Text(
+                'Bakiye yüklenemedi',
+                key: Key('balance_error'),
+                style: TextStyle(color: Colors.white, fontSize: 20),
+              );
+            }
+
+            if (!snapshot.hasData) {
               return const SizedBox(
                 height: 44,
                 child: Align(
@@ -161,16 +157,15 @@ class _BalanceCard extends StatelessWidget {
               );
             }
 
-            if (snapshot.hasError) {
-              return const Text(
-                'Bakiye yüklenemedi',
-                key: Key('balance_error'),
-                style: TextStyle(color: Colors.white, fontSize: 20),
-              );
-            }
-
             final totalInMinor = (snapshot.data ?? const <TransactionEntity>[])
-                .fold<int>(0, (total, item) => total + item.amountInMinor);
+                .fold<int>(
+                  0,
+                  (total, item) =>
+                      total +
+                      (item.transactionType == TransactionType.income
+                          ? item.amountInMinor
+                          : -item.amountInMinor),
+                );
             return Text(
               _formatTry(totalInMinor),
               key: const Key('total_balance'),

@@ -6,7 +6,7 @@ import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 import '../model/transaction_draft.dart';
 import '../model/turkish_money.dart';
 
-enum TransactionDraftPageMode { manual, ocrReview }
+enum TransactionDraftPageMode { manual, ocrReview, income }
 
 class TransactionDraftPage extends StatefulWidget {
   const TransactionDraftPage({
@@ -79,6 +79,8 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
       title: Text(
         widget.mode == TransactionDraftPageMode.manual
             ? 'Manuel Gider Ekle'
+            : widget.mode == TransactionDraftPageMode.income
+            ? 'Gelir Ekle'
             : 'İşlemi Kontrol Et',
       ),
     ),
@@ -221,6 +223,8 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
               label: Text(
                 widget.mode == TransactionDraftPageMode.manual
                     ? 'Gideri Kaydet'
+                    : widget.mode == TransactionDraftPageMode.income
+                    ? 'Geliri Kaydet'
                     : 'Onayla',
               ),
             ),
@@ -246,6 +250,8 @@ class _DraftHeader extends StatelessWidget {
         child: Icon(
           mode == TransactionDraftPageMode.manual
               ? Icons.edit_note_rounded
+              : mode == TransactionDraftPageMode.income
+              ? Icons.south_west_rounded
               : Icons.receipt_long_outlined,
           color: AppColors.primary,
           size: 28,
@@ -263,7 +269,11 @@ class _DraftHeader extends StatelessWidget {
                 borderRadius: BorderRadius.circular(99),
               ),
               child: Text(
-                mode == TransactionDraftPageMode.manual ? 'MANUEL' : 'TASLAK',
+                mode == TransactionDraftPageMode.manual
+                    ? 'MANUEL'
+                    : mode == TransactionDraftPageMode.income
+                    ? 'GELİR'
+                    : 'TASLAK',
                 style: TextStyle(
                   color: AppColors.primaryDark,
                   fontSize: 12,
@@ -275,6 +285,8 @@ class _DraftHeader extends StatelessWidget {
             Text(
               mode == TransactionDraftPageMode.manual
                   ? 'Gider bilgilerini girin'
+                  : mode == TransactionDraftPageMode.income
+                  ? 'Gelir bilgilerini girin'
                   : 'Fiş bilgilerini kontrol edin',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
@@ -282,6 +294,8 @@ class _DraftHeader extends StatelessWidget {
             Text(
               mode == TransactionDraftPageMode.manual
                   ? 'Kurum, kategori ve tutar bilgilerini elle ekleyin.'
+                  : mode == TransactionDraftPageMode.income
+                  ? 'Gelir kaynağı, türü ve tutar bilgilerini ekleyin.'
                   : 'Kaydetmeden önce yapay zekânın çıkardığı bilgileri '
                         'düzenleyebilirsiniz.',
               style: TextStyle(color: AppColors.muted),

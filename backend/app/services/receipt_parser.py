@@ -2,7 +2,7 @@ from typing import Protocol
 from google import genai
 from google.genai import types
 
-from app.prompts.receipt_parser import RECEIPT_PARSER_SYSTEM_INSTRUCTION
+from app.constants.ai_prompts import RECEIPT_EXTRACTION_SYSTEM_INSTRUCTION
 from app.schemas import ReceiptItem, ReceiptParserRequest, ReceiptParserResponse
 
 class ReceiptParserError(RuntimeError):
@@ -59,7 +59,7 @@ class GeminiReceiptParserService:
     @staticmethod
     def _generation_config() -> types.GenerateContentConfig:
         return types.GenerateContentConfig(
-            system_instruction=RECEIPT_PARSER_SYSTEM_INSTRUCTION,
+            system_instruction=RECEIPT_EXTRACTION_SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
             response_schema=ReceiptParserResponse,
         )

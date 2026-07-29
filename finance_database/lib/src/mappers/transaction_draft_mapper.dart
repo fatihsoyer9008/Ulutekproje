@@ -9,6 +9,7 @@ class TransactionDraftMapper {
   static TransactionEntity toEntity(
     TransactionDraft draft, {
     TransactionSource source = TransactionSource.manual,
+    TransactionType transactionType = TransactionType.expense,
     DateTime? date,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -19,6 +20,7 @@ class TransactionDraftMapper {
     final effectiveCreatedAt = createdAt ?? now;
 
     return TransactionEntity()
+      ..transactionType = transactionType
       ..amountInMinor = _safeAmountInMinor(draft.amountInMinor)
       ..category = _categoryFromDraft(draft.category)
       ..date = date ?? now
@@ -42,6 +44,7 @@ class TransactionDraftMapper {
 extension TransactionDraftEntityMapper on TransactionDraft {
   TransactionEntity toTransactionEntity({
     TransactionSource source = TransactionSource.manual,
+    TransactionType transactionType = TransactionType.expense,
     DateTime? date,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -50,6 +53,7 @@ extension TransactionDraftEntityMapper on TransactionDraft {
   }) => TransactionDraftMapper.toEntity(
     this,
     source: source,
+    transactionType: transactionType,
     date: date,
     createdAt: createdAt,
     updatedAt: updatedAt,
