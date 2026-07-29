@@ -73,13 +73,12 @@ class _Chart extends StatelessWidget {
   Widget build(BuildContext context) {
     final spots = [
       for (final (index, spending) in monthlySpending.indexed)
-        FlSpot(index.toDouble(), spending.amount),
+        FlSpot(index.toDouble(), spending.amountInMinor / 100),
     ];
-    final highestAmount = monthlySpending.fold<double>(
-      0,
-      (highest, spending) =>
-          spending.amount > highest ? spending.amount : highest,
-    );
+    final highestAmount = monthlySpending.fold<double>(0, (highest, spending) {
+      final amountInLira = spending.amountInMinor / 100;
+      return amountInLira > highest ? amountInLira : highest;
+    });
 
     return LineChart(
       LineChartData(

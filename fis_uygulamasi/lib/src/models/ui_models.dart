@@ -16,10 +16,10 @@ class CategorySummary {
 }
 
 class MonthlySpending {
-  const MonthlySpending(this.label, this.amount);
+  const MonthlySpending(this.label, this.amountInMinor);
 
   final String label;
-  final double amount;
+  final int amountInMinor;
 }
 
 class SavingGoal {
