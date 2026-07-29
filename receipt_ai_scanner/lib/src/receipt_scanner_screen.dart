@@ -4,10 +4,11 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:image/image.dart' as image_lib;
 
-import 'receipt_text_normalizer.dart';
 import 'camera_failure.dart';
+import 'receipt_image_preprocessor.dart';
+import 'receipt_ocr_layout.dart';
+import 'receipt_text_normalizer.dart';
 
 /// Opens the back camera, captures a receipt and extracts its raw text on-device.
 class ReceiptScannerScreen extends StatefulWidget {
@@ -117,10 +118,17 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     try {
       await _prepareCameraForReceipt(controller);
       final photo = await controller.takePicture();
+      final ocrStopwatch = Stopwatch()..start();
       final recognizedText = await _recognizeReceiptText(photo);
+      ocrStopwatch.stop();
+      if (kDebugMode) {
+        debugPrint(
+          '[ReceiptScanner] OCR süresi: ${ocrStopwatch.elapsedMilliseconds} ms',
+        );
+      }
       final normalizedText = kDebugMode
-          ? normalizeAndLogReceiptText(recognizedText.text, logger: debugPrint)
-          : normalizeReceiptText(recognizedText.text);
+          ? normalizeAndLogReceiptText(recognizedText, logger: debugPrint)
+          : normalizeReceiptText(recognizedText);
 
       if (!mounted) return;
       final shouldContinue = await _showRecognizedText(normalizedText);
@@ -150,34 +158,76 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     }
   }
 
-  Future<RecognizedText> _recognizeReceiptText(XFile photo) async {
+  Future<String> _recognizeReceiptText(XFile photo) async {
+    final enhancedBytesFuture = photo.readAsBytes().then(
+      (bytes) => compute(enhanceReceiptImage, bytes),
+    );
     final originalResult = await _textRecognizer.processImage(
       InputImage.fromFilePath(photo.path),
     );
-    if (originalResult.text.trim().isNotEmpty) return originalResult;
+    final originalCandidate = _buildOcrCandidate(originalResult);
 
     final enhancedPath = '${photo.path}.ocr.jpg';
     final enhancedFile = File(enhancedPath);
     try {
-      final decoded = image_lib.decodeImage(await photo.readAsBytes());
-      if (decoded == null) return originalResult;
-
-      final oriented = image_lib.bakeOrientation(decoded);
-      final grayscale = image_lib.grayscale(oriented);
-      await enhancedFile.writeAsBytes(
-        image_lib.encodeJpg(grayscale, quality: 95),
-        flush: true,
-      );
-      return await _textRecognizer.processImage(
+      final enhancedBytes = await enhancedBytesFuture;
+      await enhancedFile.writeAsBytes(enhancedBytes, flush: true);
+      final enhancedResult = await _textRecognizer.processImage(
         InputImage.fromFilePath(enhancedPath),
       );
+      final enhancedCandidate = _buildOcrCandidate(enhancedResult);
+      final useEnhanced =
+          enhancedCandidate.score + 0.02 >= originalCandidate.score;
+      if (kDebugMode) {
+        debugPrint(
+          '[ReceiptScanner] OCR kalite: '
+          'orijinal=${originalCandidate.score.toStringAsFixed(2)}, '
+          'iyileştirilmiş=${enhancedCandidate.score.toStringAsFixed(2)}, '
+          'seçilen=${useEnhanced ? 'iyileştirilmiş' : 'orijinal'}',
+        );
+      }
+      return useEnhanced ? enhancedCandidate.text : originalCandidate.text;
     } on Exception {
-      return originalResult;
+      return originalCandidate.text;
     } finally {
       if (await enhancedFile.exists()) {
         await enhancedFile.delete();
       }
     }
+  }
+
+  _ReceiptOcrCandidate _buildOcrCandidate(RecognizedText recognizedText) {
+    final positionedLines = recognizedText.blocks
+        .expand((block) => block.lines)
+        .map(
+          (line) => ReceiptOcrLine(
+            text: line.text,
+            left: line.boundingBox.left,
+            top: line.boundingBox.top,
+            right: line.boundingBox.right,
+            bottom: line.boundingBox.bottom,
+            confidence: line.confidence,
+          ),
+        )
+        .toList();
+    final arrangedText = positionedLines.isEmpty
+        ? recognizedText.text
+        : arrangeReceiptOcrLines(positionedLines);
+    final confidences = positionedLines
+        .map((line) => line.confidence)
+        .whereType<double>()
+        .toList();
+    final averageConfidence = confidences.isEmpty
+        ? null
+        : confidences.reduce((a, b) => a + b) / confidences.length;
+
+    return _ReceiptOcrCandidate(
+      text: arrangedText,
+      score: receiptOcrQualityScore(
+        arrangedText,
+        lineConfidence: averageConfidence,
+      ),
+    );
   }
 
   Future<bool> _showRecognizedText(String text) async {
@@ -335,6 +385,13 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
           : null,
     );
   }
+}
+
+class _ReceiptOcrCandidate {
+  const _ReceiptOcrCandidate({required this.text, required this.score});
+
+  final String text;
+  final double score;
 }
 
 class _CameraPreview extends StatelessWidget {

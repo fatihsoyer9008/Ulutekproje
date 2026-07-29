@@ -21,6 +21,7 @@ void main() {
                 category: 'Market',
                 amountInMinor: 2550,
               ),
+              normalizedOcrText: 'MİGROS\nTOPLAM 25,50 TL',
               confidenceScore: 0.92,
               isParseSuccessful: true,
             );
@@ -38,6 +39,9 @@ void main() {
     expect(find.widgetWithText(TextFormField, 'MİGROS'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'Market'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, '25,50'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    expect(find.text('Düzeltilmiş OCR metni'), findsOneWidget);
   });
 
   testWidgets('manual entry uses manual copy instead of AI draft copy', (
@@ -64,6 +68,7 @@ void main() {
           scanReceipt: (_) async => 'bozuk OCR',
           parseReceipt: (_) async => const ReceiptParseResult(
             draft: TransactionDraft.empty(),
+            normalizedOcrText: 'bozuk OCR',
             confidenceScore: 0.85,
             isParseSuccessful: false,
           ),
