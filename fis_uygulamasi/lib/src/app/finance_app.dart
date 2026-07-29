@@ -1,6 +1,7 @@
-import 'package:finance_database/finance_database.dart';
 import 'package:core_ui/core_ui.dart';
+import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
+
 import '../screens/calendar_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/expense_screen.dart';
@@ -10,13 +11,13 @@ import '../screens/transactions_screen.dart';
 
 class FinanceHome extends StatefulWidget {
   const FinanceHome({
-    required this.transactionStream,
+    required this.transactions,
     this.saveTransaction,
     this.scanReceipt,
     super.key,
   });
 
-  final Stream<List<TransactionEntity>> transactionStream;
+  final List<TransactionEntity> transactions;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
 
@@ -26,7 +27,7 @@ class FinanceHome extends StatefulWidget {
 
 class _FinanceHomeState extends State<FinanceHome> {
   int _index = 0;
-  late Stream<List<TransactionEntity>> _transactionStream;
+
   static const _titles = [
     'Günaydın, Deniz',
     'İstatistikler',
@@ -36,31 +37,17 @@ class _FinanceHomeState extends State<FinanceHome> {
   ];
 
   @override
-  void initState() {
-    super.initState();
-    _transactionStream = _asBroadcastStream(widget.transactionStream);
-  }
-
-  @override
-  void didUpdateWidget(covariant FinanceHome oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.transactionStream != widget.transactionStream) {
-      _transactionStream = _asBroadcastStream(widget.transactionStream);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final screens = [
       DashboardScreen(
-        transactionStream: _transactionStream,
+        transactions: widget.transactions,
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
       ),
-      StatisticsScreen(transactionStream: _transactionStream),
+      StatisticsScreen(transactions: widget.transactions),
       const SavingsScreen(),
       const CalendarScreen(),
-      TransactionsScreen(transactionStream: _transactionStream),
+      TransactionsScreen(transactions: widget.transactions),
     ];
 
     return AppShell(
@@ -70,8 +57,4 @@ class _FinanceHomeState extends State<FinanceHome> {
       body: IndexedStack(index: _index, children: screens),
     );
   }
-
-  static Stream<List<TransactionEntity>> _asBroadcastStream(
-    Stream<List<TransactionEntity>> stream,
-  ) => stream.isBroadcast ? stream : stream.asBroadcastStream();
 }

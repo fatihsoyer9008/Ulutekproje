@@ -4,48 +4,42 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 class TransactionsScreen extends StatelessWidget {
-  const TransactionsScreen({required this.transactionStream, super.key});
+  const TransactionsScreen({
+    required this.transactions,
+    super.key,
+  });
 
-  final Stream<List<TransactionEntity>> transactionStream;
+  final List<TransactionEntity> transactions;
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<TransactionEntity>>(
-    stream: transactionStream,
-    builder: (context, snapshot) {
-      final transactions = List<TransactionEntity>.of(snapshot.data ?? const [])
-        ..sort((first, second) => second.date.compareTo(first.date));
+  Widget build(BuildContext context) {
+    final sortedTransactions = List<TransactionEntity>.of(transactions)
+      ..sort((first, second) => second.date.compareTo(first.date));
 
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 120),
-        children: [
-          const TextField(
-            decoration: InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Hareketlerde ara...',
-            ),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 120),
+      children: [
+        const TextField(
+          decoration: InputDecoration(
+            prefixIcon: Icon(Icons.search),
+            hintText: 'Hareketlerde ara...',
           ),
-          const SizedBox(height: 20),
-          Text('Tüm İşlemler', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          if (snapshot.hasError)
-            const AppCard(
-              child: Center(child: Text('Hesap hareketleri yüklenemedi.')),
-            )
-          else if (!snapshot.hasData)
-            const Center(child: CircularProgressIndicator())
-          else if (transactions.isEmpty)
-            const AppCard(
-              child: Center(child: Text('Henüz hesap hareketi bulunmuyor.')),
-            )
-          else
-            for (final transaction in transactions) ...[
-              _TransactionTile(transaction: transaction),
-              const SizedBox(height: 10),
-            ],
-        ],
-      );
-    },
-  );
+        ),
+        const SizedBox(height: 20),
+        Text('Tüm İşlemler', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        if (sortedTransactions.isEmpty)
+          const AppCard(
+            child: Center(child: Text('Henüz hesap hareketi bulunmuyor.')),
+          )
+        else
+          for (final transaction in sortedTransactions) ...[
+            _TransactionTile(transaction: transaction),
+            const SizedBox(height: 10),
+          ],
+      ],
+    );
+  }
 }
 
 class _TransactionTile extends StatelessWidget {
@@ -56,6 +50,7 @@ class _TransactionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isIncome = transaction.transactionType == TransactionType.income;
+
     return AppCard(
       padding: const EdgeInsets.all(16),
       child: Row(

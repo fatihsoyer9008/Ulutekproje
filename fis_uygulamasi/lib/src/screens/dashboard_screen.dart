@@ -8,13 +8,13 @@ import 'income_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({
-    required this.transactionStream,
+    required this.transactions,
     this.saveTransaction,
     this.scanReceipt,
     super.key,
   });
 
-  final Stream<List<TransactionEntity>> transactionStream;
+  final List<TransactionEntity> transactions;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
 
@@ -25,7 +25,7 @@ class DashboardScreen extends StatelessWidget {
       const Text('Finansal durumun'),
       Text('Kontrol sende.', style: Theme.of(context).textTheme.headlineMedium),
       const SizedBox(height: 22),
-      _BalanceCard(transactions: transactionStream),
+      _BalanceCard(transactions: transactions),
       const SizedBox(height: 16),
       Row(
         children: [
@@ -83,8 +83,7 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   const Text(
-                    'Netflix yarın, internet faturası ise 3 gün sonra '
-                    'ödenecek.',
+                    'Netflix yarın, internet faturası ise 3 gün sonra ödenecek.',
                   ),
                 ],
               ),
@@ -103,94 +102,70 @@ class DashboardScreen extends StatelessWidget {
 class _BalanceCard extends StatelessWidget {
   const _BalanceCard({required this.transactions});
 
-  final Stream<List<TransactionEntity>> transactions;
+  final List<TransactionEntity> transactions;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(24),
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(30),
-      gradient: const LinearGradient(
-        colors: [AppColors.primaryDark, AppColors.primary],
+  Widget build(BuildContext context) {
+    final totalInMinor = transactions.fold<int>(
+      0,
+      (total, item) =>
+          total +
+          (item.transactionType == TransactionType.income
+              ? item.amountInMinor
+              : -item.amountInMinor),
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        gradient: const LinearGradient(
+          colors: [AppColors.primaryDark, AppColors.primary],
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x40276B5A),
+            blurRadius: 28,
+            offset: Offset(0, 14),
+          ),
+        ],
       ),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x40276B5A),
-          blurRadius: 28,
-          offset: Offset(0, 14),
-        ),
-      ],
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'TOPLAM BAKİYE',
-              style: TextStyle(
-                color: Colors.white70,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1,
-              ),
-            ),
-            Icon(Icons.account_balance_wallet_outlined, color: Colors.white70),
-          ],
-        ),
-        const SizedBox(height: 12),
-        StreamBuilder<List<TransactionEntity>>(
-          stream: transactions,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return const Text(
-                'Bakiye yüklenemedi',
-                key: Key('balance_error'),
-                style: TextStyle(color: Colors.white, fontSize: 20),
-              );
-            }
-
-            if (!snapshot.hasData) {
-              return const SizedBox(
-                height: 44,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: CircularProgressIndicator(
-                    key: Key('balance_loading'),
-                    color: Colors.white,
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'TOPLAM BAKİYE',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
                 ),
-              );
-            }
-
-            final totalInMinor = (snapshot.data ?? const <TransactionEntity>[])
-                .fold<int>(
-                  0,
-                  (total, item) =>
-                      total +
-                      (item.transactionType == TransactionType.income
-                          ? item.amountInMinor
-                          : -item.amountInMinor),
-                );
-            return Text(
-              _formatTry(totalInMinor),
-              key: const Key('total_balance'),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 36,
-                fontWeight: FontWeight.w800,
               ),
-            );
-          },
-        ),
-        const SizedBox(height: 25),
-        const Text(
-          'Tüm işlemlerden hesaplandı',
-          style: TextStyle(color: Colors.white70),
-        ),
-      ],
-    ),
-  );
+              Icon(Icons.account_balance_wallet_outlined, color: Colors.white70),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _formatTry(totalInMinor),
+            key: const Key('total_balance'),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 36,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 25),
+          const Text(
+            'Tüm işlemlerden hesaplandı',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ],
+      ),
+    );
+  }
 
   static String _formatTry(int amountInMinor) {
     return NumberFormat.currency(

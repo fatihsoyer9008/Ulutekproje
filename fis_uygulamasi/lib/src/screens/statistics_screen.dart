@@ -11,44 +11,34 @@ class StatisticsScreen extends StatelessWidget {
     super.key,
     this.categories = const [],
     this.monthlySpending = const [],
-    this.transactionStream,
+    this.transactions,
   });
 
   final List<CategorySummary> categories;
   final List<MonthlySpending> monthlySpending;
-  final Stream<List<TransactionEntity>>? transactionStream;
+  final List<TransactionEntity>? transactions;
 
   @override
   Widget build(BuildContext context) {
-    final stream = transactionStream;
-    if (stream == null) {
+    final currentTransactions = transactions;
+
+    if (currentTransactions == null) {
       return _StatisticsContent(
         categories: categories,
         monthlySpending: monthlySpending,
       );
     }
 
-    return StreamBuilder<List<TransactionEntity>>(
-      stream: stream,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Center(child: Text('İstatistikler yüklenemedi.'));
-        }
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    final expenses = currentTransactions
+        .where(
+          (transaction) =>
+              transaction.transactionType == TransactionType.expense,
+        )
+        .toList();
 
-        final expenses = snapshot.data!
-            .where(
-              (transaction) =>
-                  transaction.transactionType == TransactionType.expense,
-            )
-            .toList();
-        return _StatisticsContent(
-          categories: _categorySummaries(expenses),
-          monthlySpending: _monthlySpending(expenses),
-        );
-      },
+    return _StatisticsContent(
+      categories: _categorySummaries(expenses),
+      monthlySpending: _monthlySpending(expenses),
     );
   }
 }
