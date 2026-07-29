@@ -45,7 +45,10 @@ class DashboardScreen extends StatelessWidget {
               isPrimary: false,
               onPressed: () => _open(
                 context,
-                ExpenseScreen(saveTransaction: saveTransaction),
+                ExpenseScreen(
+                  saveTransaction: saveTransaction,
+                  openScannerOnStart: true,
+                ),
               ),
             ),
           ),
