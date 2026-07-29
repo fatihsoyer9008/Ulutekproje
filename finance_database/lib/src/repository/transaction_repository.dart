@@ -23,17 +23,18 @@ class TransactionRepository {
     return await _isar.transactionEntitys.where().findAll();
   }
 
-  /// Verilen tarih aralığındaki işlemleri en yeniden en eskiye sıralı getirir.
+  /// Verilen tarih aralığındaki tüm işlemleri en yeniden en eskiye sıralar.
   ///
-  /// Başlangıç ve bitiş tarihleri, sırasıyla günün 00:00:00.000 ve
-  /// 23:59:59.999 anlarına genişletilir; böylece sınır günlerdeki tüm işlemler
-  /// sorguya dahil edilir.
+  /// Başlangıç tarihi günün başlangıcına genişletilir. Bitiş için sonraki günün
+  /// başlangıcı exclusive üst sınır olarak kullanılır; bu, günün son
+  /// milisaniyesinden sonraki mikro-saniyeli kayıtların da dahil edilmesini
+  /// sağlar.
   Future<List<TransactionEntity>> getTransactionsBetween(
     DateTime startDate,
     DateTime endDate,
   ) async {
     final startOfDay = _startOfDay(startDate);
-    final endOfDay = _endOfDay(endDate);
+    final endOfDay = _startOfDay(endDate);
 
     if (endOfDay.isBefore(startOfDay)) {
       return const [];
@@ -41,7 +42,31 @@ class TransactionRepository {
 
     return await _isar.transactionEntitys
         .filter()
-        .dateBetween(startOfDay, endOfDay)
+        .dateBetween(startOfDay, _nextDayStart(endOfDay), includeUpper: false)
+        .sortByDateDesc()
+        .findAll();
+  }
+
+  /// Verilen tarih aralığındaki yalnızca gider işlemlerini sıralı getirir.
+  ///
+  /// Bitiş günü, sonraki günün başlangıcı exclusive üst sınır kabul edilerek
+  /// bütünüyle sorguya dahil edilir.
+  Future<List<TransactionEntity>> getExpensesBetween(
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
+    final startOfDay = _startOfDay(startDate);
+    final endOfDay = _startOfDay(endDate);
+
+    if (endOfDay.isBefore(startOfDay)) {
+      return const [];
+    }
+
+    return await _isar.transactionEntitys
+        .filter()
+        .dateBetween(startOfDay, _nextDayStart(endOfDay), includeUpper: false)
+        .and()
+        .transactionTypeEqualTo(TransactionType.expense)
         .sortByDateDesc()
         .findAll();
   }
@@ -55,12 +80,16 @@ class TransactionRepository {
     DateTime? referenceDate,
   }) async {
     final referenceDay = _startOfDay(referenceDate ?? DateTime.now());
-    final startDay = referenceDay.subtract(const Duration(days: 6));
-    final transactions = await getTransactionsBetween(startDay, referenceDay);
+    final startDay = DateTime(
+      referenceDay.year,
+      referenceDay.month,
+      referenceDay.day - 6,
+    );
+    final transactions = await getExpensesBetween(startDay, referenceDay);
     final totals = <DateTime, int>{
       for (var day = startDay;
           !day.isAfter(referenceDay);
-          day = day.add(const Duration(days: 1)))
+          day = _nextDayStart(day))
         day: 0,
     };
 
@@ -83,7 +112,7 @@ class TransactionRepository {
   }) async {
     final referenceDay = _startOfDay(referenceDate ?? DateTime.now());
     final startOfMonth = DateTime(referenceDay.year, referenceDay.month);
-    final transactions = await getTransactionsBetween(startOfMonth, referenceDay);
+    final transactions = await getExpensesBetween(startOfMonth, referenceDay);
     final totals = <TransactionCategory, int>{};
 
     for (final transaction in transactions) {
@@ -96,7 +125,6 @@ class TransactionRepository {
   /// Mevcut işlemleri ve veritabanındaki sonraki değişiklikleri yayınlar.
   Stream<List<TransactionEntity>> watchAllTransactions() {
     return _isar.transactionEntitys.where().watch(fireImmediately: true);
-
   }
 
   /// ID'ye göre tek bir işlemi getirir.
@@ -123,7 +151,6 @@ class TransactionRepository {
   DateTime _startOfDay(DateTime date) =>
       DateTime(date.year, date.month, date.day);
 
-  DateTime _endOfDay(DateTime date) =>
-      DateTime(date.year, date.month, date.day, 23, 59, 59, 999);
-
+  DateTime _nextDayStart(DateTime date) =>
+    _startOfDay(date).add(const Duration(days: 1));
 }

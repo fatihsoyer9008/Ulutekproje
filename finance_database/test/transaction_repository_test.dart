@@ -158,8 +158,10 @@ void main() {
       required int amountInMinor,
       required TransactionCategory category,
       required DateTime date,
+      TransactionType transactionType = TransactionType.expense,
     }) {
       return TransactionEntity()
+        ..transactionType = transactionType
         ..amountInMinor = amountInMinor
         ..category = category
         ..date = date
@@ -179,6 +181,17 @@ void main() {
         date: DateTime(2026, 7, 11, 23, 59, 59, 999),
       ));
       await repository.addTransaction(transaction(
+        amountInMinor: 210,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 11, 23, 59, 59, 999, 999),
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 10000,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 11, 12),
+        transactionType: TransactionType.income,
+      ));
+      await repository.addTransaction(transaction(
         amountInMinor: 300,
         category: TransactionCategory.market,
         date: DateTime(2026, 7, 12),
@@ -191,7 +204,17 @@ void main() {
 
       expect(
         results.map((item) => item.amountInMinor).toList(),
-        equals([200, 100]),
+        equals([210, 200, 10000, 100]),
+      );
+
+      final expenses = await repository.getExpensesBetween(
+        DateTime(2026, 7, 10, 14),
+        DateTime(2026, 7, 11, 8),
+      );
+
+      expect(
+        expenses.map((item) => item.amountInMinor).toList(),
+        equals([210, 200, 100]),
       );
     });
 
@@ -205,6 +228,12 @@ void main() {
         amountInMinor: 250,
         category: TransactionCategory.ulasim,
         date: DateTime(2026, 7, 29, 18),
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 50000,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 29, 10),
+        transactionType: TransactionType.income,
       ));
       await repository.addTransaction(transaction(
         amountInMinor: 999,
@@ -238,6 +267,12 @@ void main() {
         amountInMinor: 250,
         category: TransactionCategory.ulasim,
         date: DateTime(2026, 7, 15),
+      ));
+      await repository.addTransaction(transaction(
+        amountInMinor: 50000,
+        category: TransactionCategory.market,
+        date: DateTime(2026, 7, 15, 12),
+        transactionType: TransactionType.income,
       ));
       await repository.addTransaction(transaction(
         amountInMinor: 900,
