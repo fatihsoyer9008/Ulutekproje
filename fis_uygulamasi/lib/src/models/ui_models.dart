@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 
 class CategorySummary {
-  const CategorySummary(this.name, this.amount, this.progress, this.color, this.icon);
+  const CategorySummary(
+    this.name,
+    this.amount,
+    this.progress,
+    this.color,
+    this.icon,
+  );
   final String name;
   final String amount;
   final double progress;
@@ -9,8 +15,21 @@ class CategorySummary {
   final IconData icon;
 }
 
+class MonthlySpending {
+  const MonthlySpending(this.label, this.amountInMinor);
+
+  final String label;
+  final int amountInMinor;
+}
+
 class SavingGoal {
-  const SavingGoal(this.title, this.current, this.target, this.icon, this.color);
+  const SavingGoal(
+    this.title,
+    this.current,
+    this.target,
+    this.icon,
+    this.color,
+  );
   final String title;
   final double current;
   final double target;
