@@ -1,5 +1,6 @@
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
+
 import '../models/ui_models.dart';
 
 class SavingsScreen extends StatefulWidget {
@@ -13,100 +14,123 @@ class SavingsScreen extends StatefulWidget {
 
 class _SavingsScreenState extends State<SavingsScreen> {
   int page = 0;
-  @override
-  Widget build(BuildContext context) {
-    if (widget.goals.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(20),
-        child: AppCard(
-          child: Center(child: Text('Henüz birikim hedefi bulunmuyor.')),
-        ),
-      );
-    }
+  late final PageController _pageController;
 
-    return Column(
-      children: [
-        const Padding(
-          padding: EdgeInsets.all(12),
-          child: Text('Hedeflerine küçük adımlarla yaklaş.'),
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(viewportFraction: .88);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text('Hedeflerine küçük adımlarla yaklaş.'),
+      ),
+      Expanded(
+        child: PageView.builder(
+          controller: _pageController,
+          itemCount: widget.goals.length,
+          onPageChanged: (value) => setState(() => page = value),
+          itemBuilder: (_, index) => _GoalCard(goal: widget.goals[index]),
         ),
-        Expanded(
-          child: PageView.builder(
-            controller: PageController(viewportFraction: .88),
-            itemCount: widget.goals.length,
-            onPageChanged: (v) => setState(() => page = v),
-            itemBuilder: (_, i) => _GoalCard(goal: widget.goals[i]),
-          ),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(
-            widget.goals.length,
-            (i) => AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              width: page == i ? 24 : 8,
-              height: 8,
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              decoration: BoxDecoration(
-                color: page == i ? AppColors.primary : AppColors.border,
-                borderRadius: BorderRadius.circular(8),
-              ),
+      ),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(
+          widget.goals.length,
+          (index) => AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            width: page == index ? 24 : 8,
+            height: 8,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              color: page == index ? AppColors.primary : AppColors.border,
+              borderRadius: BorderRadius.circular(8),
             ),
           ),
         ),
-        const SizedBox(height: 100),
-      ],
-    );
-  }
+      ),
+      const SizedBox(height: 100),
+    ],
+  );
 }
 
 class _GoalCard extends StatelessWidget {
   const _GoalCard({required this.goal});
+
   final SavingGoal goal;
+
   @override
   Widget build(BuildContext context) {
     final progress = goal.current / goal.target;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 24, 8, 28),
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
       child: AppCard(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 160,
-              height: 160,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: goal.color.withValues(alpha: .12),
-              ),
-              child: Icon(goal.icon, size: 80, color: goal.color),
-            ),
-            const SizedBox(height: 24),
-            Text(goal.title, style: Theme.of(context).textTheme.headlineMedium),
-            Text('%${(progress * 100).round()} tamamlandı'),
-            const SizedBox(height: 24),
-            LinearProgressIndicator(
-              value: progress,
-              minHeight: 12,
-              borderRadius: BorderRadius.circular(10),
-              color: goal.color,
-              backgroundColor: goal.color.withValues(alpha: .14),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxHeight < 410;
+            final illustrationSize = compact ? 104.0 : 144.0;
+            final largeGap = compact ? 10.0 : 20.0;
+
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('₺${goal.current.toStringAsFixed(0)}'),
-                Text('Hedef ₺${goal.target.toStringAsFixed(0)}'),
+                Container(
+                  width: illustrationSize,
+                  height: illustrationSize,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: goal.color.withValues(alpha: .12),
+                  ),
+                  child: Icon(
+                    goal.icon,
+                    size: illustrationSize / 2,
+                    color: goal.color,
+                  ),
+                ),
+                SizedBox(height: largeGap),
+                Text(
+                  goal.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                Text('%${(progress * 100).round()} tamamlandı'),
+                SizedBox(height: largeGap),
+                LinearProgressIndicator(
+                  value: progress.clamp(0.0, 1.0),
+                  minHeight: compact ? 8 : 12,
+                  borderRadius: BorderRadius.circular(10),
+                  color: goal.color,
+                  backgroundColor: goal.color.withValues(alpha: .14),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('₺${goal.current.toStringAsFixed(0)}'),
+                    Text('Hedef ₺${goal.target.toStringAsFixed(0)}'),
+                  ],
+                ),
+                SizedBox(height: compact ? 10 : 16),
+                FilledButton.icon(
+                  onPressed: () {},
+                  icon: const Icon(Icons.add),
+                  label: const Text('Para Ekle'),
+                ),
               ],
-            ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.add),
-              label: const Text('Para Ekle'),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

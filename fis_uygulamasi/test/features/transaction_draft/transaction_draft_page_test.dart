@@ -4,9 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('shows TL value and returns amountInMinor', (tester) async {
+  testWidgets('shows editable UI and returns amountInMinor', (tester) async {
     TransactionDraft? result;
-
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
@@ -34,6 +33,12 @@ void main() {
 
     await tester.tap(find.text('Aç'));
     await tester.pumpAndSettle();
+    expect(find.text('TASLAK'), findsOneWidget);
+    expect(find.text('Fiş bilgilerini kontrol edin'), findsOneWidget);
+    expect(find.text('İşlem bilgileri'), findsOneWidget);
+    expect(find.byKey(const Key('institution_name_field')), findsOneWidget);
+    expect(find.byKey(const Key('category_field')), findsOneWidget);
+    expect(find.byKey(const Key('amount_field')), findsOneWidget);
 
     final amountField = tester.widget<TextFormField>(
       find.byKey(const Key('amount_field')),
@@ -43,7 +48,6 @@ void main() {
 
     await tester.tap(find.byKey(const Key('confirm_draft_button')));
     await tester.pumpAndSettle();
-
     expect(result?.amountInMinor, 123456);
   });
 }

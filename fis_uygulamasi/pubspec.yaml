@@ -37,7 +37,10 @@ dependencies:
   core_ui:
     path: ../core_ui
   fl_chart: ^1.1.1
+  finance_database:
+    path: ../finance_database
   intl: ^0.20.2
+  http: ^1.5.0
   receipt_ai_scanner:
     path: ../receipt_ai_scanner
   table_calendar: ^3.2.0
