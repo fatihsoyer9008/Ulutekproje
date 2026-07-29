@@ -9,6 +9,7 @@ class StubReceiptParser:
     async def parse(self, request: ReceiptParserRequest) -> ReceiptParserResponse:
         assert request.ocr_text == "MİGROS TOPLAM 220,50 TL"
         return ReceiptParserResponse(
+            normalized_ocr_text="MİGROS\nTOPLAM 220,50 TL",
             merchant="MİGROS TİCARET A.Ş.",
             total_amount_minor=22050,
             currency="TRY",
@@ -47,6 +48,7 @@ def test_parse_receipt_returns_valid_minor_unit_response() -> None:
 
     assert response.status_code == 200
     assert response.json() == {
+        "normalized_ocr_text": "MİGROS\nTOPLAM 220,50 TL",
         "merchant": "MİGROS TİCARET A.Ş.",
         "total_amount_minor": 22050,
         "currency": "TRY",

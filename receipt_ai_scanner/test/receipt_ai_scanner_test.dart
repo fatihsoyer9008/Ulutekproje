@@ -1,5 +1,6 @@
 import 'package:camera/camera.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as image_lib;
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
 void main() {
@@ -70,5 +71,85 @@ void main() {
     test('returns empty text for whitespace-only OCR output', () {
       expect(normalizeReceiptText(' \t\r\n  \n'), isEmpty);
     });
+  });
+
+  group('receipt OCR layout', () {
+    test('orders visual rows and joins right-aligned amounts', () {
+      const lines = [
+        ReceiptOcrLine(
+          text: '*79.00',
+          left: 310,
+          top: 105,
+          right: 390,
+          bottom: 125,
+        ),
+        ReceiptOcrLine(
+          text: 'TOPLAM',
+          left: 20,
+          top: 160,
+          right: 120,
+          bottom: 180,
+        ),
+        ReceiptOcrLine(
+          text: 'YUMURTA 30LU M %1.0',
+          left: 20,
+          top: 100,
+          right: 250,
+          bottom: 122,
+        ),
+        ReceiptOcrLine(
+          text: '*79.25',
+          left: 310,
+          top: 161,
+          right: 390,
+          bottom: 181,
+        ),
+        ReceiptOcrLine(
+          text: 'Tarih: 01/05/2024 Saat: 20:37',
+          left: 20,
+          top: 45,
+          right: 350,
+          bottom: 65,
+        ),
+      ];
+
+      expect(
+        arrangeReceiptOcrLines(lines),
+        'Tarih: 01/05/2024 Saat: 20:37\n'
+        'YUMURTA 30LU M %1.0 *79.00\n'
+        'TOPLAM *79.25',
+      );
+    });
+
+    test('scores useful receipt text above noisy OCR', () {
+      const useful =
+          'A101 YENİ MAĞAZACILIK A.Ş.\n'
+          'Tarih: 01/05/2024\n'
+          'YUMURTA 30LU *79.00\n'
+          'TOPLAM *79.25';
+
+      expect(
+        receiptOcrQualityScore(useful),
+        greaterThan(receiptOcrQualityScore('Je nc\n-- ? 1181YK03')),
+      );
+    });
+  });
+
+  test('receipt image enhancement expands thermal print contrast', () {
+    final source = image_lib.Image(width: 80, height: 80);
+    for (var y = 0; y < source.height; y++) {
+      for (var x = 0; x < source.width; x++) {
+        final tone = y >= 30 && y < 40 ? 155 : 190;
+        source.setPixelRgb(x, y, tone, tone, tone);
+      }
+    }
+
+    final enhancedBytes = enhanceReceiptImage(image_lib.encodePng(source));
+    final enhanced = image_lib.decodeImage(enhancedBytes);
+
+    expect(enhanced, isNotNull);
+    final background = enhanced!.getPixel(10, 10).luminance;
+    final print = enhanced.getPixel(10, 35).luminance;
+    expect((background - print).abs(), greaterThan(35));
   });
 }

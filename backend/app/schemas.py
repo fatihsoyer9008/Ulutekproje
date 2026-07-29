@@ -21,6 +21,10 @@ class ReceiptItem(BaseModel):
     category: str = Field(min_length=1)
 
 class ReceiptParserResponse(BaseModel):
+    normalized_ocr_text: str = Field(
+        min_length=1,
+        description="Satır sırası ve açık OCR hataları güvenli biçimde düzeltilmiş metin.",
+    )
     merchant: Optional[str] = Field(default=None, min_length=1)
     total_amount_minor: Optional[int] = Field(default=None, ge=0)
     
