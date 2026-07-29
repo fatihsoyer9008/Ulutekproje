@@ -93,6 +93,11 @@ class TransactionRepository {
 
     return totals;
   }
+  /// Mevcut işlemleri ve veritabanındaki sonraki değişiklikleri yayınlar.
+  Stream<List<TransactionEntity>> watchAllTransactions() {
+    return _isar.transactionEntitys.where().watch(fireImmediately: true);
+
+  }
 
   /// ID'ye göre tek bir işlemi getirir.
   Future<TransactionEntity?> getTransactionById(Id id) async {
@@ -120,4 +125,5 @@ class TransactionRepository {
 
   DateTime _endOfDay(DateTime date) =>
       DateTime(date.year, date.month, date.day, 23, 59, 59, 999);
+
 }

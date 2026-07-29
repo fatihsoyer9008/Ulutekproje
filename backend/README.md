@@ -35,6 +35,25 @@ USE_DUMMY_PARSER=false
 
 API anahtarını içeren `.env` dosyası Git tarafından yok sayılır; bu dosyayı commit etmeyin.
 
+## Prompt ve dayanıklılık testleri
+
+Gemini sistem talimatı tek kaynaktan yönetilir:
+
+```text
+app/constants/ai_prompts.py
+```
+
+Prompt; eksik alanların `null` bırakılmasını, okunamayan veya fiş olmayan
+girdilerde veri uydurulmamasını ve para tutarlarının kuruş cinsinden `int`
+olarak dönmesini zorunlu tutar.
+
+Başarılı, eksik, okunamayan OCR ve geçersiz sağlayıcı cevabı senaryoları gerçek
+Gemini kotası tüketmeden mock istemciyle test edilir:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests -q -p no:cacheprovider
+```
+
 Telefonun aynı Wi-Fi ağından sunucuya erişmesi gerekiyorsa Uvicorn'u
 `--host 0.0.0.0` ile başlatın ve Flutter tarafında bilgisayarın yerel IP adresini kullanın.
 
