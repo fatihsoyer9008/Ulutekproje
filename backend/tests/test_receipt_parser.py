@@ -30,6 +30,9 @@ def create_mock_gemini_client(
 
 def successful_payload() -> dict[str, object]:
     return {
+        "normalized_ocr_text": (
+            "Örnek Süpermarket\nTarih: 2026-07-28\nToplam: 25,50 TL"
+        ),
         "merchant": "Örnek Süpermarket",
         "date": "2026-07-28T00:00:00",
         "total_amount_minor": 2550,
@@ -46,6 +49,7 @@ def test_receipt_prompt_is_centralized_and_sent_as_system_instruction() -> None:
 
     assert config.system_instruction == RECEIPT_EXTRACTION_SYSTEM_INSTRUCTION
     assert config.response_schema is ReceiptParserResponse
+    assert "normalized_ocr_text" in RECEIPT_EXTRACTION_SYSTEM_INSTRUCTION
     assert "HALÜSİNASYON YASAKTIR" in RECEIPT_EXTRACTION_SYSTEM_INSTRUCTION
     assert "kuruş" in RECEIPT_EXTRACTION_SYSTEM_INSTRUCTION
     assert "null" in RECEIPT_EXTRACTION_SYSTEM_INSTRUCTION
@@ -55,7 +59,7 @@ def test_receipt_prompt_is_centralized_and_sent_as_system_instruction() -> None:
 @pytest.mark.asyncio
 @patch("app.services.receipt_parser.genai.Client")
 async def test_successful_ocr_returns_complete_receipt(mock_client_class) -> None:
-    """A clear receipt returns complete data in minor units."""
+    """A clear receipt returns corrected OCR and complete data in minor units."""
     mock_client = create_mock_gemini_client(parsed=successful_payload())
     mock_client_class.return_value = mock_client
     ocr_text = "ÖRNEK SÜPERMARKET\n28.07.2026\nTOPLAM 25,50 TL"
@@ -65,6 +69,7 @@ async def test_successful_ocr_returns_complete_receipt(mock_client_class) -> Non
         model="test-model",
     ).parse(ReceiptParserRequest(ocr_text=ocr_text))
 
+    assert result.normalized_ocr_text.startswith("Örnek Süpermarket")
     assert result.merchant == "Örnek Süpermarket"
     assert result.date == datetime(2026, 7, 28)
     assert result.total_amount_minor == 2550
@@ -115,6 +120,7 @@ async def test_broken_ocr_returns_low_confidence_without_hallucinating(
     """Non-receipt input produces no invented financial data and does not crash."""
     mock_client_class.return_value = create_mock_gemini_client(
         parsed={
+            "normalized_ocr_text": "KEDİ FOTOĞRAFI OCR: xqz ### ???",
             "merchant": None,
             "date": None,
             "total_amount_minor": None,
@@ -169,6 +175,7 @@ def test_successful_response_rejects_missing_required_field(missing_field) -> No
 def test_confidence_score_must_be_between_zero_and_one(score) -> None:
     with pytest.raises(ValidationError):
         ReceiptParserResponse(
+            normalized_ocr_text="Bozuk OCR",
             merchant=None,
             total_amount_minor=None,
             date=None,
@@ -181,6 +188,7 @@ def test_confidence_score_must_be_between_zero_and_one(score) -> None:
 def test_unreadable_receipt_rejects_high_confidence() -> None:
     with pytest.raises(ValidationError, match="güven skoru"):
         ReceiptParserResponse(
+            normalized_ocr_text="Bozuk OCR",
             merchant=None,
             total_amount_minor=None,
             date=None,
@@ -193,8 +201,22 @@ def test_unreadable_receipt_rejects_high_confidence() -> None:
 def test_total_amount_minor_cannot_be_negative() -> None:
     with pytest.raises(ValidationError):
         ReceiptParserResponse(
+            normalized_ocr_text="Bozuk OCR",
             merchant=None,
             total_amount_minor=-1,
+            date=None,
+            category=None,
+            is_parse_successful=False,
+            confidence_score=0.1,
+        )
+
+
+def test_normalized_ocr_text_cannot_be_blank() -> None:
+    with pytest.raises(ValidationError):
+        ReceiptParserResponse(
+            normalized_ocr_text="",
+            merchant=None,
+            total_amount_minor=None,
             date=None,
             category=None,
             is_parse_successful=False,

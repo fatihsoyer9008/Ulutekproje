@@ -12,6 +12,7 @@ class TransactionDraftPage extends StatefulWidget {
   const TransactionDraftPage({
     super.key,
     this.initialDraft = const TransactionDraft.empty(),
+    this.normalizedOcrText,
     this.confidenceScore,
     this.isParseSuccessful = true,
     this.mode = TransactionDraftPageMode.ocrReview,
@@ -21,6 +22,7 @@ class TransactionDraftPage extends StatefulWidget {
        );
 
   final TransactionDraft initialDraft;
+  final String? normalizedOcrText;
   final double? confidenceScore;
   final bool isParseSuccessful;
   final TransactionDraftPageMode mode;
@@ -175,6 +177,27 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                 ],
               ),
             ),
+            if (widget.mode == TransactionDraftPageMode.ocrReview &&
+                widget.normalizedOcrText?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: 16),
+              AppCard(
+                child: ExpansionTile(
+                  key: const Key('normalized_ocr_text_tile'),
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(bottom: 8),
+                  title: const Text('Düzeltilmiş OCR metni'),
+                  subtitle: const Text(
+                    'Yapay zekânın düzenlediği fiş metnini görüntüleyin.',
+                  ),
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: SelectableText(widget.normalizedOcrText!),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),

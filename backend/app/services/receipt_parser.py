@@ -14,9 +14,8 @@ class ReceiptParserService(Protocol):
 
 class DummyReceiptParserService:
     async def parse(self, request: ReceiptParserRequest) -> ReceiptParserResponse:
-        del request
-        # Eski sözleşme değerlerine geri dönüldü
         return ReceiptParserResponse(
+            normalized_ocr_text=request.ocr_text,
             merchant="Örnek Süpermarket",
             total_amount_minor=2550,
             currency="TRY",

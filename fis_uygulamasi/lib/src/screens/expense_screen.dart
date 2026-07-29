@@ -140,6 +140,7 @@ class ExpenseScreen extends StatelessWidget {
         MaterialPageRoute(
           builder: (_) => TransactionDraftPage(
             initialDraft: result.draft,
+            normalizedOcrText: result.normalizedOcrText,
             confidenceScore: result.confidenceScore,
             isParseSuccessful: result.isParseSuccessful,
           ),
@@ -151,7 +152,9 @@ class ExpenseScreen extends StatelessWidget {
         confirmedDraft,
         source: TransactionSource.ocrLlm,
       );
-    } on Exception catch (error) {
+    } on Exception catch (error, stackTrace) {
+      debugPrint('Fiş ayrıştırma hatası: $error');
+      debugPrintStack(stackTrace: stackTrace);
       if (!context.mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
       ScaffoldMessenger.of(context)

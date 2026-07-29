@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../model/transaction_draft.dart';
@@ -7,18 +8,23 @@ import '../model/transaction_draft.dart';
 class ReceiptParseResult {
   const ReceiptParseResult({
     required this.draft,
+    required this.normalizedOcrText,
     required this.confidenceScore,
     required this.isParseSuccessful,
   });
 
   final TransactionDraft draft;
+  final String normalizedOcrText;
   final double confidenceScore;
   final bool isParseSuccessful;
 
   factory ReceiptParseResult.fromJson(Map<String, dynamic> json) {
+    final normalizedOcrText = json['normalized_ocr_text'];
     final confidence = json['confidence_score'];
     final successful = json['is_parse_successful'];
-    if (confidence is! num ||
+    if (normalizedOcrText is! String ||
+        normalizedOcrText.trim().isEmpty ||
+        confidence is! num ||
         confidence < 0 ||
         confidence > 1 ||
         successful is! bool) {
@@ -29,6 +35,7 @@ class ReceiptParseResult {
 
     return ReceiptParseResult(
       draft: TransactionDraft.fromJson(json),
+      normalizedOcrText: normalizedOcrText,
       confidenceScore: confidence.toDouble(),
       isParseSuccessful: successful,
     );
@@ -61,6 +68,7 @@ class ReceiptParserClient {
 
     late final http.Response response;
     try {
+      debugPrint('Receipt API POST: $_endpoint');
       response = await _client
           .post(
             _endpoint,
@@ -69,10 +77,14 @@ class ReceiptParserClient {
           )
           .timeout(const Duration(seconds: 30));
     } on Exception catch (error) {
+      debugPrint('Receipt API bağlantı hatası ($_endpoint): $error');
       throw ReceiptParserException('Fiş servisine bağlanılamadı: $error');
     }
 
     if (response.statusCode != 200) {
+      debugPrint(
+        'Receipt API hata cevabı ($_endpoint): ${response.statusCode} ${response.body}',
+      );
       throw ReceiptParserException(
         'Fiş servisi ${response.statusCode} koduyla yanıt verdi.',
       );
