@@ -75,3 +75,16 @@ extension TurkishLiraDoubleExtension on double {
     return (this * 100).round();
   }
 }
+/// Kuruş cinsinden tutarı Türkçe TL metnine çevirir.
+///
+/// Örnek:
+/// ```dart
+/// final amount = 123456.toTLString; // 1.234,56
+/// ```
+///
+/// Bu dönüşüm yalnızca arayüzde gösterim amacıyla kullanılmalıdır.
+extension TurkishLiraIntExtension on int {
+  String get toTLString {
+    return _turkishLiraFormat.format(this / 100).trim();
+  }
+}
