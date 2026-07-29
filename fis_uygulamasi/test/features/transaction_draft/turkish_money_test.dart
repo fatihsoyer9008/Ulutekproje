@@ -41,6 +41,14 @@ void main() {
     test('formats minor units for Turkish users', () {
       expect(formatMinorAsTurkishLira(123456), '1.234,56');
     });
+
+    test('converts integer kurus values to Turkish lira strings', () {
+      expect(123456.toTLString, '1.234,56');
+      expect(1250.toTLString, '12,50');
+      expect(29.toTLString, '0,29');
+      expect(0.toTLString, '0,00');
+      expect((-1250).toTLString, '-12,50');
+    });
   });
 
   group('TransactionDraft', () {
