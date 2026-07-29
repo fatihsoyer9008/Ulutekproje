@@ -47,4 +47,11 @@ class ReceiptParserResponse(BaseModel):
             raise ValueError(
                 "Başarılı ayrıştırma için kurum, tarih ve toplam tutar zorunludur"
             )
+        if (
+            all(value is None for value in required_values)
+            and self.confidence_score > 0.30
+        ):
+            raise ValueError(
+                "Hiçbir temel alan okunamadığında güven skoru en fazla 0.30 olabilir"
+            )
         return self
