@@ -1,3 +1,4 @@
+import 'package:camera/camera.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
@@ -7,9 +8,42 @@ void main() {
     expect(screen, isA<ReceiptScannerScreen>());
   });
 
+  group('camera permission failures', () {
+    test('allows retry when permission can be requested again', () {
+      final failure = cameraFailureFromException(
+        CameraException('CameraAccessDenied', 'denied'),
+      );
+
+      expect(failure.type, CameraFailureType.permissionDenied);
+      expect(failure.title, 'Kamera izni gerekli');
+      expect(failure.canRetry, isTrue);
+    });
+
+    test('directs permanently denied permission to device settings', () {
+      final failure = cameraFailureFromException(
+        CameraException('CameraAccessDeniedWithoutPrompt', 'blocked'),
+      );
+
+      expect(failure.type, CameraFailureType.permissionBlocked);
+      expect(failure.message, contains('Cihaz ayarlarından'));
+      expect(failure.canRetry, isFalse);
+    });
+
+    test('explains system-restricted camera access', () {
+      final failure = cameraFailureFromException(
+        CameraException('CameraAccessRestricted', 'restricted'),
+      );
+
+      expect(failure.type, CameraFailureType.restricted);
+      expect(failure.message, contains('kısıtlanmış'));
+      expect(failure.canRetry, isFalse);
+    });
+  });
+
   group('receipt text normalization', () {
     test('removes redundant whitespace and keeps meaningful lines', () {
-      const rawText = '  MARKET   A.Ş. \r\n'
+      const rawText =
+          '  MARKET   A.Ş. \r\n'
           '\tTarih:\t 26.07.2026  \r\n'
           '   \r\n'
           '  TOPLAM    125,50 TL  ';

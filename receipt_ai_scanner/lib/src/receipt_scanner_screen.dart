@@ -7,6 +7,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:image/image.dart' as image_lib;
 
 import 'receipt_text_normalizer.dart';
+import 'camera_failure.dart';
 
 /// Opens the back camera, captures a receipt and extracts its raw text on-device.
 class ReceiptScannerScreen extends StatefulWidget {
@@ -25,7 +26,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
   CameraController? _cameraController;
   bool _isInitializing = true;
   bool _isScanning = false;
-  String? _cameraError;
+  CameraFailure? _cameraFailure;
 
   @override
   void initState() {
@@ -52,7 +53,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     if (mounted) {
       setState(() {
         _isInitializing = true;
-        _cameraError = null;
+        _cameraFailure = null;
       });
     }
 
@@ -89,9 +90,16 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
 
       setState(() => _isInitializing = false);
     } on CameraException catch (error) {
-      _showCameraError(_cameraErrorMessage(error));
+      _showCameraError(cameraFailureFromException(error));
     } catch (error) {
-      _showCameraError('Kamera başlatılamadı: $error');
+      _showCameraError(
+        CameraFailure(
+          type: CameraFailureType.other,
+          title: 'Kamera başlatılamadı',
+          message: error.toString(),
+          canRetry: true,
+        ),
+      );
     }
   }
 
@@ -240,11 +248,11 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
         false;
   }
 
-  void _showCameraError(String message) {
+  void _showCameraError(CameraFailure failure) {
     if (!mounted) return;
     setState(() {
       _isInitializing = false;
-      _cameraError = message;
+      _cameraFailure = failure;
     });
   }
 
@@ -256,13 +264,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
   }
 
   String _cameraErrorMessage(CameraException error) {
-    return switch (error.code) {
-      'CameraAccessDenied' ||
-      'CameraAccessDeniedWithoutPrompt' ||
-      'CameraAccessRestricted' =>
-        'Kamera izni verilmedi. Lütfen cihaz ayarlarından kamera erişimini açın.',
-      _ => error.description ?? 'Kamera kullanılırken bir hata oluştu.',
-    };
+    return cameraFailureFromException(error).message;
   }
 
   Future<void> _disposeCamera() async {
@@ -299,8 +301,9 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
           else
             _CameraStatus(
               isLoading: _isInitializing,
-              error: _cameraError,
+              failure: _cameraFailure,
               onRetry: _initializeCamera,
+              onBack: () => Navigator.maybePop(context),
             ),
           if (controller != null && controller.value.isInitialized)
             const _ReceiptGuide(),
@@ -394,13 +397,15 @@ class _ReceiptGuide extends StatelessWidget {
 class _CameraStatus extends StatelessWidget {
   const _CameraStatus({
     required this.isLoading,
-    required this.error,
+    required this.failure,
     required this.onRetry,
+    required this.onBack,
   });
 
   final bool isLoading;
-  final String? error;
+  final CameraFailure? failure;
   final VoidCallback onRetry;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -417,17 +422,50 @@ class _CameraStatus extends StatelessWidget {
                   size: 56,
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  error ?? 'Kamera kullanılamıyor.',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white),
+                Semantics(
+                  liveRegion: true,
+                  child: Column(
+                    children: [
+                      Text(
+                        failure?.title ?? 'Kamera kullanılamıyor',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        failure?.message ?? 'Kamera şu anda kullanılamıyor.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Tekrar Dene'),
-                ),
+                if (failure?.canRetry ?? true)
+                  FilledButton.icon(
+                    key: const Key('retry_camera_permission_button'),
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: Text(
+                      failure?.type == CameraFailureType.permissionDenied
+                          ? 'Tekrar İzin İste'
+                          : 'Tekrar Dene',
+                    ),
+                  )
+                else
+                  OutlinedButton.icon(
+                    key: const Key('leave_camera_button'),
+                    onPressed: onBack,
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    label: const Text('Geri Dön'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
               ],
             ),
           ),
