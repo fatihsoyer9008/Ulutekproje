@@ -4,6 +4,28 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('Turkish money conversion', () {
+    test('converts double Turkish lira values to kurus', () {
+      expect(12.50.toKurus, 1250);
+      expect(1234.56.toKurus, 123456);
+      expect(0.29.toKurus, 29);
+      expect(10.0.toKurus, 1000);
+      expect(0.0.toKurus, 0);
+    });
+
+    test('rounds values to the nearest kurus', () {
+      expect(12.345.toKurus, 1235);
+      expect(12.344.toKurus, 1234);
+    });
+
+    test('supports negative values at conversion level', () {
+      expect((-12.50).toKurus, -1250);
+    });
+
+    test('rejects non-finite double values', () {
+      expect(() => double.nan.toKurus, throwsArgumentError);
+      expect(() => double.infinity.toKurus, throwsArgumentError);
+      expect(() => double.negativeInfinity.toKurus, throwsArgumentError);
+    });
     test('parses comma decimal and thousands separators as minor units', () {
       expect(parseTurkishLiraToMinor('1.234,56'), 123456);
       expect(parseTurkishLiraToMinor('12,5'), 1250);
