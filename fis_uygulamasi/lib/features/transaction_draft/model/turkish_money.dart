@@ -6,6 +6,12 @@ final NumberFormat _turkishLiraFormat = NumberFormat.currency(
   decimalDigits: 2,
 );
 
+final NumberFormat _turkishLiraUiFormat = NumberFormat.currency(
+  locale: 'en_US',
+  symbol: '₺ ',
+  decimalDigits: 2,
+);
+
 /// Converts a Turkish lira value such as `1.234,56` to kuruş.
 int? parseTurkishLiraToMinor(String? value) {
   final normalized = value
@@ -53,6 +59,7 @@ int? parseMajorAmountToMinor(Object? value) {
       : int.parse(fraction.length == 1 ? '${fraction}0' : fraction);
   return (lira * 100) + kurus;
 }
+
 /// TL cinsinden tutarı kuruş cinsine çevirir.
 ///
 /// Örnek:
@@ -75,6 +82,7 @@ extension TurkishLiraDoubleExtension on double {
     return (this * 100).round();
   }
 }
+
 /// Kuruş cinsinden tutarı Türkçe TL metnine çevirir.
 ///
 /// Örnek:
@@ -86,5 +94,12 @@ extension TurkishLiraDoubleExtension on double {
 extension TurkishLiraIntExtension on int {
   String get toTLString {
     return _turkishLiraFormat.format(this / 100).trim();
+  }
+
+  /// Kuruş değerini arayüzde gösterilecek TL biçimine dönüştürür.
+  ///
+  /// Örnek: 2550 kuruş → ₺ 25.50
+  String get toTLDisplay {
+    return _turkishLiraUiFormat.format(this / 100);
   }
 }
