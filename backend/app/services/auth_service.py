@@ -4,6 +4,7 @@ from datetime import timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.oauth_crypto import OAuthTokenCipher
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     generate_opaque_token,
@@ -14,12 +15,16 @@ from app.core.security import (
     utc_now,
     verify_password,
 )
+from app.models.oauth_account import OAuthProvider
 from app.models.one_time_token import OneTimeToken, OneTimeTokenPurpose
 from app.models.user import User, UserStatus
+from app.repositories.oauth_accounts import OAuthAccountRepository
 from app.repositories.sessions import SessionRepository
 from app.repositories.tokens import OneTimeTokenRepository
 from app.repositories.users import UserRepository
+from app.services.apple_oauth import AppleOAuthProvider
 from app.services.email_service import EmailSender
+from app.services.oauth_types import OAuthProviderError
 from app.services.session_service import IssuedSession, SessionMetadata, SessionService
 
 
@@ -35,6 +40,10 @@ class ReauthenticationRequired(ValueError):
     pass
 
 
+class AccountDeletionFailed(RuntimeError):
+    pass
+
+
 class AuthService:
     def __init__(self, db: AsyncSession, email_sender: EmailSender) -> None:
         self.db = db
@@ -42,6 +51,7 @@ class AuthService:
         self.users = UserRepository(db)
         self.tokens = OneTimeTokenRepository(db)
         self.sessions = SessionRepository(db)
+        self.oauth_accounts = OAuthAccountRepository(db)
 
     async def register(
         self,
@@ -191,6 +201,8 @@ class AuthService:
         *,
         user: User,
         current_password: str | None,
+        apple_provider: AppleOAuthProvider | None = None,
+        token_cipher: OAuthTokenCipher | None = None,
     ) -> None:
         if user.password_hash is not None:
             if current_password is None or not verify_password(
@@ -201,6 +213,31 @@ class AuthService:
 
         user.status = UserStatus.deletion_pending
         await SessionService(self.db).revoke_all_for_user(user)
+        accounts = await self.oauth_accounts.list_for_user(user.id)
+        for account in accounts:
+            if account.provider is not OAuthProvider.apple:
+                continue
+            if (
+                apple_provider is None
+                or token_cipher is None
+                or account.provider_refresh_token_encrypted is None
+            ):
+                await self.db.commit()
+                raise AccountDeletionFailed(
+                    "Apple account revocation is not available"
+                )
+            try:
+                refresh_token = token_cipher.decrypt(
+                    account.provider_refresh_token_encrypted
+                )
+                await apple_provider.revoke_refresh_token(refresh_token)
+            except (OAuthProviderError, RuntimeError) as exc:
+                # Keep deletion_pending and revoked app sessions. A later
+                # deletion retry can safely attempt Apple revocation again.
+                await self.db.commit()
+                raise AccountDeletionFailed(
+                    "Apple account revocation failed"
+                ) from exc
         await self.db.flush()
         await self.db.delete(user)
         await self.db.commit()

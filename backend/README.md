@@ -130,3 +130,24 @@ Migration durumunu kontrol etmek için:
 alembic current
 alembic upgrade head
 ```
+
+## Google ve Apple OAuth
+
+Mobil istemci düz kullanıcı kimliği göndermez. Google endpoint'i imzalı ID
+token ile nonce, Apple endpoint'i ise identity token, tek kullanımlık
+authorization code ve nonce kabul eder:
+
+```text
+POST /api/v1/auth/google
+POST /api/v1/auth/apple
+```
+
+Google için `GOOGLE_OAUTH_CLIENT_IDS`; Apple için `APPLE_CLIENT_ID`,
+`APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` ve
+`APPLE_TOKEN_ENCRYPTION_KEY` tanımlanmalıdır. Apple refresh token'ları yalnızca
+backend'de, Fernet ile şifrelenmiş olarak saklanır ve hesap silme sırasında
+Apple revoke endpoint'inde iptal edilir.
+
+Aynı e-postaya sahip mevcut bir hesap provider e-postasına güvenilerek sessizce
+birleştirilmez. Böyle bir durumda kullanıcı önce mevcut hesabıyla giriş yapmalı
+ve ilerideki açık account-linking akışını kullanmalıdır.

@@ -7,12 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db_session
+from app.core.oauth_crypto import OAuthTokenCipher
 from app.core.rate_limit import RateLimiter
 from app.core.redis import get_redis
 from app.core.security import AccessTokenError, decode_access_token
 from app.models.refresh_session import RefreshSession
 from app.models.user import User, UserStatus
+from app.services.apple_oauth import AppleOAuthProvider
 from app.services.email_service import EmailSender, create_email_sender
+from app.services.google_oauth import GoogleOAuthVerifier
 from app.services.session_service import SessionMetadata
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -20,6 +23,18 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 async def get_email_sender() -> EmailSender:
     return create_email_sender()
+
+
+async def get_google_oauth_verifier() -> GoogleOAuthVerifier:
+    return GoogleOAuthVerifier()
+
+
+async def get_apple_oauth_provider() -> AppleOAuthProvider:
+    return AppleOAuthProvider()
+
+
+async def get_oauth_token_cipher() -> OAuthTokenCipher:
+    return OAuthTokenCipher()
 
 
 async def get_rate_limiter(redis: Redis = Depends(get_redis)) -> RateLimiter:

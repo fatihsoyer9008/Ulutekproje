@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     trust_proxy_headers: bool = False
 
+    google_oauth_client_ids: str = ""
+    apple_client_id: str = ""
+    apple_team_id: str = ""
+    apple_key_id: str = ""
+    apple_private_key: SecretStr | None = None
+    apple_token_encryption_key: SecretStr | None = None
+    apple_issuer: str = "https://appleid.apple.com"
+    apple_jwks_url: str = "https://appleid.apple.com/auth/keys"
+    apple_token_url: str = "https://appleid.apple.com/auth/token"
+    apple_revoke_url: str = "https://appleid.apple.com/auth/revoke"
+
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-3.5-flash-lite"
     use_dummy_parser: bool = True
@@ -50,6 +61,14 @@ class Settings(BaseSettings):
         if normalized not in {"disabled", "smtp"}:
             raise ValueError("EMAIL_DELIVERY_MODE must be disabled or smtp")
         return normalized
+
+    @property
+    def google_client_ids(self) -> tuple[str, ...]:
+        return tuple(
+            client_id.strip()
+            for client_id in self.google_oauth_client_ids.split(",")
+            if client_id.strip()
+        )
 
     model_config = SettingsConfigDict(
         env_file=".env",

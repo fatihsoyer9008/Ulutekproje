@@ -26,6 +26,17 @@ def _validate_production_settings() -> None:
         raise RuntimeError("SECURITY_HMAC_SECRET must be replaced in production")
     if settings.email_delivery_mode != "smtp":
         raise RuntimeError("SMTP email delivery must be configured in production")
+    apple_values = (
+        settings.apple_client_id,
+        settings.apple_team_id,
+        settings.apple_key_id,
+        settings.apple_private_key,
+        settings.apple_token_encryption_key,
+    )
+    if any(apple_values) and not all(apple_values):
+        raise RuntimeError(
+            "Apple OAuth requires client, team, key, private key and encryption key"
+        )
 
 
 @asynccontextmanager

@@ -21,6 +21,21 @@ class LoginRequest(BaseModel):
     device_name: str | None = Field(default=None, max_length=160)
 
 
+class GoogleOAuthRequest(BaseModel):
+    id_token: str = Field(min_length=32, max_length=8192)
+    nonce: str = Field(min_length=16, max_length=512)
+    device_id: str | None = Field(default=None, max_length=255)
+    device_name: str | None = Field(default=None, max_length=160)
+
+
+class AppleOAuthRequest(BaseModel):
+    identity_token: str = Field(min_length=32, max_length=8192)
+    authorization_code: str = Field(min_length=8, max_length=4096)
+    nonce: str = Field(min_length=16, max_length=512)
+    device_id: str | None = Field(default=None, max_length=255)
+    device_name: str | None = Field(default=None, max_length=160)
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=32, max_length=512)
     device_id: str | None = Field(default=None, max_length=255)

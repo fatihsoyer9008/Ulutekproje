@@ -2,15 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
+    get_apple_oauth_provider,
     get_current_user,
     get_email_sender,
+    get_google_oauth_verifier,
+    get_oauth_token_cipher,
     get_rate_limiter,
     request_ip,
     session_metadata,
 )
 from app.auth_schemas import (
+    AppleOAuthRequest,
     DeleteAccountRequest,
     EmailRequest,
+    GoogleOAuthRequest,
     LoginRequest,
     LogoutRequest,
     MessageResponse,
@@ -22,16 +27,26 @@ from app.auth_schemas import (
     VerifyEmailRequest,
 )
 from app.core.database import get_db_session
+from app.core.oauth_crypto import OAuthTokenCipher, OAuthTokenEncryptionError
 from app.core.rate_limit import RateLimiter, RateLimitRule
 from app.core.security import normalize_email
 from app.models.user import User
+from app.services.apple_oauth import AppleOAuthProvider
 from app.services.auth_service import (
+    AccountDeletionFailed,
     AuthService,
     InvalidCredentials,
     InvalidOneTimeToken,
     ReauthenticationRequired,
 )
 from app.services.email_service import EmailSender
+from app.services.google_oauth import GoogleOAuthVerifier
+from app.services.oauth_service import AccountLinkingRequired, OAuthLoginService
+from app.services.oauth_types import (
+    OAuthConfigurationError,
+    OAuthProviderError,
+    OAuthValidationError,
+)
 from app.services.session_service import (
     InvalidRefreshToken,
     RefreshTokenReuseDetected,
@@ -44,6 +59,7 @@ REGISTER_IP = RateLimitRule("register-ip", 5, 3600)
 REGISTER_EMAIL = RateLimitRule("register-email", 3, 3600)
 LOGIN_IP = RateLimitRule("login-ip", 20, 900)
 LOGIN_EMAIL = RateLimitRule("login-email", 10, 900)
+OAUTH_IP = RateLimitRule("oauth-ip", 15, 900)
 REFRESH_IP = RateLimitRule("refresh-ip", 60, 60)
 LOGOUT_IP = RateLimitRule("logout-ip", 60, 60)
 TOKEN_ACTION_IP = RateLimitRule("token-action-ip", 20, 3600)
@@ -142,6 +158,97 @@ async def login(
     return _token_response(issued)
 
 
+@router.post("/google", response_model=TokenPairResponse)
+async def google_login(
+    payload: GoogleOAuthRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    verifier: GoogleOAuthVerifier = Depends(get_google_oauth_verifier),
+    token_cipher: OAuthTokenCipher = Depends(get_oauth_token_cipher),
+    limiter: RateLimiter = Depends(get_rate_limiter),
+) -> TokenPairResponse:
+    await limiter.enforce(OAUTH_IP, identifier=f"ip:{request_ip(request)}")
+    try:
+        identity = verifier.verify(id_token=payload.id_token, nonce=payload.nonce)
+        issued = await OAuthLoginService(
+            db,
+            token_cipher=token_cipher,
+        ).login_or_register(
+            identity=identity,
+            metadata=session_metadata(
+                request,
+                device_id=payload.device_id,
+                device_name=payload.device_name,
+            ),
+        )
+    except AccountLinkingRequired as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from None
+    except (OAuthConfigurationError, OAuthTokenEncryptionError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth is not configured.",
+        ) from None
+    except OAuthValidationError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google authentication failed.",
+        ) from None
+    return _token_response(issued)
+
+
+@router.post("/apple", response_model=TokenPairResponse)
+async def apple_login(
+    payload: AppleOAuthRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    provider: AppleOAuthProvider = Depends(get_apple_oauth_provider),
+    token_cipher: OAuthTokenCipher = Depends(get_oauth_token_cipher),
+    limiter: RateLimiter = Depends(get_rate_limiter),
+) -> TokenPairResponse:
+    await limiter.enforce(OAUTH_IP, identifier=f"ip:{request_ip(request)}")
+    try:
+        identity = await provider.authenticate(
+            identity_token=payload.identity_token,
+            authorization_code=payload.authorization_code,
+            nonce=payload.nonce,
+        )
+        issued = await OAuthLoginService(
+            db,
+            token_cipher=token_cipher,
+        ).login_or_register(
+            identity=identity,
+            metadata=session_metadata(
+                request,
+                device_id=payload.device_id,
+                device_name=payload.device_name,
+            ),
+        )
+    except AccountLinkingRequired as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from None
+    except (OAuthConfigurationError, OAuthTokenEncryptionError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Apple OAuth is not configured.",
+        ) from None
+    except OAuthProviderError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Apple authentication service is unavailable.",
+        ) from None
+    except OAuthValidationError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Apple authentication failed.",
+        ) from None
+    return _token_response(issued)
+
+
 @router.post("/refresh", response_model=TokenPairResponse)
 async def refresh(
     payload: RefreshRequest,
@@ -204,16 +311,25 @@ async def delete_me(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
     email_sender: EmailSender = Depends(get_email_sender),
+    apple_provider: AppleOAuthProvider = Depends(get_apple_oauth_provider),
+    token_cipher: OAuthTokenCipher = Depends(get_oauth_token_cipher),
 ) -> Response:
     try:
         await AuthService(db, email_sender).delete_account(
             user=user,
             current_password=payload.current_password,
+            apple_provider=apple_provider,
+            token_cipher=token_cipher,
         )
     except ReauthenticationRequired:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Reauthentication is required.",
+        ) from None
+    except AccountDeletionFailed:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Provider revocation is pending; account access was disabled.",
         ) from None
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
