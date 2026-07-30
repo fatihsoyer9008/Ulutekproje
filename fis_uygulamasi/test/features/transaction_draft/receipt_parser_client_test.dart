@@ -44,6 +44,7 @@ void main() {
     expect(result.draft.institutionName, 'MİGROS');
     expect(result.draft.category, 'Market');
     expect(result.draft.amountInMinor, 2550);
+    expect(result.draft.transactionDate, DateTime.utc(2026, 7, 28, 12));
     expect(result.normalizedOcrText, 'MİGROS\nTOPLAM 25,50 TL');
     expect(result.confidenceScore, 0.92);
     expect(result.isParseSuccessful, isTrue);

@@ -8,16 +8,19 @@ class TransactionDraft {
     required this.institutionName,
     required this.category,
     required this.amountInMinor,
+    this.transactionDate,
   });
 
   const TransactionDraft.empty()
     : institutionName = '',
       category = '',
-      amountInMinor = null;
+      amountInMinor = null,
+      transactionDate = null;
 
   final String institutionName;
   final String category;
   final int? amountInMinor;
+  final DateTime? transactionDate;
 
   factory TransactionDraft.fromJson(Map<String, dynamic> json) {
     return TransactionDraft(
@@ -25,6 +28,7 @@ class TransactionDraft {
           (json['merchant'] ?? json['merchant_name'])?.toString().trim() ?? '',
       category: json['category']?.toString().trim() ?? '',
       amountInMinor: _parseAmountInMinor(json),
+      transactionDate: _parseTransactionDate(json['date']),
     );
   }
 
@@ -32,7 +36,14 @@ class TransactionDraft {
     'merchant_name': institutionName,
     'category': category,
     'amountInMinor': amountInMinor,
+    'date': transactionDate?.toIso8601String(),
   };
+
+  static DateTime? _parseTransactionDate(Object? value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty) return null;
+    return DateTime.tryParse(text);
+  }
 
   static int? _parseAmountInMinor(Map<String, dynamic> json) {
     final minorValue =
