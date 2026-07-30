@@ -114,7 +114,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final success = await ref
         .read(authSessionControllerProvider.notifier)
         .login(_email.text, _password.text);
-    if (success && mounted) context.go('/home');
+    if (!mounted) return;
+    final state = ref.read(authSessionControllerProvider);
+    if (success) {
+      context.go('/home');
+    } else if (state.status == AuthStatus.emailVerificationRequired) {
+      context.go('/verify-email');
+    }
   }
 
   Future<void> _googleLogin() async {
