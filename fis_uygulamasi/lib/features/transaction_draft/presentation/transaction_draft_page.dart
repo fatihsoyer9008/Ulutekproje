@@ -100,8 +100,14 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
               ),
               if (!widget.isParseSuccessful ||
                   widget.confidenceScore! <
-                      ReceiptLowConfidenceWarning.defaultThreshold)
+                      ReceiptLowConfidenceWarning.defaultThreshold) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Fiş fotoğrafını tekrar çekebilir veya aşağıdaki bilgileri elle kontrol edebilirsiniz.',
+                  key: Key('retake_receipt_suggestion'),
+                ),
                 const SizedBox(height: 16),
+              ],
             ],
             AppCard(
               child: Column(

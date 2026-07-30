@@ -3,6 +3,7 @@ import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../features/notifications/reminder_settings_screen.dart';
 import 'expense_screen.dart';
 import 'income_screen.dart';
 
@@ -63,35 +64,40 @@ class DashboardScreen extends StatelessWidget {
       const SizedBox(height: 28),
       Text('Hatırlatıcı', style: Theme.of(context).textTheme.titleLarge),
       const SizedBox(height: 12),
-      AppCard(
-        color: AppColors.mintLight,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const CircleAvatar(
-              backgroundColor: AppColors.mint,
-              child: Icon(
-                Icons.notifications_active_outlined,
-                color: AppColors.primary,
+      GestureDetector(
+        onTap: () => _open(context, const ReminderSettingsScreen()),
+        child: AppCard(
+          color: AppColors.mintLight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const CircleAvatar(
+                backgroundColor: AppColors.mint,
+                child: Icon(
+                  Icons.notifications_active_outlined,
+                  color: AppColors.primary,
+                ),
               ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Bu hafta 2 ödeme var',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 5),
-                  const Text(
-                    'Netflix yarın, internet faturası ise 3 gün sonra ödenecek.',
-                  ),
-                ],
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Günlük harcama hatırlatıcısı',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Her akşam harcamalarını girmek için bir hatırlatma saati belirle.',
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              const Icon(Icons.chevron_right, color: AppColors.primary),
+            ],
+          ),
         ),
       ),
     ],
