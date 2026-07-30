@@ -17,10 +17,7 @@ void main() {
     );
 
     expect(registered, isTrue);
-    expect(
-      controller.state.status,
-      AuthStatus.emailVerificationRequired,
-    );
+    expect(controller.state.status, AuthStatus.emailVerificationRequired);
     expect(controller.state.pendingEmail, email);
   });
 
@@ -31,10 +28,7 @@ void main() {
     final authenticated = await controller.login(email, password);
 
     expect(authenticated, isFalse);
-    expect(
-      controller.state.status,
-      AuthStatus.emailVerificationRequired,
-    );
+    expect(controller.state.status, AuthStatus.emailVerificationRequired);
   });
 
   test('token doğrulandıktan sonra bekleyen oturumu açar', () async {
@@ -48,27 +42,39 @@ void main() {
     expect(controller.state.status, AuthStatus.authenticated);
     expect(controller.state.user?.isEmailVerified, isTrue);
   });
+
+  test('doğrulama ekranından çıkış bekleyen bilgileri temizler', () async {
+    final repository = _FakeAuthRepository();
+    final controller = AuthSessionController(repository);
+    await controller.register(email: email, password: password);
+
+    controller.leaveEmailVerification();
+    repository.verified = true;
+
+    expect(controller.state.status, AuthStatus.unauthenticated);
+    expect(controller.state.pendingEmail, isNull);
+    expect(await controller.confirmEmailVerification(), isFalse);
+    expect(repository.loginCallCount, 0);
+  });
 }
 
 class _FakeAuthRepository implements AuthRepositoryBase {
   bool verified = false;
+  int loginCallCount = 0;
 
   @override
   Future<AuthUser> login({
     required String email,
     required String password,
   }) async {
+    loginCallCount++;
     if (!verified) {
       throw const AuthException(
         'E-posta adresi henüz doğrulanmadı.',
         code: 'email_not_verified',
       );
     }
-    return AuthUser(
-      id: 'user-id',
-      email: email,
-      isEmailVerified: true,
-    );
+    return AuthUser(id: 'user-id', email: email, isEmailVerified: true);
   }
 
   @override

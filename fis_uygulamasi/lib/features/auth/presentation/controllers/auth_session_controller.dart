@@ -111,6 +111,11 @@ class AuthSessionController extends StateNotifier<AuthSessionState> {
     state = const AuthSessionState(status: AuthStatus.guest);
   }
 
+  void leaveEmailVerification() {
+    _pendingPassword = null;
+    state = const AuthSessionState(status: AuthStatus.unauthenticated);
+  }
+
   Future<bool> login(String email, String password) async {
     state = state.copyWith(isLoading: true, clearError: true, clearInfo: true);
     try {
@@ -127,10 +132,7 @@ class AuthSessionController extends StateNotifier<AuthSessionState> {
           errorMessage: error.message,
         );
       } else {
-        state = state.copyWith(
-          isLoading: false,
-          errorMessage: error.message,
-        );
+        state = state.copyWith(isLoading: false, errorMessage: error.message);
       }
       return false;
     }

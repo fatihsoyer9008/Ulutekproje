@@ -15,8 +15,7 @@ class EmailVerificationPage extends ConsumerStatefulWidget {
       _EmailVerificationPageState();
 }
 
-class _EmailVerificationPageState
-    extends ConsumerState<EmailVerificationPage> {
+class _EmailVerificationPageState extends ConsumerState<EmailVerificationPage> {
   bool _tokenHandled = false;
 
   @override
@@ -81,7 +80,14 @@ class _EmailVerificationPageState
           ],
           const SizedBox(height: 8),
           TextButton(
-            onPressed: state.isLoading ? null : () => context.go('/login'),
+            onPressed: state.isLoading
+                ? null
+                : () {
+                    ref
+                        .read(authSessionControllerProvider.notifier)
+                        .leaveEmailVerification();
+                    context.go('/login');
+                  },
             child: const Text('Giriş ekranına dön'),
           ),
         ],

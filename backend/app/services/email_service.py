@@ -61,9 +61,10 @@ class SMTPEmailSender:
     @staticmethod
     def _action_url(action: str, token: str) -> str:
         base_url = settings.email_action_base_url.rstrip("/")
-        endpoint = (
-            "verify-email-link" if action == "verify-email" else action
-        )
+        endpoint = {
+            "verify-email": "verify-email-link",
+            "reset-password": "reset-password-link",
+        }.get(action, action)
         return f"{base_url}/{endpoint}?{urlencode({'token': token})}"
 
     async def _send(

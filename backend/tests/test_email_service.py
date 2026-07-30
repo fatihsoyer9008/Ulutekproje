@@ -50,6 +50,19 @@ async def test_smtp_sender_uses_real_provider_configuration(
     assert send.await_args.kwargs["start_tls"] is True
     assert send.await_args.kwargs["timeout"] == 15.0
 
+    await SMTPEmailSender().send_password_reset(
+        email="user@example.com",
+        token="reset-token",
+    )
+    reset_message = send.await_args.args[0]
+    reset_plain_body = reset_message.get_body(preferencelist=("plain",))
+    assert reset_plain_body is not None
+    assert (
+        "https://api.example.com/api/v1/auth/"
+        "reset-password-link?token=reset-token"
+        in reset_plain_body.get_content()
+    )
+
 
 def test_legacy_smtp_variable_names_remain_supported() -> None:
     configured = Settings(
