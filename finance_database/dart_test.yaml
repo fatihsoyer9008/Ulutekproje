@@ -1,0 +1,4 @@
+# Isar'ın Windows native çekirdeği test dosyaları paralel başlatıldığında aynı
+# isar.dll dosyasını eş zamanlı hazırlamaya çalışır ve dosya kilidi oluşur.
+# Paket testlerini seri çalıştırmak hem yerel ortamda hem CI'da kararlı sonuç verir.
+concurrency: 1
