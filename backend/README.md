@@ -96,7 +96,7 @@ pytest
 Kimlik doğrulama altyapısı PostgreSQL ve Redis kullanır. Proje kökünde:
 
 ```powershell
-docker compose up -d postgres redis mailpit
+docker compose up -d postgres redis
 cd backend
 Copy-Item .env.example .env
 .\.venv\Scripts\Activate.ps1
@@ -116,9 +116,29 @@ docker compose up -d postgres redis
 Bu durumda `DATABASE_URL` ve `REDIS_URL` içindeki host portlarını da aynı
 değerlere göre güncelleyin. Container içindeki servis portları değişmez.
 
-Yerel SMTP mesajları `http://127.0.0.1:8025` adresindeki Mailpit arayüzünde
-görülebilir. Auth uç noktaları Swagger'da `/api/v1/auth` etiketi altında
-listelenir.
+Gerçek e-posta teslimatı için `backend/.env` dosyasında SMTP sağlayıcınızın
+bilgilerini tanımlayın. Gmail kullanırken normal hesap şifresi yerine iki
+aşamalı doğrulama sonrasında üretilen uygulama şifresini kullanın:
+
+```dotenv
+EMAIL_DELIVERY_MODE=smtp
+EMAIL_FROM=
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_TLS=true
+EMAIL_ACTION_BASE_URL=https://api.example.com/api/v1/auth
+```
+
+SendGrid için sunucu adresi `smtp.sendgrid.net`, SMTP kullanıcı adı `apikey` ve
+SMTP parolası olarak SendGrid API anahtarı kullanılır. SMTP parolasını yalnızca
+yerel `.env` dosyasına veya deployment platformunun şifreli secret alanına
+girin. Auth uç noktaları Swagger'da
+`/api/v1/auth` etiketi altında listelenir. `EMAIL_ACTION_BASE_URL`, telefondan
+ve e-posta istemcisinden erişilebilen gerçek HTTPS backend adresi olmalıdır.
+Cloudflare quick tunnel kullanılıyorsa tünel her yeniden açıldığında bu değer
+yeni adresle güncellenmeli ve API container'ı yeniden başlatılmalıdır.
 
 Geliştirme ortamındaki örnek JWT ve HMAC secret değerleri production için
 geçerli değildir. `APP_ENV=production` kullanıldığında uygulama zayıf secret

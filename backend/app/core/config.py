@@ -1,4 +1,4 @@
-from pydantic import SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,11 +29,19 @@ class Settings(BaseSettings):
 
     email_delivery_mode: str = "disabled"
     email_from: str = "noreply@example.invalid"
-    smtp_host: str = "127.0.0.1"
-    smtp_port: int = 1025
-    smtp_username: str | None = None
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_user: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SMTP_USER", "SMTP_USERNAME"),
+    )
     smtp_password: SecretStr | None = None
-    smtp_start_tls: bool = False
+    smtp_tls: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("SMTP_TLS", "SMTP_START_TLS"),
+    )
+    smtp_timeout_seconds: float = Field(default=15.0, gt=0, le=60)
+    email_action_base_url: str = "http://127.0.0.1:8000/api/v1/auth"
     app_deep_link_base_url: str = "fiskon://auth"
 
     rate_limit_enabled: bool = True

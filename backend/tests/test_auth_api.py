@@ -92,6 +92,36 @@ async def _register_and_verify(
 
 
 @pytest.mark.asyncio
+async def test_verification_email_link_verifies_account(auth_context) -> None:
+    client, sender, _ = auth_context
+    password = "A-strong-test-password-123"
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "link@example.com",
+            "password": password,
+        },
+    )
+    assert response.status_code == 202
+    verification_token = sender.verification_tokens[-1][1]
+
+    response = await client.get(
+        "/api/v1/auth/verify-email-link",
+        params={"token": verification_token},
+    )
+
+    assert response.status_code == 200
+    assert "E-posta doğrulandı" in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "link@example.com", "password": password},
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_register_verify_login_and_me(auth_context) -> None:
     client, sender, session_factory = auth_context
     password = "A-strong-test-password-123"
@@ -122,6 +152,29 @@ async def test_register_verify_login_and_me(auth_context) -> None:
         stored = (await session.scalars(select(RefreshSession))).one()
         assert stored.token_hash != tokens["refresh_token"]
         assert len(stored.token_hash) == 64
+
+
+@pytest.mark.asyncio
+async def test_unverified_password_account_cannot_login(auth_context) -> None:
+    client, sender, _ = auth_context
+    password = "A-strong-test-password-123"
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "pending@example.com",
+            "password": password,
+        },
+    )
+    assert response.status_code == 202
+    assert sender.verification_tokens
+
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "pending@example.com", "password": password},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "email_not_verified"
 
 
 @pytest.mark.asyncio
