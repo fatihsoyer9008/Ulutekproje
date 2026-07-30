@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
+import 'core/database/database_providers.dart';
 import 'src/app/app_router.dart';
 import 'src/app/finance_app.dart';
 import 'src/screens/expense_screen.dart';
@@ -15,21 +16,32 @@ Future<void> main() async {
   await initializeDateFormatting('tr_TR');
 
   final isar = await IsarService.getInstance();
-  final transactionRepository = TransactionRepository(isar);
-  final transactionImportService = TransactionJsonImportService(
-    importTransactions: transactionRepository.importTransactions,
-  );
 
   runApp(
     ProviderScope(
-      child: FinanceApp(
-        enableAuth: true,
-        transactionStream: transactionRepository.watchAllTransactions(),
-        saveTransaction: transactionRepository.addTransaction,
-        transactionImportService: transactionImportService,
-      ),
+      overrides: [isarProvider.overrideWithValue(isar)],
+      child: const _AppBootstrap(),
     ),
   );
+}
+
+class _AppBootstrap extends ConsumerWidget {
+  const _AppBootstrap();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final transactionRepository = ref.watch(transactionRepositoryProvider);
+    final transactionImportService = TransactionJsonImportService(
+      importTransactions: transactionRepository.importTransactions,
+    );
+
+    return FinanceApp(
+      enableAuth: true,
+      transactionStream: transactionRepository.watchAllTransactions(),
+      saveTransaction: transactionRepository.addTransaction,
+      transactionImportService: transactionImportService,
+    );
+  }
 }
 
 class FinanceApp extends ConsumerStatefulWidget {
