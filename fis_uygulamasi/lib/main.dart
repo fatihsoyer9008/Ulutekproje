@@ -8,6 +8,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'src/app/app_router.dart';
 import 'src/app/finance_app.dart';
 import 'src/screens/expense_screen.dart';
+import 'features/backup/data/transaction_json_import_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +16,9 @@ Future<void> main() async {
 
   final isar = await IsarService.getInstance();
   final transactionRepository = TransactionRepository(isar);
+  final transactionImportService = TransactionJsonImportService(
+    importTransactions: transactionRepository.importTransactions,
+  );
 
   runApp(
     ProviderScope(
@@ -22,6 +26,7 @@ Future<void> main() async {
         enableAuth: true,
         transactionStream: transactionRepository.watchAllTransactions(),
         saveTransaction: transactionRepository.addTransaction,
+        transactionImportService: transactionImportService,
       ),
     ),
   );
@@ -34,12 +39,14 @@ class FinanceApp extends ConsumerStatefulWidget {
     this.transactionStream = const Stream<List<TransactionEntity>>.empty(),
     this.saveTransaction,
     this.scanReceipt,
+    this.transactionImportService,
   });
 
   final bool enableAuth;
   final Stream<List<TransactionEntity>> transactionStream;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
+  final TransactionJsonImportService? transactionImportService;
 
   @override
   ConsumerState<FinanceApp> createState() => _FinanceAppState();
@@ -57,6 +64,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
         transactionStream: widget.transactionStream,
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
+        transactionImportService: widget.transactionImportService,
       );
     }
   }
