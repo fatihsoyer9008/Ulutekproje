@@ -38,6 +38,8 @@ Future<void> main() async {
 
   final isar = await IsarService.getInstance();
 
+
+
 runApp(
     ProviderScope(
       overrides: [
