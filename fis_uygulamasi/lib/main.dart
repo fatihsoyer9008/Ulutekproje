@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
+import 'core/database/database_providers.dart';
 import 'features/auth/presentation/controllers/auth_session_controller.dart';
 import 'features/notifications/notification_navigation_controller.dart';
 import 'features/notifications/notification_providers.dart';
@@ -36,18 +37,15 @@ Future<void> main() async {
   }
 
   final isar = await IsarService.getInstance();
-  final transactionRepository = TransactionRepository(isar);
 
-  runApp(
+runApp(
     ProviderScope(
       overrides: [
+        isarProvider.overrideWithValue(isar),
         dailyBudgetReminderServiceProvider.overrideWithValue(reminderService),
       ],
-      child: FinanceApp(
-        enableAuth: true,
+      child: _AppBootstrap(
         notificationNavigationController: notificationNavigationController,
-        transactionStream: transactionRepository.watchAllTransactions(),
-        saveTransaction: transactionRepository.addTransaction,
       ),
     ),
   );
@@ -58,7 +56,6 @@ Future<void> _restoreDailyReminder(
 ) async {
   try {
     final preferences = NotificationPreferences();
-
     final enabled = await preferences.isEnabled();
 
     if (!enabled) {
@@ -70,8 +67,25 @@ Future<void> _restoreDailyReminder(
     await reminderService.scheduleDailyReminder(reminderTime);
   } catch (error, stackTrace) {
     debugPrint('Günlük hatırlatıcı geri yüklenemedi: $error');
-
     debugPrintStack(stackTrace: stackTrace);
+  }
+}
+
+class _AppBootstrap extends ConsumerWidget {
+  const _AppBootstrap({required this.notificationNavigationController});
+
+  final NotificationNavigationController notificationNavigationController;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final transactionRepository = ref.watch(transactionRepositoryProvider);
+
+    return FinanceApp(
+      enableAuth: true,
+      notificationNavigationController: notificationNavigationController,
+      transactionStream: transactionRepository.watchAllTransactions(),
+      saveTransaction: transactionRepository.addTransaction,
+    );
   }
 }
 
