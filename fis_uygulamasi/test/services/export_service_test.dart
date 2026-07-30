@@ -139,7 +139,7 @@ void main() {
   });
 
   test(
-    'CSV çıktısı BOM, başlıklar ve Excel için kaçış karakterlerini içerir',
+    'CSV çıktısı BOM, Türkçe Excel ayıracı, başlıklar ve kaçış karakterlerini içerir',
     () async {
       await isar.writeTxn(
         () => isar.transactionEntitys.put(
@@ -152,7 +152,7 @@ void main() {
 
       final csv = await databaseExporter.exportCsvString();
 
-      expect(csv, startsWith('\uFEFFid,transactionType,amountInMinor'));
+      expect(csv, startsWith('\uFEFFsep=;\r\nid;transactionType;amountInMinor'));
       expect(csv, contains('"""Market, Şube"""'));
       expect(csv, contains('"İlk satır\nİkinci"'));
     },
@@ -163,8 +163,46 @@ void main() {
 
     expect(
       csv,
-      '\uFEFFid,transactionType,amountInMinor,category,date,merchantName,source,rawOcrText,note,createdAt,updatedAt\r\n',
+      '\uFEFFsep=;\r\nid;transactionType;amountInMinor;category;date;merchantName;source;rawOcrText;note;createdAt;updatedAt\r\n',
     );
+  });
+
+  test('CSV formül başlangıçlarını Excel için güvenli metne dönüştürür', () async {
+    await isar.writeTxn(
+      () => isar.transactionEntitys.putAll([
+        transaction(
+          merchantName: '=HYPERLINK("https://example.test")',
+          rawOcrText: '+1+1',
+          note: '-42',
+        ),
+        transaction(merchantName: '@komut'),
+      ]),
+    );
+
+    final csv = await databaseExporter.exportCsvString();
+
+    expect(csv, contains("'@komut"), reason: 'At işareti de metne çevrilir');
+    expect(csv, contains("'-42"));
+    expect(csv, contains("'+1+1"));
+    expect(csv, contains("'="));
+  });
+
+  test('Türkçe Excel için virgül içeren metni ayrı bir sütunda tutar', () async {
+    await isar.writeTxn(
+      () => isar.transactionEntitys.put(
+        transaction(merchantName: 'İstanbul, Kadıköy'),
+      ),
+    );
+
+    final csv = await databaseExporter.exportCsvString();
+    final lines = csv.split('\r\n');
+    final headerColumns = lines[1].split(';');
+    final dataColumns = lines[2].split(';');
+
+    expect(csv, startsWith('\uFEFFsep=;\r\n'));
+    expect(headerColumns, hasLength(11));
+    expect(dataColumns, hasLength(11));
+    expect(dataColumns[5], 'İstanbul, Kadıköy');
   });
 
   test('paylaşım hatasını uygulamaya özgü hata olarak bildirir', () async {
@@ -244,5 +282,52 @@ void main() {
 
     expect(await oldFile.exists(), isFalse);
     expect(await nonExportFile.exists(), isTrue);
+  });
+
+  test('paylaşım akışı başlamadan önce eski export dosyalarını temizler', () async {
+    final oldFile = File('${tempDirectory.path}/transactions_export_old.json');
+    await oldFile.writeAsString('eski yedek');
+    final service = TransactionExportShareService(
+      exportJson: () async => '[]',
+      exportCsv: () async => '',
+      temporaryDirectory: () async => tempDirectory,
+      shareFile: (_) async {},
+      now: () => DateTime.utc(2026, 7, 30, 10),
+    );
+
+    await service.exportAndShare(TransactionExportFormat.json);
+
+    expect(await oldFile.exists(), isFalse);
+  });
+
+  test('geçici dosya silme hatası paylaşım sonucunu maskelemez', () async {
+    final oldFile = File('${tempDirectory.path}/transactions_export_locked.json');
+    await oldFile.writeAsString('silinemeyen eski dosya');
+    final service = TransactionExportShareService(
+      exportJson: () async => '[]',
+      exportCsv: () async => '',
+      temporaryDirectory: () async => tempDirectory,
+      shareFile: (_) async {},
+      deleteFile: (_) async => throw FileSystemException('silinemedi'),
+      now: () => DateTime.utc(2026, 7, 30, 10),
+    );
+
+    await service.exportAndShare(TransactionExportFormat.json);
+  });
+
+  test('geçici dosya silme hatası paylaşım hatasını maskelemez', () async {
+    final service = TransactionExportShareService(
+      exportJson: () async => '[]',
+      exportCsv: () async => '',
+      temporaryDirectory: () async => tempDirectory,
+      shareFile: (_) async => throw StateError('Paylaşım uygulaması yok'),
+      deleteFile: (_) async => throw FileSystemException('silinemedi'),
+      now: () => DateTime.utc(2026, 7, 30, 10),
+    );
+
+    await expectLater(
+      service.exportAndShare(TransactionExportFormat.json),
+      throwsA(isA<TransactionExportShareException>()),
+    );
   });
 }

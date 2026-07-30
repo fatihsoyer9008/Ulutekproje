@@ -21,10 +21,13 @@ class TransactionExportService {
   /// Excel tarafından UTF-8 olarak açılabilen CSV çıktısı üretir.
   ///
   /// UTF-8 BOM ve CRLF kullanımı, Türkçe karakterlerin Excel'de bozulmasını
-  /// önler. Boş veritabanında yalnızca başlık satırı döner.
+  /// önler. `sep=;` satırı ve noktalı virgül ayıracı, Türkçe Excel bölge
+  /// ayarlarında (ondalık ayıracı virgül) sütunların doğru ayrılmasını sağlar.
+  /// Boş veritabanında yalnızca ayıracı tanımlayan satır ile başlık döner.
   Future<String> exportCsvString() async {
     final transactions = await _transactionMaps();
     final buffer = StringBuffer('\uFEFF');
+    buffer.write('sep=;\r\n');
     buffer.write('${_csvRow(_headers)}\r\n');
     for (final transaction in transactions) {
       final values = _headers.map((header) => transaction[header]);
@@ -52,11 +55,14 @@ class TransactionExportService {
     'updatedAt',
   ];
 
-  String _csvRow(Iterable<Object?> values) => values.map(_csvValue).join(',');
+  String _csvRow(Iterable<Object?> values) => values.map(_csvValue).join(';');
 
   String _csvValue(Object? value) {
-    final text = value?.toString() ?? '';
-    if (!text.contains(RegExp('[",\\r\\n]'))) return text;
+    var text = value?.toString() ?? '';
+    // Excel, bu karakterlerle başlayan hücreleri formül olarak yorumlar.
+    // Apostrof hücreyi metin olarak korur ve Excel'de görüntülenmez.
+    if (text.startsWith(RegExp(r'[=+\-@]'))) text = "'$text";
+    if (!text.contains(RegExp('[";\\r\\n]'))) return text;
     return '"${text.replaceAll('"', '""')}"';
   }
 }
