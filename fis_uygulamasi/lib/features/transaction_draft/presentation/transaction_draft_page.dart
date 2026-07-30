@@ -36,6 +36,8 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   late final TextEditingController _institutionController;
   late final TextEditingController _categoryController;
   late final TextEditingController _amountController;
+  late final TextEditingController _dateController;
+  DateTime? _transactionDate;
 
   @override
   void initState() {
@@ -46,11 +48,17 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
     _categoryController = TextEditingController(
       text: widget.initialDraft.category,
     );
+
     final initialAmount = widget.initialDraft.amountInMinor;
     _amountController = TextEditingController(
       text: initialAmount == null
           ? ''
           : formatMinorAsTurkishLira(initialAmount),
+    );
+
+    _transactionDate = widget.initialDraft.transactionDate;
+    _dateController = TextEditingController(
+      text: _formatTransactionDate(_transactionDate),
     );
   }
 
@@ -59,16 +67,56 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
     _institutionController.dispose();
     _categoryController.dispose();
     _amountController.dispose();
+    _dateController.dispose();
     super.dispose();
+  }
+
+  String _formatTransactionDate(DateTime? date) {
+    if (date == null) return '';
+
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return '$day.$month.${date.year}';
+  }
+
+  Future<void> _selectTransactionDate() async {
+    final now = DateTime.now();
+    final firstDate = DateTime(2000);
+    final lastDate = DateTime(now.year + 5);
+    final currentDate = _transactionDate ?? now;
+
+    final initialDate = currentDate.isBefore(firstDate)
+        ? firstDate
+        : currentDate.isAfter(lastDate)
+        ? lastDate
+        : currentDate;
+
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      helpText: 'Fiş tarihini seçin',
+    );
+
+    if (selectedDate == null) return;
+
+    setState(() {
+      _transactionDate = selectedDate;
+      _dateController.text = _formatTransactionDate(selectedDate);
+    });
   }
 
   void _confirmDraft() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
     Navigator.of(context).pop(
       TransactionDraft(
         institutionName: _institutionController.text.trim(),
         category: _categoryController.text.trim(),
         amountInMinor: parseTurkishLiraToMinor(_amountController.text)!,
+        transactionDate: _transactionDate,
+        rawOcrText: widget.initialDraft.rawOcrText,
       ),
     );
   }
@@ -148,6 +196,24 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
+                    key: const Key('transaction_date_field'),
+                    controller: _dateController,
+                    readOnly: true,
+                    onTap: _selectTransactionDate,
+                    decoration: InputDecoration(
+                      labelText: 'Fiş Tarihi',
+                      hintText: 'Tarih bulunamadı - seçmek için dokunun',
+                      prefixIcon: const Icon(Icons.calendar_today_outlined),
+                      suffixIcon: IconButton(
+                        tooltip: 'Tarih seç',
+                        onPressed: _selectTransactionDate,
+                        icon: const Icon(Icons.edit_calendar_outlined),
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
                     key: const Key('amount_field'),
                     controller: _amountController,
                     decoration: const InputDecoration(
@@ -214,7 +280,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
               label: const Text('Vazgeç'),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(height: 12),
           Expanded(
             child: FilledButton.icon(
               key: const Key('confirm_draft_button'),

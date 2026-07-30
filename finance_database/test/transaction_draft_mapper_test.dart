@@ -30,6 +30,21 @@ void main() {
       expect(entity.note, 'weekly shopping');
     });
 
+        test('draft tarihini ve OCR metnini Isar kaydına aktarır', () {
+      final receiptDate = DateTime.utc(2026, 7, 30, 12, 15);
+
+      final entity = TransactionDraft(
+        institutionName: 'Migros',
+        category: 'Market',
+        amountInMinor: 2550,
+        transactionDate: receiptDate,
+        rawOcrText: 'MIGROS\nTOPLAM 25,50 TL',
+      ).toTransactionEntity(source: TransactionSource.ocrLlm);
+
+      expect(entity.date, receiptDate);
+      expect(entity.rawOcrText, 'MIGROS\nTOPLAM 25,50 TL');
+    });
+
     test('uses safe defaults for an incomplete draft', () {
       final entity = const TransactionDraft.empty().toTransactionEntity(
         date: DateTime(2026, 7, 28),
@@ -133,6 +148,23 @@ void main() {
         expect(draft.institutionName, 'MİGROS');
       }
     });
+
+
+        test('backend tarihini ve normalize OCR metnini draft içinde korur', () {
+      final draft = TransactionDraft.fromJson({
+        'merchant': 'MİGROS',
+        'category': 'Market',
+        'total_amount_minor': 2550,
+        'date': '2026-07-30T12:15:00Z',
+        'normalized_ocr_text': 'MİGROS\nTOPLAM 25,50 TL',
+      });
+
+      expect(draft.transactionDate, DateTime.parse('2026-07-30T12:15:00Z'));
+      expect(draft.rawOcrText, 'MİGROS\nTOPLAM 25,50 TL');
+    });
+
+
+
 
     test('supports legacy major amount without floating-point arithmetic', () {
       final draft = TransactionDraft.fromJson({

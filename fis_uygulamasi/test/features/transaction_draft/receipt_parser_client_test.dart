@@ -14,6 +14,7 @@ void main() {
       expect(options.method, 'POST');
       expect(options.path, '/api/v1/parse-receipt');
       expect(options.data, {'ocr_text': 'MİGROS TOPLAM 25,50 TL'});
+
       return ResponseBody.fromString(
         jsonEncode({
           'normalized_ocr_text': 'MİGROS\nTOPLAM 25,50 TL',
@@ -32,6 +33,7 @@ void main() {
         },
       );
     });
+
     final apiClient = ApiClient(
       baseUrl: 'https://example.com',
       tokenStorage: _MemoryTokenStorage(),
@@ -44,9 +46,15 @@ void main() {
     expect(result.draft.institutionName, 'MİGROS');
     expect(result.draft.category, 'Market');
     expect(result.draft.amountInMinor, 2550);
+    expect(
+      result.draft.transactionDate,
+      DateTime.parse('2026-07-28T12:00:00Z'),
+    );
+    expect(result.draft.rawOcrText, 'MİGROS\nTOPLAM 25,50 TL');
     expect(result.normalizedOcrText, 'MİGROS\nTOPLAM 25,50 TL');
     expect(result.confidenceScore, 0.92);
     expect(result.isParseSuccessful, isTrue);
+
     apiClient.close();
   });
 
@@ -55,6 +63,7 @@ void main() {
     dio.httpClientAdapter = _FakeAdapter(
       (_) => ResponseBody.fromString('error', 502),
     );
+
     final apiClient = ApiClient(
       baseUrl: 'https://example.com',
       tokenStorage: _MemoryTokenStorage(),
@@ -72,6 +81,7 @@ void main() {
         ),
       ),
     );
+
     apiClient.close();
   });
 }

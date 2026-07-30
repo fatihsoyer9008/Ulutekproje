@@ -1,7 +1,8 @@
 import 'dart:async';
 
+import 'package:finance_database/finance_database.dart';
+
 import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
-import 'package:app_main/features/transaction_draft/model/transaction_draft.dart';
 import 'package:app_main/src/screens/expense_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -147,4 +148,64 @@ void main() {
     expect(find.text('Gider Ekle'), findsOneWidget);
     expect(find.textContaining('Sunucuya ulaşılamadı'), findsOneWidget);
   });
+
+    testWidgets(
+    'OCR kaydı fiş tarihi, ham metin ve OCR kaynağıyla kaydedilir',
+    (tester) async {
+      TransactionEntity? savedTransaction;
+      final receiptDate = DateTime(2026, 7, 28, 12);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: FilledButton(
+                key: const Key('open_expense_screen'),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ExpenseScreen(
+                        scanReceipt: (_) async => 'MİGROS TOPLAM 25,50 TL',
+                        parseReceipt: (_) async => ReceiptParseResult(
+                          draft: TransactionDraft(
+                            institutionName: 'MİGROS',
+                            category: 'Market',
+                            amountInMinor: 2550,
+                            transactionDate: receiptDate,
+                            rawOcrText: 'MİGROS\nTOPLAM 25,50 TL',
+                          ),
+                          normalizedOcrText: 'MİGROS\nTOPLAM 25,50 TL',
+                          confidenceScore: 0.92,
+                          isParseSuccessful: true,
+                        ),
+                        saveTransaction: (transaction) async {
+                          savedTransaction = transaction;
+                        },
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('Gider ekranını aç'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('open_expense_screen')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('ocr_camera_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('confirm_draft_button')));
+      await tester.pumpAndSettle();
+
+      expect(savedTransaction, isNotNull);
+      expect(savedTransaction!.source, TransactionSource.ocrLlm);
+      expect(savedTransaction!.rawOcrText, 'MİGROS\nTOPLAM 25,50 TL');
+      expect(savedTransaction!.date, receiptDate);
+      expect(savedTransaction!.amountInMinor, 2550);
+    },
+  );
 }
