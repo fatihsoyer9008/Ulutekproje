@@ -18,6 +18,7 @@ void main() {
         'normalized_ocr_text': 'MIGROS\nTOPLAM 25,50 TL',
         'merchant': 'MIGROS',
         'total_amount_minor': 2550,
+        'date': '2026-07-28T12:00:00Z',
         'category': 'Market',
         'confidence_score': 0.92,
         'is_parse_successful': true,
@@ -29,7 +30,10 @@ void main() {
     expect(result.draft.institutionName, 'MIGROS');
     expect(result.draft.category, 'Market');
     expect(result.draft.amountInMinor, 2550);
+    expect(result.draft.transactionDate, DateTime.utc(2026, 7, 28, 12));
     expect(result.normalizedOcrText, 'MIGROS\nTOPLAM 25,50 TL');
+    expect(result.confidenceScore, 0.92);
+    expect(result.isParseSuccessful, isTrue);
   });
 
   test('rejects an empty OCR text without making a request', () async {
