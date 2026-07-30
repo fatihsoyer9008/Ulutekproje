@@ -64,7 +64,7 @@ void main() {
       MaterialApp(
         home: ExpenseScreen(
           scanReceipt: (_) async => null,
-          parseReceipt: (_) async {
+          parseReceipt: (_, {cancelToken}) async {
             parseCallCount++;
             throw StateError('should not parse a cancelled scan');
           },

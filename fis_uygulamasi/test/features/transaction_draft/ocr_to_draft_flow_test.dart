@@ -17,7 +17,7 @@ void main() {
       MaterialApp(
         home: ExpenseScreen(
           scanReceipt: (_) async => 'OCR metni',
-          parseReceipt: (_) => response.future,
+          parseReceipt: (_, {cancelToken}) => response.future,
         ),
       ),
     );
@@ -57,7 +57,7 @@ void main() {
       MaterialApp(
         home: ExpenseScreen(
           scanReceipt: (_) async => 'MİGROS TOPLAM 25,50 TL',
-          parseReceipt: (text) async {
+          parseReceipt: (text, {cancelToken}) async {
             parsedText = text;
             return const ReceiptParseResult(
               draft: TransactionDraft(
@@ -105,7 +105,7 @@ void main() {
       MaterialApp(
         home: ExpenseScreen(
           scanReceipt: (_) async => 'bozuk OCR',
-          parseReceipt: (_) async => const ReceiptParseResult(
+          parseReceipt: (_, {cancelToken}) async => const ReceiptParseResult(
             draft: TransactionDraft.empty(),
             normalizedOcrText: 'bozuk OCR',
             confidenceScore: 0.85,
@@ -133,7 +133,7 @@ void main() {
       MaterialApp(
         home: ExpenseScreen(
           scanReceipt: (_) async => 'OCR',
-          parseReceipt: (_) async =>
+          parseReceipt: (_, {cancelToken}) async =>
               throw const ReceiptParserException('Sunucuya ulaşılamadı'),
         ),
       ),

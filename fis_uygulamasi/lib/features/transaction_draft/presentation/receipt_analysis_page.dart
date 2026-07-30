@@ -5,7 +5,9 @@ import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
 class ReceiptAnalysisPage extends StatefulWidget {
-  const ReceiptAnalysisPage({super.key});
+  const ReceiptAnalysisPage({super.key, this.onCancel});
+
+  final VoidCallback? onCancel;
 
   @override
   State<ReceiptAnalysisPage> createState() => _ReceiptAnalysisPageState();
@@ -95,6 +97,14 @@ class _ReceiptAnalysisPageState extends State<ReceiptAnalysisPage>
                   ),
                   const SizedBox(height: 22),
                   const _AnimatedDots(),
+                  if (widget.onCancel != null) ...[
+                    const SizedBox(height: 24),
+                    TextButton(
+                      key: const Key('cancel_receipt_analysis_button'),
+                      onPressed: widget.onCancel,
+                      child: const Text('İptal Et'),
+                    ),
+                  ],
                 ],
               ),
             ),
