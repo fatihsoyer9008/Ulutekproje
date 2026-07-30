@@ -5,13 +5,17 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
 typedef NotificationTapHandler = void Function(String? payload);
+typedef TimeZoneIdentifierLoader = Future<String> Function();
 
 /// Her gün kullanıcının seçtiği saatte harcama girmeyi hatırlatır.
 class DailyBudgetReminderService {
   DailyBudgetReminderService({
     FlutterLocalNotificationsPlugin? plugin,
     this.onNotificationTap,
-  }) : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
+    TimeZoneIdentifierLoader? loadTimeZoneIdentifier,
+  }) : _plugin = plugin ?? FlutterLocalNotificationsPlugin(),
+       _loadTimeZoneIdentifier =
+           loadTimeZoneIdentifier ?? _loadDeviceTimeZoneIdentifier;
 
   static const notificationId = 1001;
 
@@ -23,6 +27,7 @@ class DailyBudgetReminderService {
   static const _channelDescription = 'Günlük harcama girişi için hatırlatmalar';
 
   final FlutterLocalNotificationsPlugin _plugin;
+  final TimeZoneIdentifierLoader _loadTimeZoneIdentifier;
   final NotificationTapHandler? onNotificationTap;
 
   Future<void>? _initialization;
@@ -30,12 +35,17 @@ class DailyBudgetReminderService {
   /// Bildirim eklentisini ve cihaz saat dilimini hazırlar.
   Future<void> initialize() => _initialization ??= _initialize();
 
+  static Future<String> _loadDeviceTimeZoneIdentifier() async {
+    final deviceTimeZone = await FlutterTimezone.getLocalTimezone();
+    return deviceTimeZone.identifier;
+  }
+
   Future<void> _initialize() async {
     tz.initializeTimeZones();
 
-    final deviceTimeZone = await FlutterTimezone.getLocalTimezone();
+    final timeZoneIdentifier = await _loadTimeZoneIdentifier();
 
-    tz.setLocalLocation(tz.getLocation(deviceTimeZone.identifier));
+    tz.setLocalLocation(tz.getLocation(timeZoneIdentifier));
 
     const settings = InitializationSettings(
       android: AndroidInitializationSettings('ic_notification'),

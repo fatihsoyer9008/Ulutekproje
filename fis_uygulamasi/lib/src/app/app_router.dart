@@ -13,7 +13,7 @@ import '../../features/auth/presentation/views/startup_page.dart';
 import '../../features/auth/presentation/views/welcome_page.dart';
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../screens/expense_screen.dart';
-import 'finance_app.dart';
+import 'finance_home.dart';
 
 GoRouter createAppRouter({
   required WidgetRef ref,
