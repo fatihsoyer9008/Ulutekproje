@@ -35,10 +35,10 @@ class DailyBudgetReminderService {
     await _plugin.initialize(settings: settings);
   }
 
-  /// Seçilen saate göre bir sonraki güncel zamanı döndürür.
-  @visibleForTesting
+@visibleForTesting
   static tz.TZDateTime nextOccurrence(TimeOfDay time, {tz.TZDateTime? now}) {
     final current = now ?? tz.TZDateTime.now(tz.local);
+
     var scheduled = tz.TZDateTime(
       tz.local,
       current.year,
@@ -47,32 +47,38 @@ class DailyBudgetReminderService {
       time.hour,
       time.minute,
     );
+
     if (!scheduled.isAfter(current)) {
-      scheduled = scheduled.add(const Duration(days: 1));
+      scheduled = tz.TZDateTime(
+        tz.local,
+        current.year,
+        current.month,
+        current.day + 1,
+        time.hour,
+        time.minute,
+      );
     }
+
     return scheduled;
   }
 
-  /// Android 13 ve sonrasında kullanıcıdan bildirim izni ister.
   Future<bool> requestPermission() async {
     await initialize();
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-      AndroidFlutterLocalNotificationsPlugin
-    >();
+
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+
     return await androidPlugin?.requestNotificationsPermission() ?? true;
   }
 
-  /// Her gün [time] saatinde gösterilecek bütçe hatırlatıcısını planlar.
   Future<void> scheduleDailyReminder(TimeOfDay time) async {
     await initialize();
-    final granted = await requestPermission();
-    if (!granted) {
-      throw StateError('Bildirim izni verilmedi.');
-    }
 
     await _plugin.zonedSchedule(
       id: notificationId,
-      title: 'Günlük harcamanı eklemeyi unutma',
+      title: 'Günlük harcamanı eklemeyi unutma!',
       body: 'Bugünkü harcamalarını kaydederek bütçeni güncel tut.',
       scheduledDate: nextOccurrence(time),
       notificationDetails: const NotificationDetails(
@@ -89,7 +95,6 @@ class DailyBudgetReminderService {
     );
   }
 
-  /// Daha önce planlanan günlük hatırlatıcıyı kaldırır.
   Future<void> cancelDailyReminder() async {
     await initialize();
     await _plugin.cancel(id: notificationId);
