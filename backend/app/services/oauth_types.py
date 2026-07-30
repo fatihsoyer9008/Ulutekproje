@@ -14,7 +14,14 @@ class OAuthIdentity:
 
 
 class OAuthValidationError(ValueError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "oauth_validation_failed",
+    ) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class OAuthConfigurationError(RuntimeError):

@@ -99,6 +99,10 @@ class AuthRepository {
       if (idToken == null || idToken.isEmpty) {
         throw const AuthException('Google kimlik belirteci alınamadı.');
       }
+      validateGoogleIdTokenAudience(
+        idToken,
+        expectedAudience: ApiConfig.googleServerClientId,
+      );
 
       final response = await _apiClient.dio.post<Map<String, dynamic>>(
         '/api/v1/auth/google',
@@ -163,15 +167,76 @@ class AuthRepository {
 
   static String _messageFrom(DioException error, String fallback) {
     final data = error.response?.data;
-    if (data is Map && data['detail'] is String) {
-      return data['detail'] as String;
+    if (data is Map) {
+      final detail = data['detail'];
+      if (detail is String) return detail;
+      if (detail is Map && detail['message'] is String) {
+        return detail['message'] as String;
+      }
+      if (detail is List && detail.isNotEmpty) {
+        final first = detail.first;
+        if (first is Map && first['msg'] is String) {
+          final location = first['loc'];
+          final field = location is List && location.isNotEmpty
+              ? location.last
+              : null;
+          return field == null
+              ? first['msg'] as String
+              : '$field: ${first['msg']}';
+        }
+      }
     }
-    return fallback;
+    final statusCode = error.response?.statusCode;
+    if (statusCode != null) {
+      return '$fallback (HTTP $statusCode)';
+    }
+    if (error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.sendTimeout) {
+      return 'Auth sunucusuna ulaşılamadı: ${ApiConfig.baseUrl}. '
+          'Telefon kullanıyorsanız güncel HTTPS tünel adresiyle yeniden '
+          'derleyin.';
+    }
+    return '$fallback ${error.message ?? ''}'.trim();
   }
 
   static String _createNonce() {
     final random = Random.secure();
     final bytes = List<int>.generate(32, (_) => random.nextInt(256));
     return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+}
+
+void validateGoogleIdTokenAudience(
+  String idToken, {
+  required String expectedAudience,
+}) {
+  try {
+    final segments = idToken.split('.');
+    if (segments.length != 3) {
+      throw const FormatException('JWT üç parçadan oluşmalıdır.');
+    }
+    final payloadBytes = base64Url.decode(base64Url.normalize(segments[1]));
+    final payload = jsonDecode(utf8.decode(payloadBytes));
+    if (payload is! Map) {
+      throw const FormatException('JWT payload nesnesi bekleniyordu.');
+    }
+    final audience = payload['aud'];
+    final matches =
+        audience == expectedAudience ||
+        (audience is List && audience.contains(expectedAudience));
+    if (!matches) {
+      throw const AuthException(
+        'Google Client ID eşleşmiyor. Flutter GOOGLE_SERVER_CLIENT_ID ile '
+        'backend GOOGLE_OAUTH_CLIENT_IDS aynı Web OAuth Client ID olmalıdır.',
+      );
+    }
+  } on AuthException {
+    rethrow;
+  } on FormatException {
+    throw const AuthException(
+      'Google kimlik belirteci okunamadı. OAuth yapılandırmasını kontrol edin.',
+    );
   }
 }

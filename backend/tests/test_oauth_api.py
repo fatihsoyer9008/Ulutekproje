@@ -21,7 +21,11 @@ from app.core.rate_limit import NoOpRateLimiter
 from app.main import app
 from app.models.oauth_account import OAuthAccount, OAuthProvider
 from app.models.user import User, UserStatus
-from app.services.oauth_types import OAuthIdentity, OAuthProviderError
+from app.services.oauth_types import (
+    OAuthIdentity,
+    OAuthProviderError,
+    OAuthValidationError,
+)
 
 
 class NoOpEmailSender:
@@ -34,6 +38,7 @@ class NoOpEmailSender:
 
 class FakeGoogleVerifier:
     def __init__(self) -> None:
+        self.error: OAuthValidationError | None = None
         self.identity = OAuthIdentity(
             provider=OAuthProvider.google,
             subject="google-subject-1",
@@ -45,6 +50,8 @@ class FakeGoogleVerifier:
     def verify(self, *, id_token: str, nonce: str) -> OAuthIdentity:
         assert id_token == "g" * 32
         assert nonce == "n" * 16
+        if self.error is not None:
+            raise self.error
         return self.identity
 
 
@@ -133,6 +140,35 @@ async def test_google_endpoint_creates_and_reuses_provider_account(
         accounts = list(await session.scalars(select(OAuthAccount)))
         assert len(accounts) == 1
         assert accounts[0].provider is OAuthProvider.google
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [
+        ("google_token_expired", "Google identity token has expired"),
+        (
+            "google_token_audience_mismatch",
+            "Google token audience does not match the server client ID",
+        ),
+        ("google_token_issuer_mismatch", "Google token issuer is invalid"),
+    ],
+)
+async def test_google_endpoint_returns_actionable_validation_error(
+    oauth_context,
+    code: str,
+    message: str,
+) -> None:
+    client, _, google, _, _ = oauth_context
+    google.error = OAuthValidationError(message, code=code)
+
+    response = await client.post(
+        "/api/v1/auth/google",
+        json={"id_token": "g" * 32, "nonce": "n" * 16},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == {"code": code, "message": message}
 
 
 @pytest.mark.asyncio

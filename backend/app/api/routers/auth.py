@@ -1,4 +1,7 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
@@ -54,6 +57,7 @@ from app.services.session_service import (
 )
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 REGISTER_IP = RateLimitRule("register-ip", 5, 3600)
 REGISTER_EMAIL = RateLimitRule("register-email", 3, 3600)
@@ -186,15 +190,37 @@ async def google_login(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from None
-    except (OAuthConfigurationError, OAuthTokenEncryptionError):
+    except (OAuthConfigurationError, OAuthTokenEncryptionError) as exc:
+        logger.error("Google OAuth configuration error: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google OAuth is not configured.",
+            detail={
+                "code": "google_oauth_not_configured",
+                "message": (
+                    "Google OAuth is not configured on the server. "
+                    "Set GOOGLE_OAUTH_CLIENT_IDS to the same web client ID "
+                    "used by Flutter."
+                ),
+            },
         ) from None
-    except OAuthValidationError:
+    except OAuthValidationError as exc:
+        logger.warning("Google OAuth validation rejected: code=%s", exc.code)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Google authentication failed.",
+            detail={"code": exc.code, "message": str(exc)},
+        ) from None
+    except SQLAlchemyError:
+        await db.rollback()
+        logger.exception("Google OAuth database operation failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "google_account_persistence_failed",
+                "message": (
+                    "Google account could not be saved. "
+                    "Please try again after the database is available."
+                ),
+            },
         ) from None
     return _token_response(issued)
 

@@ -33,6 +33,13 @@ def _google_claims(**overrides):
     return claims
 
 
+def test_google_client_ids_accepts_legacy_web_client_name(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "google_oauth_client_ids", "")
+    monkeypatch.setattr(settings, "google_web_client_id", "legacy-web-client")
+
+    assert settings.google_client_ids == ("legacy-web-client",)
+
+
 @pytest.mark.parametrize(
     ("claims", "token", "message"),
     [

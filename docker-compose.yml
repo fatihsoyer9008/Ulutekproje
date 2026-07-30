@@ -47,6 +47,9 @@ services:
   api:
     build:
       context: ./backend
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       APP_ENV: development
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-receipt_app}:${POSTGRES_PASSWORD:-local-postgres-password}@postgres:5432/${POSTGRES_DB:-receipt_app}
@@ -56,8 +59,10 @@ services:
       EMAIL_DELIVERY_MODE: smtp
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      SMTP_START_TLS: "false"
       APP_DEEP_LINK_BASE_URL: fiskon://auth
-      USE_DUMMY_PARSER: "true"
     ports:
       - "8000:8000"
     depends_on:

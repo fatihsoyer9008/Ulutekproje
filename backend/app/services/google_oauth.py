@@ -28,25 +28,53 @@ class GoogleOAuthVerifier:
                 audience=list(audiences),
             )
         except (GoogleAuthError, ValueError) as exc:
-            raise OAuthValidationError("Invalid Google identity token") from exc
+            message = str(exc).casefold()
+            if "expired" in message:
+                code = "google_token_expired"
+                detail = "Google identity token has expired"
+            elif "audience" in message:
+                code = "google_token_audience_mismatch"
+                detail = "Google token audience does not match the server client ID"
+            elif "issuer" in message:
+                code = "google_token_issuer_mismatch"
+                detail = "Google token issuer is invalid"
+            else:
+                code = "google_token_invalid"
+                detail = "Google identity token signature or payload is invalid"
+            raise OAuthValidationError(detail, code=code) from exc
 
         issuer = claims.get("iss")
         audience = claims.get("aud")
         expiration = claims.get("exp")
         if issuer not in _GOOGLE_ISSUERS:
-            raise OAuthValidationError("Invalid Google token issuer")
+            raise OAuthValidationError(
+                "Google token issuer is invalid",
+                code="google_token_issuer_mismatch",
+            )
         if not _audience_matches(audience, audiences):
-            raise OAuthValidationError("Invalid Google token audience")
+            raise OAuthValidationError(
+                "Google token audience does not match the server client ID",
+                code="google_token_audience_mismatch",
+            )
         if not isinstance(expiration, (int, float)) or expiration <= datetime.now(
             UTC
         ).timestamp():
-            raise OAuthValidationError("Expired Google identity token")
+            raise OAuthValidationError(
+                "Google identity token has expired",
+                code="google_token_expired",
+            )
         if claims.get("nonce") != nonce:
-            raise OAuthValidationError("Invalid Google token nonce")
+            raise OAuthValidationError(
+                "Google token nonce validation failed",
+                code="google_token_nonce_mismatch",
+            )
 
         subject = claims.get("sub")
         if not isinstance(subject, str) or not subject:
-            raise OAuthValidationError("Google token subject is missing")
+            raise OAuthValidationError(
+                "Google token subject is missing",
+                code="google_token_subject_missing",
+            )
         email = claims.get("email")
         return OAuthIdentity(
             provider=OAuthProvider.google,

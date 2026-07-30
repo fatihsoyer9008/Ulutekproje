@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     trust_proxy_headers: bool = False
 
     google_oauth_client_ids: str = ""
+    # Backwards-compatible name used by the existing local environment.
+    google_web_client_id: str = ""
     apple_client_id: str = ""
     apple_team_id: str = ""
     apple_key_id: str = ""
@@ -64,11 +66,15 @@ class Settings(BaseSettings):
 
     @property
     def google_client_ids(self) -> tuple[str, ...]:
-        return tuple(
+        configured = [
             client_id.strip()
             for client_id in self.google_oauth_client_ids.split(",")
             if client_id.strip()
-        )
+        ]
+        legacy = self.google_web_client_id.strip()
+        if legacy:
+            configured.append(legacy)
+        return tuple(dict.fromkeys(configured))
 
     model_config = SettingsConfigDict(
         env_file=".env",

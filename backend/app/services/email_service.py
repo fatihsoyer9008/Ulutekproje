@@ -54,16 +54,18 @@ class SMTPEmailSender:
         message["Subject"] = subject
         message.set_content(body)
 
+        username = (settings.smtp_username or "").strip() or None
+        password = (
+            settings.smtp_password.get_secret_value().strip()
+            if settings.smtp_password is not None
+            else ""
+        ) or None
         await aiosmtplib.send(
             message,
             hostname=settings.smtp_host,
             port=settings.smtp_port,
-            username=settings.smtp_username,
-            password=(
-                settings.smtp_password.get_secret_value()
-                if settings.smtp_password is not None
-                else None
-            ),
+            username=username,
+            password=password,
             start_tls=settings.smtp_start_tls,
         )
 

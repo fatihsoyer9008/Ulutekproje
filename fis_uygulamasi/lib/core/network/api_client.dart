@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../storage/secure_token_storage.dart';
 
@@ -35,6 +36,7 @@ class ApiClient {
                responseType: ResponseType.json,
              ),
            ) {
+    this.dio.interceptors.add(const _AuthDebugInterceptor());
     this.dio.interceptors.add(
       InterceptorsWrapper(onRequest: _onRequest, onError: _onError),
     );
@@ -156,6 +158,88 @@ class ApiClient {
   void close() {
     dio.close(force: true);
     _refreshDio.close(force: true);
+  }
+}
+
+class _AuthDebugInterceptor extends Interceptor {
+  const _AuthDebugInterceptor();
+
+  static bool _isAuthPath(String path) => path.startsWith('/api/v1/auth/');
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (kDebugMode && _isAuthPath(options.path)) {
+      debugPrint(
+        '[AuthNetwork] REQUEST ${options.method} ${options.uri}\n'
+        'headers=${_sanitize(options.headers)}\n'
+        'body=${_sanitize(options.data)}',
+      );
+    }
+    handler.next(options);
+  }
+
+  @override
+  void onResponse(
+    Response<dynamic> response,
+    ResponseInterceptorHandler handler,
+  ) {
+    if (kDebugMode && _isAuthPath(response.requestOptions.path)) {
+      debugPrint(
+        '[AuthNetwork] RESPONSE '
+        '${response.requestOptions.method} ${response.requestOptions.uri} '
+        'status=${response.statusCode}\n'
+        'body=${_sanitize(response.data)}',
+      );
+    }
+    handler.next(response);
+  }
+
+  @override
+  void onError(DioException error, ErrorInterceptorHandler handler) {
+    if (kDebugMode && _isAuthPath(error.requestOptions.path)) {
+      debugPrint(
+        '[AuthNetwork] ERROR '
+        '${error.requestOptions.method} ${error.requestOptions.uri} '
+        'type=${error.type.name} '
+        'status=${error.response?.statusCode}\n'
+        'message=${error.message}\n'
+        'response=${_sanitize(error.response?.data)}',
+      );
+    }
+    handler.next(error);
+  }
+
+  static Object? _sanitize(Object? value, [String? key]) {
+    if (value is Map) {
+      return value.map(
+        (mapKey, mapValue) =>
+            MapEntry(mapKey.toString(), _sanitize(mapValue, mapKey.toString())),
+      );
+    }
+    if (value is Iterable) {
+      return value.map((item) => _sanitize(item)).toList();
+    }
+    if (value is String) {
+      final normalizedKey = key?.toLowerCase() ?? '';
+      if (normalizedKey == 'authorization') return '<redacted>';
+      if (normalizedKey.contains('token') ||
+          normalizedKey.contains('password') ||
+          normalizedKey.contains('secret') ||
+          normalizedKey == 'authorization_code') {
+        return '<redacted length=${value.length}>';
+      }
+      if (normalizedKey == 'nonce') {
+        return '<redacted length=${value.length}>';
+      }
+      if (normalizedKey == 'email') {
+        final separator = value.indexOf('@');
+        if (separator > 1) {
+          return '${value.substring(0, 1)}***${value.substring(separator)}';
+        }
+        return '<redacted email>';
+      }
+    }
+    return value;
   }
 }
 
