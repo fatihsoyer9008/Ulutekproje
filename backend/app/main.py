@@ -43,6 +43,12 @@ def _validate_production_settings() -> None:
             "EMAIL_FROM, SMTP_HOST, SMTP_USER and SMTP_PASSWORD are required "
             "in production"
         )
+    if not settings.email_action_base_url.strip().lower().startswith(
+        "https://"
+    ):
+        raise RuntimeError(
+            "EMAIL_ACTION_BASE_URL must use HTTPS in production"
+        )
     apple_values = (
         settings.apple_client_id,
         settings.apple_team_id,

@@ -60,8 +60,11 @@ class SMTPEmailSender:
 
     @staticmethod
     def _action_url(action: str, token: str) -> str:
-        base_url = settings.app_deep_link_base_url.rstrip("/")
-        return f"{base_url}/{action}?{urlencode({'token': token})}"
+        base_url = settings.email_action_base_url.rstrip("/")
+        endpoint = (
+            "verify-email-link" if action == "verify-email" else action
+        )
+        return f"{base_url}/{endpoint}?{urlencode({'token': token})}"
 
     async def _send(
         self,

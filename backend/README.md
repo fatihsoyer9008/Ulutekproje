@@ -128,11 +128,15 @@ SMTP_PORT=587
 SMTP_USER=adresiniz@gmail.com
 SMTP_PASSWORD=gmail-uygulama-sifresi
 SMTP_TLS=true
+EMAIL_ACTION_BASE_URL=https://api.example.com/api/v1/auth
 ```
 
 SendGrid için `SMTP_HOST=smtp.sendgrid.net`, `SMTP_USER=apikey` ve
 `SMTP_PASSWORD=<SendGrid API key>` kullanılır. Auth uç noktaları Swagger'da
-`/api/v1/auth` etiketi altında listelenir.
+`/api/v1/auth` etiketi altında listelenir. `EMAIL_ACTION_BASE_URL`, telefondan
+ve e-posta istemcisinden erişilebilen gerçek HTTPS backend adresi olmalıdır.
+Cloudflare quick tunnel kullanılıyorsa tünel her yeniden açıldığında bu değer
+yeni adresle güncellenmeli ve API container'ı yeniden başlatılmalıdır.
 
 Geliştirme ortamındaki örnek JWT ve HMAC secret değerleri production için
 geçerli değildir. `APP_ENV=production` kullanıldığında uygulama zayıf secret

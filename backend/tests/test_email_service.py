@@ -19,7 +19,11 @@ async def test_smtp_sender_uses_real_provider_configuration(
     monkeypatch.setattr(settings, "smtp_password", SecretStr("app-password"))
     monkeypatch.setattr(settings, "smtp_tls", True)
     monkeypatch.setattr(settings, "smtp_timeout_seconds", 15.0)
-    monkeypatch.setattr(settings, "app_deep_link_base_url", "fiskon://auth")
+    monkeypatch.setattr(
+        settings,
+        "email_action_base_url",
+        "https://api.example.com/api/v1/auth",
+    )
 
     await SMTPEmailSender().send_verification(
         email="user@example.com",
@@ -30,7 +34,8 @@ async def test_smtp_sender_uses_real_provider_configuration(
     plain_body = message.get_body(preferencelist=("plain",))
     assert plain_body is not None
     assert (
-        "fiskon://auth/verify-email?token=verification-token"
+        "https://api.example.com/api/v1/auth/"
+        "verify-email-link?token=verification-token"
         in plain_body.get_content()
     )
     assert send.await_args.kwargs["hostname"] == "smtp.gmail.com"

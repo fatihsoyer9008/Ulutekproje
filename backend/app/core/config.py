@@ -41,6 +41,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("SMTP_TLS", "SMTP_START_TLS"),
     )
     smtp_timeout_seconds: float = Field(default=15.0, gt=0, le=60)
+    email_action_base_url: str = "http://127.0.0.1:8000/api/v1/auth"
     app_deep_link_base_url: str = "fiskon://auth"
 
     rate_limit_enabled: bool = True

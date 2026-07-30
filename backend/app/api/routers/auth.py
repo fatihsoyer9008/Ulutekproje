@@ -1,6 +1,7 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -392,6 +393,77 @@ async def verify_email(
             detail="Invalid or expired verification token.",
         ) from None
     return MessageResponse(message="Email address verified.")
+
+
+@router.get(
+    "/verify-email-link",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def verify_email_link(
+    request: Request,
+    token: str = Query(min_length=32, max_length=512),
+    db: AsyncSession = Depends(get_db_session),
+    email_sender: EmailSender = Depends(get_email_sender),
+    limiter: RateLimiter = Depends(get_rate_limiter),
+) -> HTMLResponse:
+    await limiter.enforce(
+        TOKEN_ACTION_IP,
+        identifier=f"ip:{request_ip(request)}",
+    )
+    try:
+        await AuthService(db, email_sender).verify_email(token)
+    except InvalidOneTimeToken:
+        return _verification_page(
+            title="Bağlantı geçersiz",
+            message=(
+                "Bu doğrulama bağlantısının süresi dolmuş veya bağlantı "
+                "daha önce kullanılmış. Uygulamadan yeni bir bağlantı isteyin."
+            ),
+            successful=False,
+        )
+    return _verification_page(
+        title="E-posta doğrulandı",
+        message=(
+            "E-posta adresiniz başarıyla doğrulandı. FisKon uygulamasına "
+            "dönüp “Doğrulandım / Devam Et” butonuna basabilirsiniz."
+        ),
+        successful=True,
+    )
+
+
+def _verification_page(
+    *,
+    title: str,
+    message: str,
+    successful: bool,
+) -> HTMLResponse:
+    color = "#16856b" if successful else "#b42318"
+    icon = "✓" if successful else "!"
+    content = f"""<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} | FisKon</title>
+</head>
+<body style="margin:0;background:#f3faf7;font-family:Arial,sans-serif;color:#17312b">
+  <main style="max-width:560px;margin:64px auto;padding:24px">
+    <section style="background:white;border-radius:24px;padding:40px;
+      box-shadow:0 12px 40px rgba(22,133,107,.12);text-align:center">
+      <div style="width:64px;height:64px;margin:0 auto 20px;border-radius:50%;
+        background:{color};color:white;font-size:40px;line-height:64px">{icon}</div>
+      <h1 style="margin:0 0 16px;color:{color}">{title}</h1>
+      <p style="font-size:17px;line-height:1.6;margin:0">{message}</p>
+    </section>
+  </main>
+</body>
+</html>"""
+    return HTMLResponse(
+        content=content,
+        status_code=200 if successful else 400,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.post(
