@@ -4,10 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 class TransactionsScreen extends StatelessWidget {
-  const TransactionsScreen({
-    required this.transactions,
-    super.key,
-  });
+  const TransactionsScreen({required this.transactions, super.key});
 
   final List<TransactionEntity> transactions;
 

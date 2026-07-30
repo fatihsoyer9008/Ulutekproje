@@ -14,12 +14,16 @@ class FinanceHome extends StatefulWidget {
     required this.transactions,
     this.saveTransaction,
     this.scanReceipt,
+    this.parseReceipt,
+    this.onProfilePressed,
     super.key,
   });
 
   final List<TransactionEntity> transactions;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
+  final ReceiptParseHandler? parseReceipt;
+  final VoidCallback? onProfilePressed;
 
   @override
   State<FinanceHome> createState() => _FinanceHomeState();
@@ -43,6 +47,7 @@ class _FinanceHomeState extends State<FinanceHome> {
         transactions: widget.transactions,
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
+        parseReceipt: widget.parseReceipt,
       ),
       StatisticsScreen(transactions: widget.transactions),
       const SavingsScreen(),
@@ -54,6 +59,7 @@ class _FinanceHomeState extends State<FinanceHome> {
       title: _titles[_index],
       currentIndex: _index,
       onDestinationSelected: (value) => setState(() => _index = value),
+      onProfilePressed: widget.onProfilePressed,
       body: IndexedStack(index: _index, children: screens),
     );
   }

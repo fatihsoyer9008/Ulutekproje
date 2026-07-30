@@ -58,42 +58,43 @@ class _ReceiptAnalysisPageState extends State<ReceiptAnalysisPage>
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ReceiptScanAnimation(animation: _animationController),
-            const SizedBox(height: 32),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 450),
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.18),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              ),
-              child: Text(
-                _messages[_messageIndex],
-                key: ValueKey(_messageIndex),
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: AppColors.ink,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Yapay zekâ fiş detaylarını sizin için hazırlıyor.',
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge?.copyWith(color: AppColors.muted),
-            ),
-            const SizedBox(height: 22),
-            const _AnimatedDots(),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ReceiptScanAnimation(animation: _animationController),
+                  const SizedBox(height: 32),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 450),
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.18),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      ),
+                    ),
+                    child: Text(
+                      _messages[_messageIndex],
+                      key: ValueKey(_messageIndex),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: AppColors.ink,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Yapay zekâ fiş detaylarını sizin için hazırlıyor.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.copyWith(color: AppColors.muted),
+                  ),
+                  const SizedBox(height: 22),
+                  const _AnimatedDots(),
                 ],
               ),
             ),

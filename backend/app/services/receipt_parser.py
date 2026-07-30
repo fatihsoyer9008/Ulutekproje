@@ -1,9 +1,11 @@
 from typing import Protocol
+
 from google import genai
 from google.genai import types
 
 from app.constants.ai_prompts import RECEIPT_EXTRACTION_SYSTEM_INSTRUCTION
 from app.schemas import ReceiptItem, ReceiptParserRequest, ReceiptParserResponse
+
 
 class ReceiptParserError(RuntimeError):
     pass

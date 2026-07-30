@@ -12,12 +12,14 @@ class DashboardScreen extends StatelessWidget {
     required this.transactions,
     this.saveTransaction,
     this.scanReceipt,
+    this.parseReceipt,
     super.key,
   });
 
   final List<TransactionEntity> transactions;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
+  final ReceiptParseHandler? parseReceipt;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -51,6 +53,7 @@ class DashboardScreen extends StatelessWidget {
                 ExpenseScreen(
                   saveTransaction: saveTransaction,
                   scanReceipt: scanReceipt,
+                  parseReceipt: parseReceipt,
                   openScannerOnStart: true,
                 ),
               ),

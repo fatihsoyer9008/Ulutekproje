@@ -1,8 +1,8 @@
 from datetime import datetime
-
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
 
 class ReceiptParserRequest(BaseModel):
     ocr_text: str = Field(min_length=1, max_length=30_000)

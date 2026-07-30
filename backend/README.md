@@ -90,3 +90,64 @@ Swagger'da `POST /api/v1/parse-receipt` endpoint'ini açıp şu gövdeyle
 pip install -r requirements-dev.txt
 pytest
 ```
+
+## Auth altyapısını yerelde çalıştırma
+
+Kimlik doğrulama altyapısı PostgreSQL ve Redis kullanır. Proje kökünde:
+
+```powershell
+docker compose up -d postgres redis mailpit
+cd backend
+Copy-Item .env.example .env
+.\.venv\Scripts\Activate.ps1
+alembic upgrade head
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Makinede `5432` veya `6379` zaten kullanılıyorsa Compose servislerini farklı
+host portlarında başlatabilirsiniz:
+
+```powershell
+$env:POSTGRES_PORT = "55432"
+$env:REDIS_PORT = "56379"
+docker compose up -d postgres redis
+```
+
+Bu durumda `DATABASE_URL` ve `REDIS_URL` içindeki host portlarını da aynı
+değerlere göre güncelleyin. Container içindeki servis portları değişmez.
+
+Yerel SMTP mesajları `http://127.0.0.1:8025` adresindeki Mailpit arayüzünde
+görülebilir. Auth uç noktaları Swagger'da `/api/v1/auth` etiketi altında
+listelenir.
+
+Geliştirme ortamındaki örnek JWT ve HMAC secret değerleri production için
+geçerli değildir. `APP_ENV=production` kullanıldığında uygulama zayıf secret
+ve kapalı e-posta teslimatıyla başlamayı reddeder.
+
+Migration durumunu kontrol etmek için:
+
+```powershell
+alembic current
+alembic upgrade head
+```
+
+## Google ve Apple OAuth
+
+Mobil istemci düz kullanıcı kimliği göndermez. Google endpoint'i imzalı ID
+token ile nonce, Apple endpoint'i ise identity token, tek kullanımlık
+authorization code ve nonce kabul eder:
+
+```text
+POST /api/v1/auth/google
+POST /api/v1/auth/apple
+```
+
+Google için `GOOGLE_OAUTH_CLIENT_IDS`; Apple için `APPLE_CLIENT_ID`,
+`APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` ve
+`APPLE_TOKEN_ENCRYPTION_KEY` tanımlanmalıdır. Apple refresh token'ları yalnızca
+backend'de, Fernet ile şifrelenmiş olarak saklanır ve hesap silme sırasında
+Apple revoke endpoint'inde iptal edilir.
+
+Aynı e-postaya sahip mevcut bir hesap provider e-postasına güvenilerek sessizce
+birleştirilmez. Böyle bir durumda kullanıcı önce mevcut hesabıyla giriş yapmalı
+ve ilerideki açık account-linking akışını kullanmalıdır.

@@ -12,11 +12,6 @@ import '../../features/transaction_draft/presentation/transaction_draft_page.dar
 typedef ReceiptScanLauncher = Future<String?> Function(BuildContext context);
 typedef ReceiptParseHandler = Future<ReceiptParseResult> Function(String text);
 
-const _receiptApiBaseUrl = String.fromEnvironment(
-  'RECEIPT_API_BASE_URL',
-  defaultValue: 'http://10.0.2.2:8000',
-);
-
 class ExpenseScreen extends StatefulWidget {
   const ExpenseScreen({
     super.key,
@@ -241,12 +236,9 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
   }
 
   Future<ReceiptParseResult> _parseReceipt(String rawText) async {
-    final client = ReceiptParserClient(baseUrl: _receiptApiBaseUrl);
-    try {
-      return await client.parse(rawText);
-    } finally {
-      client.close();
-    }
+    throw const ReceiptParserException(
+      'Fiş ayrıştırma istemcisi uygulama kabuğuna bağlanmamış.',
+    );
   }
 }
 

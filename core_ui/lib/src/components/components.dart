@@ -2,7 +2,13 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 
 class AppCard extends StatelessWidget {
-  const AppCard({required this.child, this.padding = const EdgeInsets.all(20), this.color = Colors.white, this.onTap, super.key});
+  const AppCard({
+    required this.child,
+    this.padding = const EdgeInsets.all(20),
+    this.color = Colors.white,
+    this.onTap,
+    super.key,
+  });
   final Widget child;
   final EdgeInsetsGeometry padding;
   final Color color;
@@ -10,99 +16,182 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-        color: color,
-        borderRadius: BorderRadius.circular(24),
-        child: InkWell(
-          onTap: onTap,
+    color: color,
+    borderRadius: BorderRadius.circular(24),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        padding: padding,
+        decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          child: Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: AppColors.border),
-              boxShadow: const [BoxShadow(color: Color(0x0D13251F), blurRadius: 22, offset: Offset(0, 8))],
+          border: Border.all(color: AppColors.border),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0D13251F),
+              blurRadius: 22,
+              offset: Offset(0, 8),
             ),
-            child: child,
-          ),
+          ],
         ),
-      );
+        child: child,
+      ),
+    ),
+  );
 }
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const CustomAppBar({required this.title, super.key});
+  const CustomAppBar({required this.title, this.onProfilePressed, super.key});
   final String title;
+  final VoidCallback? onProfilePressed;
   @override
   Size get preferredSize => const Size.fromHeight(70);
   @override
   Widget build(BuildContext context) => AppBar(
-        toolbarHeight: 70,
-        leadingWidth: 68,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 16),
-          child: IconButton.filledTonal(tooltip: 'Menü', onPressed: () {}, icon: const Icon(Icons.menu_rounded)),
-        ),
-        title: Text(title, style: Theme.of(context).textTheme.titleLarge),
-        actions: [
-          Stack(children: [
-            IconButton.filledTonal(tooltip: 'Bildirimler', onPressed: () {}, icon: const Icon(Icons.notifications_none_rounded)),
-            const Positioned(right: 5, top: 5, child: CircleAvatar(radius: 4, backgroundColor: AppColors.expense)),
-          ]),
-          const SizedBox(width: 16),
+    toolbarHeight: 70,
+    leadingWidth: 68,
+    leading: Padding(
+      padding: const EdgeInsets.only(left: 16),
+      child: IconButton.filledTonal(
+        tooltip: 'Menü',
+        onPressed: () {},
+        icon: const Icon(Icons.menu_rounded),
+      ),
+    ),
+    title: Text(title, style: Theme.of(context).textTheme.titleLarge),
+    actions: [
+      IconButton.filledTonal(
+        tooltip: 'Profil',
+        onPressed: onProfilePressed,
+        icon: const Icon(Icons.person_outline_rounded),
+      ),
+      const SizedBox(width: 8),
+      Stack(
+        children: [
+          IconButton.filledTonal(
+            tooltip: 'Bildirimler',
+            onPressed: () {},
+            icon: const Icon(Icons.notifications_none_rounded),
+          ),
+          const Positioned(
+            right: 5,
+            top: 5,
+            child: CircleAvatar(radius: 4, backgroundColor: AppColors.expense),
+          ),
         ],
-      );
+      ),
+      const SizedBox(width: 16),
+    ],
+  );
 }
 
 class FinanceBottomNavBar extends StatelessWidget {
-  const FinanceBottomNavBar({required this.currentIndex, required this.onDestinationSelected, super.key});
+  const FinanceBottomNavBar({
+    required this.currentIndex,
+    required this.onDestinationSelected,
+    super.key,
+  });
   final int currentIndex;
   final ValueChanged<int> onDestinationSelected;
   @override
   Widget build(BuildContext context) => NavigationBar(
-        selectedIndex: currentIndex,
-        onDestinationSelected: onDestinationSelected,
-        height: 74,
-        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Ana Menü'),
-          NavigationDestination(icon: Icon(Icons.insights_outlined), selectedIcon: Icon(Icons.insights_rounded), label: 'İstatistik'),
-          NavigationDestination(icon: Icon(Icons.savings_outlined), selectedIcon: Icon(Icons.savings_rounded), label: 'Kumbara'),
-          NavigationDestination(icon: Icon(Icons.calendar_month_outlined), selectedIcon: Icon(Icons.calendar_month_rounded), label: 'Takvim'),
-          NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long_rounded), label: 'Hareketler'),
-        ],
-      );
+    selectedIndex: currentIndex,
+    onDestinationSelected: onDestinationSelected,
+    height: 74,
+    labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
+    destinations: const [
+      NavigationDestination(
+        icon: Icon(Icons.home_outlined),
+        selectedIcon: Icon(Icons.home_rounded),
+        label: 'Ana Menü',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.insights_outlined),
+        selectedIcon: Icon(Icons.insights_rounded),
+        label: 'İstatistik',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.savings_outlined),
+        selectedIcon: Icon(Icons.savings_rounded),
+        label: 'Kumbara',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.calendar_month_outlined),
+        selectedIcon: Icon(Icons.calendar_month_rounded),
+        label: 'Takvim',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.receipt_long_outlined),
+        selectedIcon: Icon(Icons.receipt_long_rounded),
+        label: 'Hareketler',
+      ),
+    ],
+  );
 }
 
 class PrimaryActionButton extends StatelessWidget {
-  const PrimaryActionButton({required this.label, required this.icon, required this.onPressed, this.isPrimary = true, super.key});
+  const PrimaryActionButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.isPrimary = true,
+    super.key,
+  });
   final String label;
   final IconData icon;
   final VoidCallback onPressed;
   final bool isPrimary;
   @override
   Widget build(BuildContext context) {
-    final style = FilledButton.styleFrom(minimumSize: const Size.fromHeight(58), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)));
+    final style = FilledButton.styleFrom(
+      minimumSize: const Size.fromHeight(58),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    );
     return isPrimary
-        ? FilledButton.icon(onPressed: onPressed, icon: Icon(icon), label: Text(label), style: style)
-        : FilledButton.tonalIcon(onPressed: onPressed, icon: Icon(icon), label: Text(label), style: style);
+        ? FilledButton.icon(
+            onPressed: onPressed,
+            icon: Icon(icon),
+            label: Text(label),
+            style: style,
+          )
+        : FilledButton.tonalIcon(
+            onPressed: onPressed,
+            icon: Icon(icon),
+            label: Text(label),
+            style: style,
+          );
   }
 }
 
 class AppShell extends StatelessWidget {
-  const AppShell({required this.title, required this.body, required this.currentIndex, required this.onDestinationSelected, super.key});
+  const AppShell({
+    required this.title,
+    required this.body,
+    required this.currentIndex,
+    required this.onDestinationSelected,
+    this.onProfilePressed,
+    super.key,
+  });
   final String title;
   final Widget body;
   final int currentIndex;
   final ValueChanged<int> onDestinationSelected;
+  final VoidCallback? onProfilePressed;
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: CustomAppBar(title: title),
-        body: SafeArea(top: false, child: body),
-        bottomNavigationBar: FinanceBottomNavBar(currentIndex: currentIndex, onDestinationSelected: onDestinationSelected),
-        floatingActionButton: FloatingActionButton.extended(
-          heroTag: 'ai',
-          onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('AI Asistan yakında sizinle.'))),
-          icon: const Icon(Icons.auto_awesome_rounded),
-          label: const Text('AI Asistan'),
-        ),
-      );
+    appBar: CustomAppBar(title: title, onProfilePressed: onProfilePressed),
+    body: SafeArea(top: false, child: body),
+    bottomNavigationBar: FinanceBottomNavBar(
+      currentIndex: currentIndex,
+      onDestinationSelected: onDestinationSelected,
+    ),
+    floatingActionButton: FloatingActionButton.extended(
+      heroTag: 'ai',
+      onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('AI Asistan yakında sizinle.')),
+      ),
+      icon: const Icon(Icons.auto_awesome_rounded),
+      label: const Text('AI Asistan'),
+    ),
+  );
 }
