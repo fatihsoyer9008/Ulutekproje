@@ -302,6 +302,22 @@ void main() {
     expect(result.usedLocalFallback, isTrue);
     expect(result.draft.amountInMinor, 2400);
   });
+
+  test('keeps genel toplam priority when toplam KDV appears later', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+      );
+    });
+
+    final result = await client.parse(
+      'MIGROS\nGENEL TOPLAM 100,00 TL\nTOPLAM KDV 20,00 TL',
+    );
+
+    expect(result.usedLocalFallback, isTrue);
+    expect(result.draft.amountInMinor, 10000);
+  });
 }
 
 ReceiptParserClient _clientWithResponse(

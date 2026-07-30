@@ -198,16 +198,9 @@ class ReceiptParserClient {
     final amountPattern = RegExp(
       r'(?<![\d.,])(?:\d{1,3}(?:[.\s,]\d{3})+[,\.]\d{2}|\d+[,\.]\d{1,2})(?![\d.,])',
     );
-    final totalLines = lines
-        .where(
-          (line) => RegExp(
-            r'\b(?:genel\s+toplam|toplam|ödenecek)\b',
-            caseSensitive: false,
-          ).hasMatch(line),
-        )
-        .toList();
+    final preferredAmountSource = _preferredAmountSource(lines, ocrText);
     final amountMatches = amountPattern
-        .allMatches(totalLines.isEmpty ? ocrText : totalLines.join('\n'))
+        .allMatches(preferredAmountSource)
         .toList();
     if (amountMatches.isEmpty) return null;
 
@@ -230,6 +223,30 @@ class ReceiptParserClient {
       isParseSuccessful: false,
       usedLocalFallback: true,
     );
+  }
+
+  String _preferredAmountSource(List<String> lines, String ocrText) {
+    final excludedTotalLine = RegExp(
+      r'\b(?:ara\s+toplam|toplam\s+kdv|kdv\s+toplamı|indirim\s+toplamı)\b',
+      caseSensitive: false,
+    );
+    const priorityPatterns = <String>[
+      r'\bgenel\s+toplam\b',
+      r'\bödenecek\b',
+      r'\btoplam\b',
+    ];
+
+    for (final pattern in priorityPatterns) {
+      final candidates = lines
+          .where(
+            (line) =>
+                !excludedTotalLine.hasMatch(line) &&
+                RegExp(pattern, caseSensitive: false).hasMatch(line),
+          )
+          .toList();
+      if (candidates.isNotEmpty) return candidates.last;
+    }
+    return ocrText;
   }
 
   int? _toMinor(String amount) {
