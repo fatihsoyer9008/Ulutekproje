@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:app_main/core/network/api_client.dart';
@@ -9,72 +10,213 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('posts OCR text and maps the backend response to a draft', () async {
-    final dio = Dio(BaseOptions(baseUrl: 'https://example.com'));
-    dio.httpClientAdapter = _FakeAdapter((options) {
+    final client = _clientWithResponse((options) {
       expect(options.method, 'POST');
       expect(options.path, '/api/v1/parse-receipt');
-      expect(options.data, {'ocr_text': 'MİGROS TOPLAM 25,50 TL'});
-      return ResponseBody.fromString(
-        jsonEncode({
-          'normalized_ocr_text': 'MİGROS\nTOPLAM 25,50 TL',
-          'merchant': 'MİGROS',
-          'total_amount_minor': 2550,
-          'currency': 'TRY',
-          'date': '2026-07-28T12:00:00Z',
-          'category': 'Market',
-          'confidence_score': 0.92,
-          'is_parse_successful': true,
-          'items': <Object>[],
-        }),
-        200,
-        headers: {
-          Headers.contentTypeHeader: [Headers.jsonContentType],
-        },
-      );
+      expect(options.data, {'ocr_text': 'MIGROS TOPLAM 25,50 TL'});
+      return _jsonResponse({
+        'normalized_ocr_text': 'MIGROS\nTOPLAM 25,50 TL',
+        'merchant': 'MIGROS',
+        'total_amount_minor': 2550,
+        'category': 'Market',
+        'confidence_score': 0.92,
+        'is_parse_successful': true,
+      });
     });
-    final apiClient = ApiClient(
-      baseUrl: 'https://example.com',
-      tokenStorage: _MemoryTokenStorage(),
-      dio: dio,
-    );
-    final client = ReceiptParserClient(apiClient: apiClient);
 
-    final result = await client.parse('MİGROS TOPLAM 25,50 TL');
+    final result = await client.parse('MIGROS TOPLAM 25,50 TL');
 
-    expect(result.draft.institutionName, 'MİGROS');
+    expect(result.draft.institutionName, 'MIGROS');
     expect(result.draft.category, 'Market');
     expect(result.draft.amountInMinor, 2550);
-    expect(result.normalizedOcrText, 'MİGROS\nTOPLAM 25,50 TL');
-    expect(result.confidenceScore, 0.92);
-    expect(result.isParseSuccessful, isTrue);
-    apiClient.close();
+    expect(result.normalizedOcrText, 'MIGROS\nTOPLAM 25,50 TL');
   });
 
-  test('throws a readable error for a non-success response', () async {
-    final dio = Dio(BaseOptions(baseUrl: 'https://example.com'));
-    dio.httpClientAdapter = _FakeAdapter(
-      (_) => ResponseBody.fromString('error', 502),
+  test('rejects an empty OCR text without making a request', () async {
+    final client = _clientWithResponse((_) => fail('request must not happen'));
+
+    expect(
+      () => client.parse('   '),
+      throwsA(
+        isA<ReceiptParserException>().having(
+          (error) => error.kind,
+          'kind',
+          ReceiptParserFailureKind.emptyOcr,
+        ),
+      ),
     );
-    final apiClient = ApiClient(
-      baseUrl: 'https://example.com',
-      tokenStorage: _MemoryTokenStorage(),
-      dio: dio,
+  });
+
+  for (final entry in <int, ReceiptParserFailureKind>{
+    501: ReceiptParserFailureKind.geminiUnavailable,
+    502: ReceiptParserFailureKind.serviceUnavailable,
+    503: ReceiptParserFailureKind.serviceConfiguration,
+  }.entries) {
+    test('maps HTTP ${entry.key} to a user-safe parser failure', () async {
+      final client = _clientWithResponse(
+        (_) => ResponseBody.fromString('upstream failure', entry.key),
+      );
+
+      expect(
+        () => client.parse('OCR'),
+        throwsA(
+          isA<ReceiptParserException>()
+              .having((error) => error.kind, 'kind', entry.value)
+              .having(
+                (error) => error.message,
+                'message',
+                isNot(contains('Dio')),
+              ),
+        ),
+      );
+    });
+  }
+
+  test('maps timeout to a retryable user-safe parser failure', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionTimeout,
+      );
+    });
+
+    expect(
+      () => client.parse('OCR'),
+      throwsA(
+        isA<ReceiptParserException>()
+            .having(
+              (error) => error.kind,
+              'kind',
+              ReceiptParserFailureKind.timeout,
+            )
+            .having((error) => error.canRetry, 'canRetry', isTrue),
+      ),
     );
-    final client = ReceiptParserClient(apiClient: apiClient);
+  });
+
+  test(
+    'maps DNS lookup failures without exposing SocketException details',
+    () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+          error: const SocketException('Failed host lookup'),
+        );
+      });
+
+      expect(
+        () => client.parse('OCR'),
+        throwsA(
+          isA<ReceiptParserException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                ReceiptParserFailureKind.dns,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                isNot(contains('SocketException')),
+              ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'maps an offline connection failure to the internet guidance message',
+    () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+        );
+      });
+
+      expect(
+        () => client.parse('OCR'),
+        throwsA(
+          isA<ReceiptParserException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                ReceiptParserFailureKind.noInternet,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('İnternet'),
+              ),
+        ),
+      );
+    },
+  );
+
+  test('rejects a malformed backend response as invalidResponse', () async {
+    final client = _clientWithResponse(
+      (_) => _jsonResponse({
+        'normalized_ocr_text': 'OCR',
+        'confidence_score': 'not-a-number',
+        'is_parse_successful': true,
+      }),
+    );
 
     expect(
       () => client.parse('OCR'),
       throwsA(
         isA<ReceiptParserException>().having(
-          (error) => error.message,
-          'message',
-          contains('502'),
+          (error) => error.kind,
+          'kind',
+          ReceiptParserFailureKind.invalidResponse,
         ),
       ),
     );
-    apiClient.close();
   });
+
+  test(
+    'uses a low-confidence local fallback when the server is unreachable',
+    () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+        );
+      });
+
+      final result = await client.parse('MIGROS\nTOPLAM 25,50 TL');
+
+      expect(result.usedLocalFallback, isTrue);
+      expect(result.isParseSuccessful, isFalse);
+      expect(result.confidenceScore, lessThan(.70));
+      expect(result.draft.institutionName, 'MIGROS');
+      expect(result.draft.amountInMinor, 2550);
+    },
+  );
 }
+
+ReceiptParserClient _clientWithResponse(
+  ResponseBody Function(RequestOptions) handler,
+) {
+  final dio = Dio(BaseOptions(baseUrl: 'https://example.com'));
+  dio.httpClientAdapter = _FakeAdapter(handler);
+  return ReceiptParserClient(
+    apiClient: ApiClient(
+      baseUrl: 'https://example.com',
+      tokenStorage: _MemoryTokenStorage(),
+      dio: dio,
+    ),
+  );
+}
+
+ResponseBody _jsonResponse(Map<String, dynamic> body) =>
+    ResponseBody.fromString(
+      jsonEncode(body),
+      200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
 
 class _FakeAdapter implements HttpClientAdapter {
   _FakeAdapter(this.handler);

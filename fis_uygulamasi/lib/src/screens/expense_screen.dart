@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:core_ui/core_ui.dart';
+import 'package:dio/dio.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
@@ -10,7 +11,11 @@ import '../../features/transaction_draft/presentation/receipt_analysis_page.dart
 import '../../features/transaction_draft/presentation/transaction_draft_page.dart';
 
 typedef ReceiptScanLauncher = Future<String?> Function(BuildContext context);
-typedef ReceiptParseHandler = Future<ReceiptParseResult> Function(String text);
+typedef ReceiptParseHandler =
+    Future<ReceiptParseResult> Function(
+      String text, {
+      CancelToken? cancelToken,
+    });
 
 class ExpenseScreen extends StatefulWidget {
   const ExpenseScreen({
@@ -32,6 +37,7 @@ class ExpenseScreen extends StatefulWidget {
 
 class _ExpenseScreenState extends State<ExpenseScreen> {
   bool _initialScannerOpened = false;
+  bool _isParsing = false;
 
   @override
   void initState() {
@@ -136,26 +142,39 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     ),
   );
 
-  Future<void> _openReceiptScanner(BuildContext context) async {
-    final rawText = await (widget.scanReceipt ?? _launchReceiptScanner)(
-      context,
-    );
+  Future<void> _openReceiptScanner(
+    BuildContext context, {
+    String? retryOcrText,
+  }) async {
+    if (_isParsing) return;
+    final rawText =
+        retryOcrText ??
+        await (widget.scanReceipt ?? _launchReceiptScanner)(context);
     if (!context.mounted || rawText == null || rawText.trim().isEmpty) return;
+    _isParsing = true;
 
     final rootNavigator = Navigator.of(context, rootNavigator: true);
+    final cancelToken = CancelToken();
     unawaited(
       rootNavigator.push<void>(
         MaterialPageRoute(
           fullscreenDialog: true,
-          builder: (_) => const ReceiptAnalysisPage(),
+          builder: (_) => ReceiptAnalysisPage(
+            onCancel: () =>
+                cancelToken.cancel('User cancelled receipt parsing'),
+          ),
         ),
       ),
     );
 
     try {
-      final result = await (widget.parseReceipt ?? _parseReceipt)(rawText);
+      final result = await (widget.parseReceipt ?? _parseReceipt)(
+        rawText,
+        cancelToken: cancelToken,
+      );
       if (!context.mounted) return;
       rootNavigator.pop();
+      _isParsing = false;
 
       final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
         MaterialPageRoute(
@@ -173,17 +192,68 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
         confirmedDraft,
         source: TransactionSource.ocrLlm,
       );
+    } on ReceiptParserException catch (error) {
+      if (!context.mounted) return;
+      rootNavigator.pop();
+      _isParsing = false;
+      if (error.isCancelled) return;
+      await _showParseFailure(context, error, rawText);
     } on Exception catch (error, stackTrace) {
       debugPrint('Fiş ayrıştırma hatası: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (!context.mounted) return;
       rootNavigator.pop();
+      _isParsing = false;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(content: Text('Fiş bilgileri alınamadı: $error')),
         );
     }
+  }
+
+  Future<void> _showParseFailure(
+    BuildContext context,
+    ReceiptParserException error,
+    String rawText,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        key: const Key('receipt_parse_error_dialog'),
+        title: const Text('Fiş bilgileri alınamadı'),
+        content: Text(error.message),
+        actions: [
+          TextButton(
+            key: const Key('return_to_camera_after_parse_error_button'),
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _openReceiptScanner(context);
+            },
+            child: const Text('Kameraya Dön'),
+          ),
+          TextButton(
+            key: const Key('manual_entry_after_parse_error_button'),
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _openManualEntry(context);
+            },
+            child: const Text('Elle Girmeye Devam Et'),
+          ),
+          FilledButton(
+            key: const Key('retry_parse_button'),
+            onPressed: error.canRetry
+                ? () {
+                    Navigator.of(dialogContext).pop();
+                    _openReceiptScanner(context, retryOcrText: rawText);
+                  }
+                : null,
+            child: const Text('Tekrar Dene'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<String?> _launchReceiptScanner(BuildContext context) {
@@ -235,7 +305,10 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     }
   }
 
-  Future<ReceiptParseResult> _parseReceipt(String rawText) async {
+  Future<ReceiptParseResult> _parseReceipt(
+    String rawText, {
+    CancelToken? cancelToken,
+  }) async {
     throw const ReceiptParserException(
       'Fiş ayrıştırma istemcisi uygulama kabuğuna bağlanmamış.',
     );
