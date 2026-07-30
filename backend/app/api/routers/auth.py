@@ -38,6 +38,7 @@ from app.services.apple_oauth import AppleOAuthProvider
 from app.services.auth_service import (
     AccountDeletionFailed,
     AuthService,
+    EmailNotVerified,
     InvalidCredentials,
     InvalidOneTimeToken,
     ReauthenticationRequired,
@@ -158,6 +159,17 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
+        ) from None
+    except EmailNotVerified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "email_not_verified",
+                "message": (
+                    "E-posta adresi henüz doğrulanmadı. "
+                    "Doğrulama bağlantısını kontrol edin."
+                ),
+            },
         ) from None
     return _token_response(issued)
 

@@ -125,6 +125,29 @@ async def test_register_verify_login_and_me(auth_context) -> None:
 
 
 @pytest.mark.asyncio
+async def test_unverified_password_account_cannot_login(auth_context) -> None:
+    client, sender, _ = auth_context
+    password = "A-strong-test-password-123"
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "pending@example.com",
+            "password": password,
+        },
+    )
+    assert response.status_code == 202
+    assert sender.verification_tokens
+
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "pending@example.com", "password": password},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "email_not_verified"
+
+
+@pytest.mark.asyncio
 async def test_refresh_rotation_and_reuse_revokes_whole_family(
     auth_context,
 ) -> None:

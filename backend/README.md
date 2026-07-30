@@ -96,7 +96,7 @@ pytest
 Kimlik doğrulama altyapısı PostgreSQL ve Redis kullanır. Proje kökünde:
 
 ```powershell
-docker compose up -d postgres redis mailpit
+docker compose up -d postgres redis
 cd backend
 Copy-Item .env.example .env
 .\.venv\Scripts\Activate.ps1
@@ -116,9 +116,23 @@ docker compose up -d postgres redis
 Bu durumda `DATABASE_URL` ve `REDIS_URL` içindeki host portlarını da aynı
 değerlere göre güncelleyin. Container içindeki servis portları değişmez.
 
-Yerel SMTP mesajları `http://127.0.0.1:8025` adresindeki Mailpit arayüzünde
-görülebilir. Auth uç noktaları Swagger'da `/api/v1/auth` etiketi altında
-listelenir.
+Gerçek e-posta teslimatı için `backend/.env` dosyasında SMTP sağlayıcınızın
+bilgilerini tanımlayın. Gmail kullanırken normal hesap şifresi yerine iki
+aşamalı doğrulama sonrasında üretilen uygulama şifresini kullanın:
+
+```dotenv
+EMAIL_DELIVERY_MODE=smtp
+EMAIL_FROM=adresiniz@gmail.com
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=adresiniz@gmail.com
+SMTP_PASSWORD=gmail-uygulama-sifresi
+SMTP_TLS=true
+```
+
+SendGrid için `SMTP_HOST=smtp.sendgrid.net`, `SMTP_USER=apikey` ve
+`SMTP_PASSWORD=<SendGrid API key>` kullanılır. Auth uç noktaları Swagger'da
+`/api/v1/auth` etiketi altında listelenir.
 
 Geliştirme ortamındaki örnek JWT ve HMAC secret değerleri production için
 geçerli değildir. `APP_ENV=production` kullanıldığında uygulama zayıf secret

@@ -26,6 +26,23 @@ def _validate_production_settings() -> None:
         raise RuntimeError("SECURITY_HMAC_SECRET must be replaced in production")
     if settings.email_delivery_mode != "smtp":
         raise RuntimeError("SMTP email delivery must be configured in production")
+    smtp_password = (
+        settings.smtp_password.get_secret_value().strip()
+        if settings.smtp_password is not None
+        else ""
+    )
+    if not all(
+        (
+            settings.email_from.strip(),
+            settings.smtp_host.strip(),
+            (settings.smtp_user or "").strip(),
+            smtp_password,
+        )
+    ):
+        raise RuntimeError(
+            "EMAIL_FROM, SMTP_HOST, SMTP_USER and SMTP_PASSWORD are required "
+            "in production"
+        )
     apple_values = (
         settings.apple_client_id,
         settings.apple_team_id,
