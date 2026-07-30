@@ -58,7 +58,7 @@ void main() {
       );
 
       expect(
-        () => client.parse('OCR'),
+        () => client.parse('MIGROS\nTOPLAM 25,50 TL'),
         throwsA(
           isA<ReceiptParserException>()
               .having((error) => error.kind, 'kind', entry.value)
@@ -93,6 +93,43 @@ void main() {
       ),
     );
   });
+
+  test('does not use the local fallback for a cancelled request', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.cancel,
+      );
+    });
+
+    expect(
+      () => client.parse('MIGROS\nTOPLAM 25,50 TL'),
+      throwsA(
+        isA<ReceiptParserException>().having(
+          (error) => error.kind,
+          'kind',
+          ReceiptParserFailureKind.cancelled,
+        ),
+      ),
+    );
+  });
+
+  test(
+    'uses the local fallback for a timeout with a usable OCR amount',
+    () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.receiveTimeout,
+        );
+      });
+
+      final result = await client.parse('MIGROS\nTOPLAM 25,50 TL');
+
+      expect(result.usedLocalFallback, isTrue);
+      expect(result.draft.amountInMinor, 2550);
+    },
+  );
 
   test(
     'maps DNS lookup failures without exposing SocketException details',
@@ -153,6 +190,27 @@ void main() {
     },
   );
 
+  test('does not classify a connection reset as a DNS failure', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+        error: const SocketException('Connection reset by peer'),
+      );
+    });
+
+    expect(
+      () => client.parse('OCR'),
+      throwsA(
+        isA<ReceiptParserException>().having(
+          (error) => error.kind,
+          'kind',
+          ReceiptParserFailureKind.noInternet,
+        ),
+      ),
+    );
+  });
+
   test('rejects a malformed backend response as invalidResponse', () async {
     final client = _clientWithResponse(
       (_) => _jsonResponse({
@@ -193,6 +251,57 @@ void main() {
       expect(result.draft.amountInMinor, 2550);
     },
   );
+
+  test('parses a dotted decimal amount in the local fallback', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+      );
+    });
+
+    final result = await client.parse('MIGROS\nTOPLAM 25.50 TL');
+
+    expect(result.usedLocalFallback, isTrue);
+    expect(result.draft.amountInMinor, 2550);
+  });
+
+  for (final entry in <String, int>{
+    '25,50': 2550,
+    '25.50': 2550,
+    '1.234,56': 123456,
+    '1,234.56': 123456,
+  }.entries) {
+    test('normalizes ${entry.key} in the local fallback', () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+        );
+      });
+
+      final result = await client.parse('MIGROS\nTOPLAM ${entry.key} TL');
+
+      expect(result.usedLocalFallback, isTrue);
+      expect(result.draft.amountInMinor, entry.value);
+    });
+  }
+
+  test('prefers the amount on a total line over KDV and ara toplam', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+      );
+    });
+
+    final result = await client.parse(
+      'MIGROS\nARA TOPLAM 20,00 TL\nKDV 4,00 TL\nGENEL TOPLAM 24,00 TL',
+    );
+
+    expect(result.usedLocalFallback, isTrue);
+    expect(result.draft.amountInMinor, 2400);
+  });
 }
 
 ReceiptParserClient _clientWithResponse(

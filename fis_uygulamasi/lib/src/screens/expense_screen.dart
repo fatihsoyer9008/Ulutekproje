@@ -209,6 +209,8 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
         ..showSnackBar(
           SnackBar(content: Text('Fiş bilgileri alınamadı: $error')),
         );
+    } finally {
+      _isParsing = false;
     }
   }
 

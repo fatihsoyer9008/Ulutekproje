@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -115,9 +113,14 @@ class ReceiptParserClient {
       rethrow;
     } on DioException catch (error) {
       debugPrint('Receipt API connection error ($_endpoint): $error');
-      final fallback = _tryLocalFallback(ocrText);
-      if (fallback != null) return fallback;
-      throw _mapDioError(error);
+      final failure = _mapDioError(error);
+      if (failure.kind == ReceiptParserFailureKind.noInternet ||
+          failure.kind == ReceiptParserFailureKind.dns ||
+          failure.kind == ReceiptParserFailureKind.timeout) {
+        final fallback = _tryLocalFallback(ocrText);
+        if (fallback != null) return fallback;
+      }
+      throw failure;
     } on FormatException {
       throw const ReceiptParserException(
         'Fiş servisi geçersiz yanıt verdi. Lütfen tekrar deneyin.',
@@ -170,8 +173,7 @@ class ReceiptParserClient {
     }
 
     final details = '${error.error} ${error.message}'.toLowerCase();
-    if (error.error is SocketException ||
-        details.contains('failed host lookup') ||
+    if (details.contains('failed host lookup') ||
         details.contains('host lookup') ||
         details.contains('name or service not known')) {
       return const ReceiptParserException(
@@ -193,9 +195,20 @@ class ReceiptParserClient {
         .toList();
     if (lines.isEmpty) return null;
 
-    final amountMatches = RegExp(
-      r'\d{1,3}(?:[.\s]\d{3})*[,\.]\d{2}|\d+[,\.]\d{1,2}',
-    ).allMatches(ocrText).toList();
+    final amountPattern = RegExp(
+      r'(?<![\d.,])(?:\d{1,3}(?:[.\s,]\d{3})+[,\.]\d{2}|\d+[,\.]\d{1,2})(?![\d.,])',
+    );
+    final totalLines = lines
+        .where(
+          (line) => RegExp(
+            r'\b(?:genel\s+toplam|toplam|ödenecek)\b',
+            caseSensitive: false,
+          ).hasMatch(line),
+        )
+        .toList();
+    final amountMatches = amountPattern
+        .allMatches(totalLines.isEmpty ? ocrText : totalLines.join('\n'))
+        .toList();
     if (amountMatches.isEmpty) return null;
 
     final amountInMinor = _toMinor(amountMatches.last.group(0)!);
@@ -220,14 +233,21 @@ class ReceiptParserClient {
   }
 
   int? _toMinor(String amount) {
-    final normalized = amount
-        .replaceAll(RegExp(r'\s'), '')
-        .replaceAll('.', '')
-        .replaceAll(',', '.');
-    final match = RegExp(r'^(\d+)\.(\d{1,2})$').firstMatch(normalized);
-    if (match == null) return null;
-    final fraction = match.group(2)!;
-    return (int.parse(match.group(1)!) * 100) +
+    final compact = amount.replaceAll(RegExp(r'\s'), '');
+    final lastComma = compact.lastIndexOf(',');
+    final lastDot = compact.lastIndexOf('.');
+    final decimalIndex = lastComma > lastDot ? lastComma : lastDot;
+    if (decimalIndex <= 0 || decimalIndex == compact.length - 1) return null;
+
+    final major = compact
+        .substring(0, decimalIndex)
+        .replaceAll(RegExp(r'[.,]'), '');
+    final fraction = compact.substring(decimalIndex + 1);
+    if (!RegExp(r'^\d+$').hasMatch(major) ||
+        !RegExp(r'^\d{1,2}$').hasMatch(fraction)) {
+      return null;
+    }
+    return (int.parse(major) * 100) +
         int.parse(fraction.length == 1 ? '${fraction}0' : fraction);
   }
 }
