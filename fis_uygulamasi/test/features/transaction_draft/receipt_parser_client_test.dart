@@ -115,6 +115,23 @@ void main() {
   });
 
   test(
+    'does not use the local fallback for an unsupported Dio error',
+    () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.badCertificate,
+        );
+      });
+
+      expect(
+        () => client.parse('MIGROS\nTOPLAM 25,50 TL'),
+        throwsA(isA<ReceiptParserException>()),
+      );
+    },
+  );
+
+  test(
     'uses the local fallback for a timeout with a usable OCR amount',
     () async {
       final client = _clientWithResponse((options) {

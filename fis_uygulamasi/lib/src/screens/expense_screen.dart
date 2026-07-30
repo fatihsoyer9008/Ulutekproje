@@ -167,51 +167,57 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       ),
     );
 
+    ReceiptParseResult? result;
+    ReceiptParserException? parseFailure;
+    Object? unexpectedError;
+    StackTrace? unexpectedStackTrace;
+
     try {
-      final result = await (widget.parseReceipt ?? _parseReceipt)(
+      result = await (widget.parseReceipt ?? _parseReceipt)(
         rawText,
         cancelToken: cancelToken,
       );
-      if (!context.mounted) return;
-      rootNavigator.pop();
-      _isParsing = false;
-
-      final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
-        MaterialPageRoute(
-          builder: (_) => TransactionDraftPage(
-            initialDraft: result.draft,
-            normalizedOcrText: result.normalizedOcrText,
-            confidenceScore: result.confidenceScore,
-            isParseSuccessful: result.isParseSuccessful,
-          ),
-        ),
-      );
-      if (!context.mounted) return;
-      await _saveDraft(
-        context,
-        confirmedDraft,
-        source: TransactionSource.ocrLlm,
-      );
     } on ReceiptParserException catch (error) {
-      if (!context.mounted) return;
-      rootNavigator.pop();
-      _isParsing = false;
-      if (error.isCancelled) return;
-      await _showParseFailure(context, error, rawText);
+      parseFailure = error;
     } on Exception catch (error, stackTrace) {
       debugPrint('Fiş ayrıştırma hatası: $error');
       debugPrintStack(stackTrace: stackTrace);
-      if (!context.mounted) return;
-      rootNavigator.pop();
-      _isParsing = false;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(content: Text('Fiş bilgileri alınamadı: $error')),
-        );
+      unexpectedError = error;
+      unexpectedStackTrace = stackTrace;
     } finally {
       _isParsing = false;
     }
+
+    if (!context.mounted) return;
+    rootNavigator.pop();
+
+    if (parseFailure != null) {
+      if (parseFailure.isCancelled) return;
+      await _showParseFailure(context, parseFailure, rawText);
+      return;
+    }
+    if (unexpectedError != null) {
+      debugPrintStack(stackTrace: unexpectedStackTrace);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Fiş bilgileri alınamadı.')),
+        );
+      return;
+    }
+
+    final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
+      MaterialPageRoute(
+        builder: (_) => TransactionDraftPage(
+          initialDraft: result!.draft,
+          normalizedOcrText: result.normalizedOcrText,
+          confidenceScore: result.confidenceScore,
+          isParseSuccessful: result.isParseSuccessful,
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    await _saveDraft(context, confirmedDraft, source: TransactionSource.ocrLlm);
   }
 
   Future<void> _showParseFailure(

@@ -114,9 +114,7 @@ class ReceiptParserClient {
     } on DioException catch (error) {
       debugPrint('Receipt API connection error ($_endpoint): $error');
       final failure = _mapDioError(error);
-      if (failure.kind == ReceiptParserFailureKind.noInternet ||
-          failure.kind == ReceiptParserFailureKind.dns ||
-          failure.kind == ReceiptParserFailureKind.timeout) {
+      if (_canUseLocalFallback(error)) {
         final fallback = _tryLocalFallback(ocrText);
         if (fallback != null) return fallback;
       }
@@ -128,6 +126,12 @@ class ReceiptParserClient {
       );
     }
   }
+
+  bool _canUseLocalFallback(DioException error) =>
+      error.type == DioExceptionType.connectionError ||
+      error.type == DioExceptionType.connectionTimeout ||
+      error.type == DioExceptionType.sendTimeout ||
+      error.type == DioExceptionType.receiveTimeout;
 
   ReceiptParserException _mapDioError(DioException error) {
     if (error.type == DioExceptionType.cancel) {
