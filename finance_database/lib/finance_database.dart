@@ -1,6 +1,5 @@
 library;
 
-export 'src/isar_service.dart';
 export 'src/models/offline_task.dart';
 export 'src/models/transaction_entity.dart';
 export 'src/models/transaction_draft.dart';

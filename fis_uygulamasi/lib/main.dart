@@ -9,6 +9,7 @@ import 'core/database/database_providers.dart';
 import 'src/app/app_router.dart';
 import 'src/app/finance_app.dart';
 import 'src/screens/expense_screen.dart';
+import 'application/service/isar_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

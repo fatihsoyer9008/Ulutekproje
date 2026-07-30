@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../application/service/transaction_export_share_service.dart';
+import '../../../../core/database/database_providers.dart';
 import '../controllers/auth_session_controller.dart';
 
 class ProfilePage extends ConsumerWidget {
@@ -46,6 +48,19 @@ class ProfilePage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 20),
+          AppCard(
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.ios_share_rounded),
+              title: const Text('Verileri Dışa Aktar (JSON)'),
+              subtitle: const Text(
+                'İşlem geçmişini JSON dosyası olarak paylaş',
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => _exportTransactions(context, ref),
+            ),
+          ),
+          const SizedBox(height: 20),
           if (isGuest)
             FilledButton(
               onPressed: () => context.go('/login'),
@@ -77,6 +92,29 @@ class ProfilePage extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _exportTransactions(BuildContext context, WidgetRef ref) async {
+    try {
+      final service = TransactionExportShareService.fromIsar(
+        ref.read(isarProvider),
+      );
+      await service.exportAndShareJson();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('JSON dosyası paylaşım için hazır.')),
+      );
+    } on TransactionExportShareException catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Veriler paylaşılırken bir hata oluştu.')),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Dışa aktarma hazırlanamadı.')),
+      );
+    }
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
