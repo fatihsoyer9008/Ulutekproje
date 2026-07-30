@@ -6,6 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
+import 'features/auth/presentation/controllers/auth_session_controller.dart';
+import 'features/notifications/notification_navigation_controller.dart';
+import 'features/notifications/notification_providers.dart';
 import 'features/notifications/daily_budget_reminder_service.dart';
 import 'features/notifications/notification_preferences.dart';
 import 'src/app/app_router.dart';
@@ -15,15 +18,34 @@ import 'src/screens/expense_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('tr_TR');
-  await _restoreDailyReminder();
+
+  final notificationNavigationController = NotificationNavigationController();
+
+  final reminderService = DailyBudgetReminderService(
+    onNotificationTap: notificationNavigationController.handlePayload,
+  );
+
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    await reminderService.initialize();
+
+    final launchPayload = await reminderService.getLaunchPayload();
+
+    notificationNavigationController.handlePayload(launchPayload);
+
+    await _restoreDailyReminder(reminderService);
+  }
 
   final isar = await IsarService.getInstance();
   final transactionRepository = TransactionRepository(isar);
 
   runApp(
     ProviderScope(
+      overrides: [
+        dailyBudgetReminderServiceProvider.overrideWithValue(reminderService),
+      ],
       child: FinanceApp(
         enableAuth: true,
+        notificationNavigationController: notificationNavigationController,
         transactionStream: transactionRepository.watchAllTransactions(),
         saveTransaction: transactionRepository.addTransaction,
       ),
@@ -31,16 +53,40 @@ Future<void> main() async {
   );
 }
 
+Future<void> _restoreDailyReminder(
+  DailyBudgetReminderService reminderService,
+) async {
+  try {
+    final preferences = NotificationPreferences();
+
+    final enabled = await preferences.isEnabled();
+
+    if (!enabled) {
+      return;
+    }
+
+    final reminderTime = await preferences.getReminderTime();
+
+    await reminderService.scheduleDailyReminder(reminderTime);
+  } catch (error, stackTrace) {
+    debugPrint('Günlük hatırlatıcı geri yüklenemedi: $error');
+
+    debugPrintStack(stackTrace: stackTrace);
+  }
+}
+
 class FinanceApp extends ConsumerStatefulWidget {
   const FinanceApp({
     super.key,
     this.enableAuth = false,
+    this.notificationNavigationController,
     this.transactionStream = const Stream<List<TransactionEntity>>.empty(),
     this.saveTransaction,
     this.scanReceipt,
   });
 
   final bool enableAuth;
+  final NotificationNavigationController? notificationNavigationController;
   final Stream<List<TransactionEntity>> transactionStream;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
@@ -55,6 +101,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
   @override
   void initState() {
     super.initState();
+
     if (widget.enableAuth) {
       _router = createAppRouter(
         ref: ref,
@@ -62,17 +109,41 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
       );
+
+      final router = _router;
+
+      if (router != null) {
+        widget.notificationNavigationController?.attachNavigator(router.go);
+      }
     }
   }
 
   @override
   void dispose() {
+    widget.notificationNavigationController?.detachNavigator();
+
     _router?.dispose();
+
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.enableAuth) {
+      final authStatus = ref.watch(authSessionControllerProvider).status;
+
+      final navigationReady =
+          authStatus == AuthStatus.authenticated ||
+          authStatus == AuthStatus.guest;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+
+        widget.notificationNavigationController?.setNavigationReady(
+          navigationReady,
+        );
+      });
+    }
     final router = _router;
     if (widget.enableAuth && router != null) {
       return MaterialApp.router(

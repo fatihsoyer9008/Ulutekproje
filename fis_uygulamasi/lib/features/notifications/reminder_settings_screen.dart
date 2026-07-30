@@ -1,32 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'notification_providers.dart';
 
 import 'daily_budget_reminder_service.dart';
 import 'notification_preferences.dart';
 
-class ReminderSettingsScreen extends StatefulWidget {
+class ReminderSettingsScreen extends ConsumerStatefulWidget {
   const ReminderSettingsScreen({super.key});
 
   @override
-  State<ReminderSettingsScreen> createState() =>
+  ConsumerState<ReminderSettingsScreen> createState() =>
       _ReminderSettingsScreenState();
 }
 
 class _ReminderSettingsScreenState
-    extends State<ReminderSettingsScreen> {
-  final DailyBudgetReminderService _reminderService =
-      DailyBudgetReminderService();
+    extends ConsumerState<ReminderSettingsScreen> {
+  DailyBudgetReminderService get _reminderService =>
+      ref.read(dailyBudgetReminderServiceProvider);
 
-  final NotificationPreferences _preferences =
-      NotificationPreferences();
+  final NotificationPreferences _preferences = NotificationPreferences();
 
   bool _enabled = false;
   bool _loading = true;
   bool _saving = false;
 
-  TimeOfDay _time = const TimeOfDay(
-    hour: 20,
-    minute: 0,
-  );
+  TimeOfDay _time = const TimeOfDay(hour: 20, minute: 0);
 
   @override
   void initState() {
@@ -56,18 +54,13 @@ class _ReminderSettingsScreenState
 
     try {
       if (enabled) {
-        final granted =
-            await _reminderService.requestPermission();
+        final granted = await _reminderService.requestPermission();
 
         if (!granted) {
           if (!mounted) return;
 
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Bildirim izni verilmedi.',
-              ),
-            ),
+            const SnackBar(content: Text('Bildirim izni verilmedi.')),
           );
 
           return;
@@ -89,11 +82,7 @@ class _ReminderSettingsScreenState
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Hatırlatıcı ayarlanamadı: $error',
-          ),
-        ),
+        SnackBar(content: Text('Hatırlatıcı ayarlanamadı: $error')),
       );
     } finally {
       if (mounted) {
@@ -125,9 +114,7 @@ class _ReminderSettingsScreenState
       await _preferences.saveReminderTime(selectedTime);
 
       if (_enabled) {
-        await _reminderService.scheduleDailyReminder(
-          selectedTime,
-        );
+        await _reminderService.scheduleDailyReminder(selectedTime);
       }
 
       if (!mounted) return;
@@ -146,13 +133,9 @@ class _ReminderSettingsScreenState
     } catch (error) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Saat kaydedilemedi: $error',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Saat kaydedilemedi: $error')));
     } finally {
       if (mounted) {
         setState(() {
@@ -165,17 +148,11 @@ class _ReminderSettingsScreenState
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Harcama hatırlatıcısı'),
-      ),
+      appBar: AppBar(title: const Text('Harcama hatırlatıcısı')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -206,9 +183,7 @@ class _ReminderSettingsScreenState
           if (_saving)
             const Padding(
               padding: EdgeInsets.only(top: 16),
-              child: Center(
-                child: CircularProgressIndicator(),
-              ),
+              child: Center(child: CircularProgressIndicator()),
             ),
         ],
       ),
