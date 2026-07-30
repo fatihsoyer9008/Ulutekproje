@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/notifications/notification_navigation_controller.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/auth/presentation/views/forgot_password_page.dart';
 import '../../features/auth/presentation/views/email_verification_page.dart';
@@ -13,7 +14,7 @@ import '../../features/auth/presentation/views/startup_page.dart';
 import '../../features/auth/presentation/views/welcome_page.dart';
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../screens/expense_screen.dart';
-import 'finance_app.dart';
+import 'finance_home.dart';
 
 GoRouter createAppRouter({
   required WidgetRef ref,
@@ -34,6 +35,11 @@ GoRouter createAppRouter({
         '/forgot-password',
         '/verify-email',
       }.contains(location);
+      final isProtectedPage = {
+        '/home',
+        '/profile',
+        NotificationNavigationController.expenseReceiptRoute,
+      }.contains(location);
 
       if (auth.status == AuthStatus.initializing) {
         return location == '/startup' || location == '/verify-email'
@@ -44,8 +50,7 @@ GoRouter createAppRouter({
           location != '/verify-email') {
         return '/verify-email';
       }
-      if (auth.status == AuthStatus.unauthenticated &&
-          (location == '/home' || location == '/profile')) {
+      if (auth.status == AuthStatus.unauthenticated && isProtectedPage) {
         return '/welcome';
       }
       if ((auth.status == AuthStatus.authenticated ||
@@ -81,6 +86,21 @@ GoRouter createAppRouter({
             saveTransaction: saveTransaction,
             scanReceipt: scanReceipt,
             parseReceipt: parser.parse,
+          );
+        },
+      ),
+      GoRoute(
+        path: NotificationNavigationController.expenseReceiptRoute,
+        builder: (context, state) {
+          final parser = ReceiptParserClient(
+            apiClient: ref.read(apiClientProvider),
+          );
+
+          return ExpenseScreen(
+            saveTransaction: saveTransaction,
+            scanReceipt: scanReceipt,
+            parseReceipt: parser.parse,
+            openScannerOnStart: true,
           );
         },
       ),
