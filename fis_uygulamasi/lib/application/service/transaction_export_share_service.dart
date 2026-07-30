@@ -6,13 +6,18 @@ import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-enum TransactionExportFormat { json, csv }
+enum TransactionExportFormat {
+  json,
+  csv;
 
-extension TransactionExportFormatLabel on TransactionExportFormat {
-  String get label => switch (this) {
-    TransactionExportFormat.json => 'JSON',
-    TransactionExportFormat.csv => 'CSV',
-  };
+  String get label {
+    switch (this) {
+      case TransactionExportFormat.json:
+        return 'JSON';
+      case TransactionExportFormat.csv:
+        return 'CSV';
+    }
+  }
 }
 
 typedef TemporaryDirectoryProvider = Future<Directory> Function();
@@ -28,12 +33,17 @@ class TransactionExportShareService {
     required FileSharer shareFile,
     FileDeleter? deleteFile,
     DateTime Function()? now,
-  })  : _exportJson = exportJson,
-        _exportCsv = exportCsv,
-        _temporaryDirectory = temporaryDirectory,
-        _shareFile = shareFile,
-        _deleteFile = deleteFile ?? _deleteFileStatic,
-        _now = now ?? DateTime.now;
+  }) : // Public parameter names intentionally differ from private fields.
+       // ignore: prefer_initializing_formals
+       _exportJson = exportJson,
+       // ignore: prefer_initializing_formals
+       _exportCsv = exportCsv,
+       // ignore: prefer_initializing_formals
+       _temporaryDirectory = temporaryDirectory,
+       // ignore: prefer_initializing_formals
+       _shareFile = shareFile,
+       _deleteFile = deleteFile ?? _deleteFileStatic,
+       _now = now ?? DateTime.now;
 
   final Future<String> Function() _exportJson;
   final Future<String> Function() _exportCsv;
@@ -45,6 +55,7 @@ class TransactionExportShareService {
   /// Uygulamanın başlatırken açtığı Isar instance'ını kullanır.
   factory TransactionExportShareService.fromIsar(Isar isar) {
     final exporter = TransactionExportService(isar);
+
     return TransactionExportShareService(
       exportJson: exporter.exportJsonString,
       exportCsv: exporter.exportCsvString,
@@ -53,70 +64,92 @@ class TransactionExportShareService {
     );
   }
 
-  /// Seçilen formata göre dışa aktarım dosyasını geçici klasöre oluşturur.
-  Future<File> createExportFile(TransactionExportFormat format) async {
+  /// Seçilen formata göre dışa aktarım dosyasını oluşturur.
+  Future<File> createExportFile(
+    TransactionExportFormat format,
+  ) async {
     final content = format == TransactionExportFormat.json
         ? await _exportJson()
         : await _exportCsv();
 
     final directory = await _temporaryDirectory();
-    final timestamp = _now().toIso8601String().replaceAll(':', '-');
-    final extension = format == TransactionExportFormat.json ? 'json' : 'csv';
 
-    final file = File('${directory.path}/transactions_export_$timestamp.$extension');
+    final timestamp = _now()
+        .toIso8601String()
+        .replaceAll(':', '-');
 
-    await file.writeAsString(content, encoding: utf8);
+    final extension =
+        format == TransactionExportFormat.json ? 'json' : 'csv';
+
+    final file = File(
+      '${directory.path}/transactions_export_$timestamp.$extension',
+    );
+
+    await file.writeAsString(
+      content,
+      encoding: utf8,
+    );
 
     return file;
   }
 
-  /// Seçilen formatta dosya oluşturur, paylaşım ekranını açar ve geçici dosyayı temizler.
-  Future<void> exportAndShare(TransactionExportFormat format) async {
-    // Eski dosyaları düzenli olarak temizle; temizliğin başarısız olması
-    // kullanıcının mevcut paylaşım işlemini engellememelidir.
+  /// Dosyayı oluşturur ve paylaşım ekranını açar.
+  Future<void> exportAndShare(
+    TransactionExportFormat format,
+  ) async {
     await cleanupOldExportFiles();
     final file = await createExportFile(format);
 
     try {
       await _shareFile(file);
     } catch (error, stackTrace) {
-      throw TransactionExportShareException(error, stackTrace);
+      throw TransactionExportShareException(
+        error,
+        stackTrace,
+      );
     } finally {
-      // Paylaşım sonrası veya hata durumunda geçici dosyayı temizle. Silme
-      // hatası, paylaşım hatasını ya da başarılı paylaşım sonucunu gölgelemez.
       try {
-        if (await file.exists()) await _deleteFile(file);
+        if (await file.exists()) {
+          await _deleteFile(file);
+        }
       } catch (_) {
-        // En iyi çabayla yapılan silme işlemi paylaşım sonucunu değiştirmez.
+        // Cleanup must not mask the share result.
       }
     }
   }
 
-  /// Eski geçici dışa aktarım dosyalarını klasörden temizler.
-  Future<void> cleanupOldExportFiles([Directory? customDirectory]) async {
-    try {
-      final directory = customDirectory ?? await _temporaryDirectory();
-      if (!await directory.exists()) return;
+  /// Eski export dosyalarını temizler.
+  Future<void> cleanupOldExportFiles([
+    Directory? customDirectory,
+  ]) async {
+    final directory =
+        customDirectory ?? await _temporaryDirectory();
 
-      await for (final entity in directory.list()) {
-        if (entity is File && entity.path.contains('transactions_export_')) {
-          try {
-            await _deleteFile(entity);
-          } catch (_) {
-            // Silinemeyen dosyalar için sessizce devam et.
-          }
+    if (!await directory.exists()) {
+      return;
+    }
+
+    for (final entity in directory.listSync()) {
+      if (entity is File &&
+          entity.path.contains('transactions_export_')) {
+        try {
+          await _deleteFile(entity);
+        } catch (_) {
+          // Silinemeyen dosyaları atla.
         }
       }
-    } catch (_) {
-      // Geçici klasöre erişim ya da listeleme hataları paylaşımı engellemez.
     }
   }
 
   static Future<void> _deleteFileStatic(File file) => file.delete();
 
-  static Future<void> _shareFileStatic(File file) async {
+  static Future<void> _shareFileStatic(
+    File file,
+  ) async {
     final isJson = file.path.endsWith('.json');
+
     final formatLabel = isJson ? 'JSON' : 'CSV';
+
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(file.path)],
@@ -128,11 +161,15 @@ class TransactionExportShareService {
 }
 
 class TransactionExportShareException implements Exception {
-  TransactionExportShareException(this.cause, this.stackTrace);
+  TransactionExportShareException(
+    this.cause,
+    this.stackTrace,
+  );
 
   final Object cause;
   final StackTrace stackTrace;
 
   @override
-  String toString() => 'TransactionExportShareException: $cause';
+  String toString() =>
+      'TransactionExportShareException: $cause';
 }
