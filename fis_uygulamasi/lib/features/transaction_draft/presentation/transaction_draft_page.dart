@@ -36,6 +36,8 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   late final TextEditingController _institutionController;
   late final TextEditingController _categoryController;
   late final TextEditingController _amountController;
+  late DateTime _selectedDate;
+  bool _isConfirming = false;
 
   @override
   void initState() {
@@ -52,6 +54,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
           ? ''
           : formatMinorAsTurkishLira(initialAmount),
     );
+    _selectedDate = widget.initialDraft.transactionDate ?? DateTime.now();
   }
 
   @override
@@ -63,14 +66,28 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   }
 
   void _confirmDraft() {
+    if (_isConfirming) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    _isConfirming = true;
     Navigator.of(context).pop(
       TransactionDraft(
         institutionName: _institutionController.text.trim(),
         category: _categoryController.text.trim(),
         amountInMinor: parseTurkishLiraToMinor(_amountController.text)!,
+        transactionDate: _selectedDate,
       ),
     );
+  }
+
+  Future<void> _pickDate() async {
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (selectedDate == null || !mounted) return;
+    setState(() => _selectedDate = selectedDate);
   }
 
   @override
@@ -180,6 +197,29 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                       return null;
                     },
                   ),
+                  const SizedBox(height: 16),
+                  Semantics(
+                    button: true,
+                    label: 'İşlem tarihini seç',
+                    child: InkWell(
+                      key: const Key('date_field'),
+                      onTap: _pickDate,
+                      borderRadius: BorderRadius.circular(4),
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Tarih',
+                          prefixIcon: Icon(Icons.calendar_today_outlined),
+                          suffixIcon: Icon(Icons.arrow_drop_down_rounded),
+                          border: OutlineInputBorder(),
+                        ),
+                        child: Text(
+                          MaterialLocalizations.of(
+                            context,
+                          ).formatCompactDate(_selectedDate),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -224,7 +264,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
           Expanded(
             child: FilledButton.icon(
               key: const Key('confirm_draft_button'),
-              onPressed: _confirmDraft,
+              onPressed: _isConfirming ? null : _confirmDraft,
               icon: const Icon(Icons.check_rounded),
               label: Text(
                 widget.mode == TransactionDraftPageMode.manual

@@ -37,7 +37,8 @@ class ExpenseScreen extends StatefulWidget {
 
 class _ExpenseScreenState extends State<ExpenseScreen> {
   bool _initialScannerOpened = false;
-  bool _isParsing = false;
+  bool _isFlowActive = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -53,92 +54,75 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    key: const Key('expense_screen'),
     appBar: AppBar(title: const Text('Gider Ekle')),
     body: ListView(
-      padding: const EdgeInsets.all(20),
+      key: const Key('expense_screen_content'),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
       children: [
         Text(
-          'Ne kadar harcadın?',
+          'Giderini nasıl eklemek istersin?',
           style: Theme.of(context).textTheme.headlineMedium,
         ),
-        const SizedBox(height: 18),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Expanded(
-              child: TextField(
-                keyboardType: TextInputType.number,
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-                decoration: InputDecoration(
-                  prefixText: '₺ ',
-                  hintText: '0,00',
-                  labelText: 'Tutar',
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 74,
-              height: 74,
-              child: FilledButton(
-                key: const Key('ocr_camera_button'),
-                onPressed: () => _openReceiptScanner(context),
-                style: FilledButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-                child: const Icon(Icons.document_scanner_rounded, size: 34),
-              ),
-            ),
-          ],
+        const SizedBox(height: 8),
+        const Text(
+          'Fişini taratarak bilgileri otomatik doldurabilir veya giderini '
+          'elle girebilirsin.',
+          style: TextStyle(color: AppColors.muted),
         ),
-        const SizedBox(height: 10),
-        const Row(
-          children: [
-            Icon(Icons.auto_awesome, size: 16, color: AppColors.primary),
-            SizedBox(width: 6),
-            Expanded(
-              child: Text('Fişini tara, tutar ve kategori otomatik dolsun.'),
-            ),
-          ],
+        const SizedBox(height: 24),
+        FilledButton.icon(
+          key: const Key('ocr_camera_button'),
+          onPressed: _isFlowActive ? null : () => _openReceiptScanner(context),
+          icon: const Icon(Icons.document_scanner_rounded),
+          label: const Text('Fişi Tara'),
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         OutlinedButton.icon(
           key: const Key('manual_entry_button'),
-          onPressed: () => _openManualEntry(context),
+          onPressed: _isFlowActive ? null : () => _openManualEntry(context),
           icon: const Icon(Icons.edit_outlined),
           label: const Text('Fişim yok, elle gireceğim'),
           style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(52),
+            minimumSize: const Size.fromHeight(56),
           ),
         ),
-        const SizedBox(height: 30),
+        const SizedBox(height: 32),
         Text('Abonelikler', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),
-        const _Subscription(
-          Icons.play_circle_outline,
-          'Netflix',
-          '12 Temmuz',
-          '-₺300',
-        ),
-        const SizedBox(height: 12),
-        const _Subscription(
-          Icons.home_outlined,
-          'Kira',
-          '4 Temmuz',
-          '-₺14.000',
+        const AppCard(
+          key: Key('subscriptions_empty_state'),
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: AppColors.lavender,
+                  child: Icon(
+                    Icons.event_repeat_outlined,
+                    color: AppColors.blue,
+                    size: 28,
+                  ),
+                ),
+                SizedBox(height: 14),
+                Text(
+                  'Henüz kayıtlı aboneliğiniz yok',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Abonelikleriniz eklendiğinde burada görüntülenecek.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.muted),
+                ),
+              ],
+            ),
+          ),
         ),
       ],
-    ),
-    bottomNavigationBar: SafeArea(
-      minimum: const EdgeInsets.all(20),
-      child: FilledButton(
-        onPressed: () {},
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(58)),
-        child: const Text('Gideri Kaydet'),
-      ),
     ),
   );
 
@@ -146,26 +130,42 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     BuildContext context, {
     String? retryOcrText,
   }) async {
-    if (_isParsing) return;
-    final rawText =
-        retryOcrText ??
-        await (widget.scanReceipt ?? _launchReceiptScanner)(context);
-    if (!context.mounted || rawText == null || rawText.trim().isEmpty) return;
-    _isParsing = true;
+    if (_isFlowActive) return;
+    setState(() => _isFlowActive = true);
+
+    String? rawText;
+    try {
+      rawText =
+          retryOcrText ??
+          await (widget.scanReceipt ?? _launchReceiptScanner)(context);
+    } on Exception catch (error, stackTrace) {
+      debugPrint('Fiş tarama hatası: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!context.mounted) return;
+      _setFlowActive(false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Fiş tarayıcı açılamadı.')),
+        );
+      return;
+    }
+
+    if (!context.mounted) return;
+    if (rawText == null || rawText.trim().isEmpty) {
+      _setFlowActive(false);
+      return;
+    }
 
     final rootNavigator = Navigator.of(context, rootNavigator: true);
     final cancelToken = CancelToken();
-    unawaited(
-      rootNavigator.push<void>(
-        MaterialPageRoute(
-          fullscreenDialog: true,
-          builder: (_) => ReceiptAnalysisPage(
-            onCancel: () =>
-                cancelToken.cancel('User cancelled receipt parsing'),
-          ),
-        ),
+    final analysisRoute = MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => ReceiptAnalysisPage(
+        onCancel: () => cancelToken.cancel('User cancelled receipt parsing'),
       ),
     );
+    unawaited(rootNavigator.push<void>(analysisRoute));
 
     ReceiptParseResult? result;
     ReceiptParserException? parseFailure;
@@ -180,16 +180,13 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     } on ReceiptParserException catch (error) {
       parseFailure = error;
     } on Exception catch (error, stackTrace) {
-      debugPrint('Fiş ayrıştırma hatası: $error');
-      debugPrintStack(stackTrace: stackTrace);
       unexpectedError = error;
       unexpectedStackTrace = stackTrace;
-    } finally {
-      _isParsing = false;
     }
 
     if (!context.mounted) return;
-    rootNavigator.pop();
+    _removeRouteIfMounted(rootNavigator, analysisRoute);
+    _setFlowActive(false);
 
     if (parseFailure != null) {
       if (parseFailure.isCancelled) return;
@@ -197,6 +194,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       return;
     }
     if (unexpectedError != null) {
+      debugPrint('Fiş ayrıştırma hatası: $unexpectedError');
       debugPrintStack(stackTrace: unexpectedStackTrace);
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -218,6 +216,11 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     );
     if (!context.mounted) return;
     await _saveDraft(context, confirmedDraft, source: TransactionSource.ocrLlm);
+  }
+
+  void _setFlowActive(bool value) {
+    if (!mounted || _isFlowActive == value) return;
+    setState(() => _isFlowActive = value);
   }
 
   Future<void> _showParseFailure(
@@ -264,6 +267,10 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     );
   }
 
+  void _removeRouteIfMounted(NavigatorState navigator, Route<void>? route) {
+    if (route?.navigator != null) navigator.removeRoute(route!);
+  }
+
   Future<String?> _launchReceiptScanner(BuildContext context) {
     return Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => const ReceiptScannerScreen()),
@@ -271,14 +278,24 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
   }
 
   Future<void> _openManualEntry(BuildContext context) async {
-    final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
-      MaterialPageRoute(
-        builder: (_) =>
-            const TransactionDraftPage(mode: TransactionDraftPageMode.manual),
-      ),
-    );
-    if (!context.mounted) return;
-    await _saveDraft(context, confirmedDraft, source: TransactionSource.manual);
+    if (_isFlowActive) return;
+    setState(() => _isFlowActive = true);
+    try {
+      final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
+        MaterialPageRoute(
+          builder: (_) =>
+              const TransactionDraftPage(mode: TransactionDraftPageMode.manual),
+        ),
+      );
+      if (!context.mounted) return;
+      await _saveDraft(
+        context,
+        confirmedDraft,
+        source: TransactionSource.manual,
+      );
+    } finally {
+      if (mounted) setState(() => _isFlowActive = false);
+    }
   }
 
   Future<void> _saveDraft(
@@ -286,10 +303,25 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     TransactionDraft? draft, {
     required TransactionSource source,
   }) async {
-    final save = widget.saveTransaction;
-    if (draft == null || save == null) return;
+    if (draft == null || _isSaving) return;
 
     final messenger = ScaffoldMessenger.of(context);
+    if (draft.amountInMinor == null || draft.amountInMinor! <= 0) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Tutar sıfırdan büyük olmalıdır.')),
+      );
+      return;
+    }
+
+    final save = widget.saveTransaction;
+    if (save == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Kayıt servisi kullanılamıyor.')),
+      );
+      return;
+    }
+
+    _isSaving = true;
     try {
       await save(
         draft.toTransactionEntity(
@@ -310,6 +342,8 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text('Gider kaydedilemedi: $error')));
+    } finally {
+      _isSaving = false;
     }
   }
 
@@ -321,42 +355,4 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       'Fiş ayrıştırma istemcisi uygulama kabuğuna bağlanmamış.',
     );
   }
-}
-
-class _Subscription extends StatelessWidget {
-  const _Subscription(this.icon, this.title, this.date, this.amount);
-
-  final IconData icon;
-  final String title;
-  final String date;
-  final String amount;
-
-  @override
-  Widget build(BuildContext context) => AppCard(
-    child: Row(
-      children: [
-        CircleAvatar(
-          backgroundColor: AppColors.lavender,
-          child: Icon(icon, color: AppColors.blue),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              Text(date),
-            ],
-          ),
-        ),
-        Text(
-          amount,
-          style: const TextStyle(
-            color: AppColors.expense,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    ),
-  );
 }
