@@ -15,8 +15,7 @@ class DailyBudgetReminderService {
   static const notificationId = 1001;
   static const _channelId = 'daily_budget_reminders';
   static const _channelName = 'Günlük bütçe hatırlatıcıları';
-  static const _channelDescription =
-      'Günlük harcama girişi için hatırlatmalar';
+  static const _channelDescription = 'Günlük harcama girişi için hatırlatmalar';
 
   final FlutterLocalNotificationsPlugin _plugin;
   Future<void>? _initialization;
@@ -56,9 +55,10 @@ class DailyBudgetReminderService {
   /// Android 13 ve sonrasında kullanıcıdan bildirim izni ister.
   Future<bool> requestPermission() async {
     await initialize();
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-      AndroidFlutterLocalNotificationsPlugin
-    >();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     return await androidPlugin?.requestNotificationsPermission() ?? true;
   }
 

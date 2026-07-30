@@ -11,12 +11,14 @@ class DashboardScreen extends StatelessWidget {
     required this.transactions,
     this.saveTransaction,
     this.scanReceipt,
+    this.parseReceipt,
     super.key,
   });
 
   final List<TransactionEntity> transactions;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
+  final ReceiptParseHandler? parseReceipt;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -50,6 +52,7 @@ class DashboardScreen extends StatelessWidget {
                 ExpenseScreen(
                   saveTransaction: saveTransaction,
                   scanReceipt: scanReceipt,
+                  parseReceipt: parseReceipt,
                   openScannerOnStart: true,
                 ),
               ),
@@ -144,7 +147,10 @@ class _BalanceCard extends StatelessWidget {
                   letterSpacing: 1,
                 ),
               ),
-              Icon(Icons.account_balance_wallet_outlined, color: Colors.white70),
+              Icon(
+                Icons.account_balance_wallet_outlined,
+                color: Colors.white70,
+              ),
             ],
           ),
           const SizedBox(height: 12),
