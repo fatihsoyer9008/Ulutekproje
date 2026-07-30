@@ -225,10 +225,7 @@ class AuthRepository implements AuthRepositoryBase {
     }
   }
 
-  static AuthException _exceptionFrom(
-    DioException error,
-    String fallback,
-  ) {
+  static AuthException _exceptionFrom(DioException error, String fallback) {
     final data = error.response?.data;
     if (data is Map) {
       final detail = data['detail'];
@@ -247,9 +244,7 @@ class AuthRepository implements AuthRepositoryBase {
               ? location.last
               : null;
           return AuthException(
-            field == null
-                ? first['msg'] as String
-                : '$field: ${first['msg']}',
+            field == null ? first['msg'] as String : '$field: ${first['msg']}',
           );
         }
       }

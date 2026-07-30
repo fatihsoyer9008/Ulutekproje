@@ -71,9 +71,8 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/verify-email',
-        builder: (_, state) => EmailVerificationPage(
-          token: state.uri.queryParameters['token'],
-        ),
+        builder: (_, state) =>
+            EmailVerificationPage(token: state.uri.queryParameters['token']),
       ),
       GoRoute(
         path: '/home',

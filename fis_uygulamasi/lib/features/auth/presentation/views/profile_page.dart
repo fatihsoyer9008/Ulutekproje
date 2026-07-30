@@ -52,12 +52,12 @@ class ProfilePage extends ConsumerWidget {
             child: ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.ios_share_rounded),
-              title: const Text('Verileri Dışa Aktar (JSON)'),
+              title: const Text('Verileri Dışa Aktar'),
               subtitle: const Text(
-                'İşlem geçmişini JSON dosyası olarak paylaş',
+                'İşlem geçmişini JSON veya Excel uyumlu CSV olarak paylaş',
               ),
               trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => _exportTransactions(context, ref),
+              onTap: () => _selectAndExportTransactions(context, ref),
             ),
           ),
           const SizedBox(height: 20),
@@ -94,15 +94,50 @@ class ProfilePage extends ConsumerWidget {
     );
   }
 
-  Future<void> _exportTransactions(BuildContext context, WidgetRef ref) async {
+  Future<void> _selectAndExportTransactions(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final format = await showDialog<TransactionExportFormat>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Dışa aktarma formatı'),
+        content: const Text('Paylaşmak istediğiniz dosya formatını seçin.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, TransactionExportFormat.json),
+            child: const Text('JSON'),
+          ),
+          FilledButton.tonal(
+            onPressed: () =>
+                Navigator.pop(dialogContext, TransactionExportFormat.csv),
+            child: const Text('CSV (Excel)'),
+          ),
+        ],
+      ),
+    );
+    if (format == null || !context.mounted) return;
+    await _exportTransactions(context, ref, format);
+  }
+
+  Future<void> _exportTransactions(
+    BuildContext context,
+    WidgetRef ref,
+    TransactionExportFormat format,
+  ) async {
     try {
       final service = TransactionExportShareService.fromIsar(
         ref.read(isarProvider),
       );
-      await service.exportAndShareJson();
+      await service.exportAndShare(format);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('JSON dosyası paylaşım için hazır.')),
+        SnackBar(content: Text('${format.label} dosyası paylaşım için hazır.')),
       );
     } on TransactionExportShareException catch (_) {
       if (!context.mounted) return;
