@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/notifications/notification_navigation_controller.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/auth/presentation/views/forgot_password_page.dart';
+import '../../features/auth/presentation/views/email_verification_page.dart';
 import '../../features/auth/presentation/views/login_page.dart';
 import '../../features/auth/presentation/views/profile_page.dart';
 import '../../features/auth/presentation/views/register_page.dart';
@@ -32,6 +33,7 @@ GoRouter createAppRouter({
         '/login',
         '/register',
         '/forgot-password',
+        '/verify-email',
       }.contains(location);
       final isProtectedPage = {
         '/home',
@@ -40,7 +42,13 @@ GoRouter createAppRouter({
       }.contains(location);
 
       if (auth.status == AuthStatus.initializing) {
-        return location == '/startup' ? null : '/startup';
+        return location == '/startup' || location == '/verify-email'
+            ? null
+            : '/startup';
+      }
+      if (auth.status == AuthStatus.emailVerificationRequired &&
+          location != '/verify-email') {
+        return '/verify-email';
       }
       if (auth.status == AuthStatus.unauthenticated && isProtectedPage) {
         return '/welcome';
@@ -60,6 +68,12 @@ GoRouter createAppRouter({
       GoRoute(
         path: '/forgot-password',
         builder: (_, _) => const ForgotPasswordPage(),
+      ),
+      GoRoute(
+        path: '/verify-email',
+        builder: (_, state) => EmailVerificationPage(
+          token: state.uri.queryParameters['token'],
+        ),
       ),
       GoRoute(
         path: '/home',
