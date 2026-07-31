@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../application/service/transaction_export_share_service.dart';
+import '../../../../core/database/database_providers.dart';
 import '../controllers/auth_session_controller.dart';
 
 class ProfilePage extends ConsumerWidget {
@@ -46,6 +48,19 @@ class ProfilePage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 20),
+          AppCard(
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.ios_share_rounded),
+              title: const Text('Verileri Dışa Aktar'),
+              subtitle: const Text(
+                'İşlem geçmişini JSON veya Excel uyumlu CSV olarak paylaş',
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => _selectAndExportTransactions(context, ref),
+            ),
+          ),
+          const SizedBox(height: 20),
           if (isGuest)
             FilledButton(
               onPressed: () => context.go('/login'),
@@ -77,6 +92,64 @@ class ProfilePage extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _selectAndExportTransactions(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final format = await showDialog<TransactionExportFormat>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Dışa aktarma formatı'),
+        content: const Text('Paylaşmak istediğiniz dosya formatını seçin.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, TransactionExportFormat.json),
+            child: const Text('JSON'),
+          ),
+          FilledButton.tonal(
+            onPressed: () =>
+                Navigator.pop(dialogContext, TransactionExportFormat.csv),
+            child: const Text('CSV (Excel)'),
+          ),
+        ],
+      ),
+    );
+    if (format == null || !context.mounted) return;
+    await _exportTransactions(context, ref, format);
+  }
+
+  Future<void> _exportTransactions(
+    BuildContext context,
+    WidgetRef ref,
+    TransactionExportFormat format,
+  ) async {
+    try {
+      final service = TransactionExportShareService.fromIsar(
+        ref.read(isarProvider),
+      );
+      await service.exportAndShare(format);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${format.label} dosyası paylaşım için hazır.')),
+      );
+    } on TransactionExportShareException catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Veriler paylaşılırken bir hata oluştu.')),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Dışa aktarma hazırlanamadı.')),
+      );
+    }
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {

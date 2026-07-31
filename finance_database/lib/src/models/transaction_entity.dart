@@ -43,4 +43,20 @@ class TransactionEntity {
 
   late DateTime createdAt;
   late DateTime updatedAt;
+
+  Map<String, dynamic> toJson() {
+  return {
+    'id': id,
+    'transactionType': transactionType.name,
+    'amountInMinor': amountInMinor,
+    'category': category.name,
+    'date': date.toIso8601String(),
+    'merchantName': merchantName,
+    'source': source.name,
+    'rawOcrText': rawOcrText,
+    'note': note,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+  };
+}
 }
