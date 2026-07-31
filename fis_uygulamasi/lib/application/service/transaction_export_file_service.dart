@@ -2,122 +2,103 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:finance_database/finance_database.dart';
+import 'package:flutter/services.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 enum TransactionExportFormat {
   json,
   csv;
 
-  String get label {
-    switch (this) {
-      case TransactionExportFormat.json:
-        return 'JSON';
-      case TransactionExportFormat.csv:
-        return 'CSV';
-    }
-  }
+  String get label => name.toUpperCase();
+
+  String get extension => name;
+
+  String get mimeType => this == json ? 'application/json' : 'text/csv';
 }
 
 typedef TemporaryDirectoryProvider = Future<Directory> Function();
-typedef FileSharer = Future<void> Function(File file);
+typedef DocumentFileSaver = Future<String> Function(
+  File file,
+  String fileName,
+  String mimeType,
+);
 typedef FileDeleter = Future<void> Function(File file);
 typedef DirectoryLister =
     Stream<FileSystemEntity> Function(Directory directory);
 
-/// Kullanıcıya ait dosya sistemi ve paylaşım işlemlerini yürütür.
-class TransactionExportShareService {
-  TransactionExportShareService({
+class TransactionExportFileService {
+  TransactionExportFileService({
     required Future<String> Function() exportJson,
     required Future<String> Function() exportCsv,
     required TemporaryDirectoryProvider temporaryDirectory,
-    required FileSharer shareFile,
+    required DocumentFileSaver saveFile,
     FileDeleter? deleteFile,
     DirectoryLister? listDirectory,
     DateTime Function()? now,
-  }) : // Public parameter names intentionally differ from private fields.
-       // ignore: prefer_initializing_formals
-       _exportJson = exportJson,
-       // ignore: prefer_initializing_formals
+  }) : _exportJson = exportJson,
        _exportCsv = exportCsv,
-       // ignore: prefer_initializing_formals
        _temporaryDirectory = temporaryDirectory,
-       // ignore: prefer_initializing_formals
-       _shareFile = shareFile,
+       _saveFile = saveFile,
        _deleteFile = deleteFile ?? _deleteFileStatic,
        _listDirectory = listDirectory ?? _listDirectoryStatic,
        _now = now ?? DateTime.now;
 
+  static const _documentsChannel = MethodChannel(
+    'com.example.fis_uygulamasi/documents',
+  );
+
   final Future<String> Function() _exportJson;
   final Future<String> Function() _exportCsv;
   final TemporaryDirectoryProvider _temporaryDirectory;
-  final FileSharer _shareFile;
+  final DocumentFileSaver _saveFile;
   final FileDeleter _deleteFile;
   final DirectoryLister _listDirectory;
   final DateTime Function() _now;
 
-  /// Uygulamanın başlatırken açtığı Isar instance'ını kullanır.
-  factory TransactionExportShareService.fromIsar(Isar isar) {
+  factory TransactionExportFileService.fromIsar(Isar isar) {
     final exporter = TransactionExportService(isar);
-
-    return TransactionExportShareService(
+    return TransactionExportFileService(
       exportJson: exporter.exportJsonString,
       exportCsv: exporter.exportCsvString,
       temporaryDirectory: getTemporaryDirectory,
-      shareFile: _shareFileStatic,
+      saveFile: _saveFileToDocuments,
     );
   }
 
-  /// Seçilen formata göre dışa aktarım dosyasını oluşturur.
   Future<File> createExportFile(TransactionExportFormat format) async {
     final content = format == TransactionExportFormat.json
         ? await _exportJson()
         : await _exportCsv();
-
     final directory = await _temporaryDirectory();
-
-    final timestamp = _now().toIso8601String().replaceAll(':', '-');
-
-    final extension = format == TransactionExportFormat.json ? 'json' : 'csv';
-
-    final file = File(
-      '${directory.path}/transactions_export_$timestamp.$extension',
-    );
-
+    final fileName = _fileName(format);
+    final file = File('${directory.path}/$fileName');
     await file.writeAsString(content, encoding: utf8);
-
     return file;
   }
 
-  /// Dosyayı oluşturur ve paylaşım ekranını açar.
-  Future<void> exportAndShare(TransactionExportFormat format) async {
+  Future<String> exportAndSave(TransactionExportFormat format) async {
     await cleanupOldExportFiles();
     final file = await createExportFile(format);
+    final fileName = file.uri.pathSegments.last;
 
     try {
-      await _shareFile(file);
+      return await _saveFile(file, fileName, format.mimeType);
     } catch (error, stackTrace) {
-      throw TransactionExportShareException(error, stackTrace);
+      throw TransactionExportFileException(error, stackTrace);
     } finally {
       try {
-        if (await file.exists()) {
-          await _deleteFile(file);
-        }
+        if (await file.exists()) await _deleteFile(file);
       } catch (_) {
-        // Cleanup must not mask the share result.
+        // Geçici dosya temizliği kayıt sonucunu maskelememeli.
       }
     }
   }
 
-  /// Eski export dosyalarını temizler.
   Future<void> cleanupOldExportFiles([Directory? customDirectory]) async {
     try {
       final directory = customDirectory ?? await _temporaryDirectory();
-
-      if (!await directory.exists()) {
-        return;
-      }
+      if (!await directory.exists()) return;
 
       await for (final entity in _listDirectory(directory)) {
         if (entity is File && entity.path.contains('transactions_export_')) {
@@ -129,36 +110,51 @@ class TransactionExportShareService {
         }
       }
     } catch (_) {
-      // Dizin bulunamazsa veya listeleme erişim hatası verirse sessizce yut.
+      // Dizin bulunamazsa veya listelenemezse kayıt akışını engelleme.
     }
+  }
+
+  String _fileName(TransactionExportFormat format) {
+    final timestamp = _now().toIso8601String().replaceAll(':', '-');
+    return 'transactions_export_$timestamp.${format.extension}';
+  }
+
+  static Future<String> _saveFileToDocuments(
+    File file,
+    String fileName,
+    String mimeType,
+  ) async {
+    if (!Platform.isAndroid) {
+      throw UnsupportedError(
+        'Documents klasörüne doğrudan kayıt yalnızca Android üzerinde destekleniyor.',
+      );
+    }
+    final savedName = await _documentsChannel.invokeMethod<String>(
+      'saveFile',
+      <String, String>{
+        'sourcePath': file.path,
+        'fileName': fileName,
+        'mimeType': mimeType,
+      },
+    );
+    if (savedName == null || savedName.isEmpty) {
+      throw const FileSystemException('Dosya Documents klasörüne kaydedilemedi.');
+    }
+    return savedName;
   }
 
   static Future<void> _deleteFileStatic(File file) => file.delete();
 
   static Stream<FileSystemEntity> _listDirectoryStatic(Directory directory) =>
       directory.list();
-
-  static Future<void> _shareFileStatic(File file) async {
-    final isJson = file.path.endsWith('.json');
-
-    final formatLabel = isJson ? 'JSON' : 'CSV';
-
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(file.path)],
-        subject: 'Harcama Geçmişi ($formatLabel)',
-        text: 'Biz Finans harcama geçmişi yedeği',
-      ),
-    );
-  }
 }
 
-class TransactionExportShareException implements Exception {
-  TransactionExportShareException(this.cause, this.stackTrace);
+class TransactionExportFileException implements Exception {
+  TransactionExportFileException(this.cause, this.stackTrace);
 
   final Object cause;
   final StackTrace stackTrace;
 
   @override
-  String toString() => 'TransactionExportShareException: $cause';
+  String toString() => 'TransactionExportFileException: $cause';
 }

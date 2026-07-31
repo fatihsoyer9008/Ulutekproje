@@ -47,6 +47,15 @@ void main() {
     );
 
     final importButton = find.byKey(const Key('transaction_import_button'));
+    expect(find.text('JSON / CSV Yedeğini İçe Aktar'), findsOneWidget);
+    expect(
+      find.byKey(const Key('transaction_export_json_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('transaction_export_csv_button')),
+      findsOneWidget,
+    );
     await tester.ensureVisible(importButton);
     await tester.tap(importButton);
     await tester.pump();

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../application/service/transaction_export_share_service.dart';
+import '../../../../application/service/transaction_export_file_service.dart';
 import '../../../../core/database/database_providers.dart';
 import '../../../backup/data/transaction_json_import_service.dart';
 import '../controllers/auth_session_controller.dart';
@@ -20,6 +20,7 @@ class ProfilePage extends ConsumerStatefulWidget {
 
 class _ProfilePageState extends ConsumerState<ProfilePage> {
   bool _isImporting = false;
+  TransactionExportFormat? _exportingFormat;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +71,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Daha önce dışa aktarılan JSON yedeğini seçerek işlemlerini '
+                    'Daha önce dışa aktarılan JSON veya CSV yedeğini seçerek '
+                    'işlemlerini '
                     'bu cihaza geri yükleyebilirsin.',
                   ),
                   const SizedBox(height: 14),
@@ -87,7 +89,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                           : const Icon(Icons.settings_backup_restore_rounded),
                       label: Text(
                         _isImporting
-                            ? ' Yedek okunuyor...'
+                            ? 'Yedek okunuyor...'
                             : 'JSON / CSV Yedeğini İçe Aktar',
                       ),
                     ),
@@ -98,15 +100,58 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           ],
           const SizedBox(height: 20),
           AppCard(
-            child: ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.ios_share_rounded),
-              title: const Text('Verileri Dışa Aktar'),
-              subtitle: const Text(
-                'İşlem geçmişini uygun formatta aktar ve paylaş',
-              ),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => _selectAndExportTransactions(context, ref),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Verileri Dışa Aktar',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'İşlem geçmişini JSON veya CSV dosyası olarak Documents klasörüne kaydedebilirsin.',
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    key: const Key('transaction_export_json_button'),
+                    onPressed: _exportingFormat == null
+                        ? () => _exportTransactions(
+                            context,
+                            ref,
+                            TransactionExportFormat.json,
+                          )
+                        : null,
+                    icon: _exportIcon(TransactionExportFormat.json),
+                    label: Text(
+                      _exportingFormat == TransactionExportFormat.json
+                          ? 'JSON hazırlanıyor...'
+                          : 'JSON Olarak Dışa Aktar',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    key: const Key('transaction_export_csv_button'),
+                    onPressed: _exportingFormat == null
+                        ? () => _exportTransactions(
+                            context,
+                            ref,
+                            TransactionExportFormat.csv,
+                          )
+                        : null,
+                    icon: _exportIcon(TransactionExportFormat.csv),
+                    label: Text(
+                      _exportingFormat == TransactionExportFormat.csv
+                          ? 'CSV hazırlanıyor...'
+                          : 'CSV Olarak Dışa Aktar',
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),
@@ -169,7 +214,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('JSON yedeği içe aktarılsın mı?'),
+          title: Text('${preview.format.label} yedeği içe aktarılsın mı?'),
           content: Text(
             '${preview.fileName} dosyasında ${preview.transactions.length} '
             'işlem bulundu. Mevcut işlemler korunacak ve aynı kayıtlar tekrar '
@@ -201,7 +246,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     } on Exception {
       if (mounted) {
         _showMessage(
-          'JSON yedeği içe aktarılırken beklenmeyen bir hata oluştu.',
+          'Yedek içe aktarılırken beklenmeyen bir hata oluştu.',
         );
       }
     } finally {
@@ -215,35 +260,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _selectAndExportTransactions(
-    BuildContext context,
-    WidgetRef ref,
-  ) async {
-    final format = await showDialog<TransactionExportFormat>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Dışa aktarma formatı'),
-        content: const Text('Paylaşmak istediğiniz dosya formatını seçin.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, TransactionExportFormat.json),
-            child: const Text('JSON'),
-          ),
-          FilledButton.tonal(
-            onPressed: () =>
-                Navigator.pop(dialogContext, TransactionExportFormat.csv),
-            child: const Text('CSV (Excel)'),
-          ),
-        ],
-      ),
-    );
-    if (format == null || !context.mounted) return;
-    await _exportTransactions(context, ref, format);
+  Widget _exportIcon(TransactionExportFormat format) {
+    if (_exportingFormat == format) {
+      return const SizedBox.square(
+        dimension: 18,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    return const Icon(Icons.ios_share_rounded);
   }
 
   Future<void> _exportTransactions(
@@ -251,25 +275,29 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     WidgetRef ref,
     TransactionExportFormat format,
   ) async {
+    if (_exportingFormat != null) return;
+    setState(() => _exportingFormat = format);
     try {
-      final service = TransactionExportShareService.fromIsar(
+      final service = TransactionExportFileService.fromIsar(
         ref.read(isarProvider),
       );
-      await service.exportAndShare(format);
+      final fileName = await service.exportAndSave(format);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${format.label} dosyası paylaşım için hazır.')),
+        SnackBar(content: Text('$fileName Documents klasörüne kaydedildi.')),
       );
-    } on TransactionExportShareException catch (_) {
+    } on TransactionExportFileException catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Veriler paylaşılırken bir hata oluştu.')),
+        const SnackBar(content: Text('Dosya Documents klasörüne kaydedilemedi.')),
       );
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Dışa aktarma hazırlanamadı.')),
       );
+    } finally {
+      if (mounted) setState(() => _exportingFormat = null);
     }
   }
 

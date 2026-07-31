@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:app_main/application/service/transaction_export_share_service.dart';
+import 'package:app_main/application/service/transaction_export_file_service.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:isar/isar.dart';
@@ -170,6 +170,26 @@ void main() {
     );
   });
 
+  test('dışa aktarılan CSV yeniden içe aktarılabilir', () async {
+    await isar.writeTxn(
+      () => isar.transactionEntitys.put(
+        transaction(
+          amountInMinor: 4321,
+          merchantName: 'Market; Kadıköy',
+          note: 'Birinci satır\nİkinci satır',
+        ),
+      ),
+    );
+
+    final csv = await databaseExporter.exportCsvString();
+    final imported = TransactionCsvBackup.decode(csv);
+
+    expect(imported, hasLength(1));
+    expect(imported.single.amountInMinor, 4321);
+    expect(imported.single.merchantName, 'Market; Kadıköy');
+    expect(imported.single.note, 'Birinci satır\nİkinci satır');
+  });
+
   test(
     'CSV formül başlangıçlarını Excel için güvenli metne dönüştürür',
     () async {
@@ -214,19 +234,19 @@ void main() {
     },
   );
 
-  test('paylaşım hatasını uygulamaya özgü hata olarak bildirir', () async {
-    final service = TransactionExportShareService(
+  test('kayıt hatasını uygulamaya özgü hata olarak bildirir', () async {
+    final service = TransactionExportFileService(
       exportJson: () async => '[]',
       exportCsv: () async => '',
       temporaryDirectory: () async => tempDirectory,
-      shareFile: (_) async => throw StateError('Paylaşım uygulaması yok'),
+      saveFile: (_, _, _) async => throw StateError('Documents kullanılamıyor'),
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
 
     await expectLater(
-      service.exportAndShare(TransactionExportFormat.json),
+      service.exportAndSave(TransactionExportFormat.json),
       throwsA(
-        isA<TransactionExportShareException>().having(
+        isA<TransactionExportFileException>().having(
           (error) => error.cause,
           'cause',
           isA<StateError>(),
@@ -235,33 +255,37 @@ void main() {
     );
   });
 
-  test('başarılı paylaşım sonrası geçici JSON dosyasını temizler', () async {
-    String? sharedContent;
-    late File sharedFile;
-    final service = TransactionExportShareService(
+  test('başarılı kayıt sonrası geçici JSON dosyasını temizler', () async {
+    String? savedContent;
+    late File savedFile;
+    final service = TransactionExportFileService(
       exportJson: () async => '[{"id":1}]',
       exportCsv: () async => '\uFEFFid\r\n1\r\n',
       temporaryDirectory: () async => tempDirectory,
-      shareFile: (file) async {
-        sharedFile = file;
-        sharedContent = await file.readAsString();
+      saveFile: (file, fileName, mimeType) async {
+        savedFile = file;
+        savedContent = await file.readAsString();
+        expect(fileName, endsWith('.json'));
+        expect(mimeType, 'application/json');
+        return fileName;
       },
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
 
-    await service.exportAndShare(TransactionExportFormat.json);
+    final fileName = await service.exportAndSave(TransactionExportFormat.json);
 
-    expect(sharedContent, '[{"id":1}]');
-    expect(sharedFile.path, endsWith('.json'));
-    expect(await sharedFile.exists(), isFalse);
+    expect(fileName, endsWith('.json'));
+    expect(savedContent, '[{"id":1}]');
+    expect(savedFile.path, endsWith('.json'));
+    expect(await savedFile.exists(), isFalse);
   });
 
   test('CSV formatında doğru uzantılı geçici dosya oluşturur', () async {
-    final service = TransactionExportShareService(
+    final service = TransactionExportFileService(
       exportJson: () async => '[]',
       exportCsv: () async => '\uFEFFid\r\n1\r\n',
       temporaryDirectory: () async => tempDirectory,
-      shareFile: (_) async {},
+      saveFile: (_, fileName, _) async => fileName,
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
 
@@ -279,11 +303,11 @@ void main() {
     await nonExportFile.writeAsString('kalır');
     await oldFile.setLastModified(DateTime.utc(2026, 7, 28));
 
-    final service = TransactionExportShareService(
+    final service = TransactionExportFileService(
       exportJson: () async => '[]',
       exportCsv: () async => '',
       temporaryDirectory: () async => tempDirectory,
-      shareFile: (_) async {},
+      saveFile: (_, fileName, _) async => fileName,
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
 
@@ -294,73 +318,76 @@ void main() {
   });
 
   test(
-    'paylaşım akışı başlamadan önce eski export dosyalarını temizler',
+    'kayıt akışı başlamadan önce eski export dosyalarını temizler',
     () async {
       final oldFile = File(
         '${tempDirectory.path}/transactions_export_old.json',
       );
       await oldFile.writeAsString('eski yedek');
-      final service = TransactionExportShareService(
+      final service = TransactionExportFileService(
         exportJson: () async => '[]',
         exportCsv: () async => '',
         temporaryDirectory: () async => tempDirectory,
-        shareFile: (_) async {},
+        saveFile: (_, fileName, _) async => fileName,
         now: () => DateTime.utc(2026, 7, 30, 10),
       );
 
-      await service.exportAndShare(TransactionExportFormat.json);
+      await service.exportAndSave(TransactionExportFormat.json);
 
       expect(await oldFile.exists(), isFalse);
     },
   );
 
-  test('geçici dosya silme hatası paylaşım sonucunu maskelemez', () async {
+  test('geçici dosya silme hatası kayıt sonucunu maskelemez', () async {
     final oldFile = File(
       '${tempDirectory.path}/transactions_export_locked.json',
     );
     await oldFile.writeAsString('silinemeyen eski dosya');
-    final service = TransactionExportShareService(
+    final service = TransactionExportFileService(
       exportJson: () async => '[]',
       exportCsv: () async => '',
       temporaryDirectory: () async => tempDirectory,
-      shareFile: (_) async {},
+      saveFile: (_, fileName, _) async => fileName,
       deleteFile: (_) async => throw FileSystemException('silinemedi'),
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
 
-    await service.exportAndShare(TransactionExportFormat.json);
+    await service.exportAndSave(TransactionExportFormat.json);
   });
 
-  test('geçici dosya silme hatası paylaşım hatasını maskelemez', () async {
-    final service = TransactionExportShareService(
+  test('geçici dosya silme hatası kayıt hatasını maskelemez', () async {
+    final service = TransactionExportFileService(
       exportJson: () async => '[]',
       exportCsv: () async => '',
       temporaryDirectory: () async => tempDirectory,
-      shareFile: (_) async => throw StateError('Paylaşım uygulaması yok'),
+      saveFile: (_, _, _) async => throw StateError('Documents kullanılamıyor'),
       deleteFile: (_) async => throw FileSystemException('silinemedi'),
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
 
     await expectLater(
-      service.exportAndShare(TransactionExportFormat.json),
-      throwsA(isA<TransactionExportShareException>()),
+      service.exportAndSave(TransactionExportFormat.json),
+      throwsA(isA<TransactionExportFileException>()),
     );
   });
 
-  test('directory listing failure does not block sharing', () async {
-    var shared = false;
-    final service = TransactionExportShareService(
+  test('directory listing failure does not block saving', () async {
+    var saved = false;
+    final service = TransactionExportFileService(
       exportJson: () async => '[]',
       exportCsv: () async => '',
       temporaryDirectory: () async => tempDirectory,
       listDirectory: (_) =>
           Stream<FileSystemEntity>.error(FileSystemException('listing failed')),
-      shareFile: (_) async => shared = true,
+      saveFile: (_, fileName, _) async {
+        saved = true;
+        return fileName;
+      },
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
 
-    await service.exportAndShare(TransactionExportFormat.json);
+    await service.exportAndSave(TransactionExportFormat.json);
 
-    expect(shared, isTrue);
+    expect(saved, isTrue);
   });
 }
