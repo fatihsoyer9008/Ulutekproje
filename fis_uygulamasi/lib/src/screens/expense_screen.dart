@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:core_ui/core_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:finance_database/finance_database.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
@@ -23,12 +24,14 @@ class ExpenseScreen extends StatefulWidget {
   const ExpenseScreen({
     super.key,
     this.scanReceipt,
+    this.pickGalleryReceipt,
     this.parseReceipt,
     this.saveTransaction,
     this.openScannerOnStart = false,
   });
 
   final ReceiptScanLauncher? scanReceipt;
+  final ReceiptScanLauncher? pickGalleryReceipt;
   final ReceiptParseHandler? parseReceipt;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final bool openScannerOnStart;
@@ -76,9 +79,26 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
         FilledButton.icon(
           key: const Key('ocr_camera_button'),
           onPressed: _isFlowActive ? null : () => _openReceiptScanner(context),
-          icon: const Icon(Icons.document_scanner_rounded),
-          label: const Text('Fişi Tara'),
+          icon: const Icon(Icons.camera_alt_rounded),
+          label: const Text('Kamerayı Aç'),
           style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          key: const Key('gallery_upload_button'),
+          onPressed: _isFlowActive
+              ? null
+              : () => _openReceiptScanner(
+                  context,
+                  launcher:
+                      widget.pickGalleryReceipt ?? _pickReceiptFromGallery,
+                  showAnalysisWhileLaunching: true,
+                ),
+          icon: const Icon(Icons.photo_library_outlined),
+          label: const Text('Galeriden Yükle'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(56),
+          ),
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
@@ -131,19 +151,41 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
   Future<void> _openReceiptScanner(
     BuildContext context, {
     String? retryOcrText,
+    ReceiptScanLauncher? launcher,
+    bool showAnalysisWhileLaunching = false,
   }) async {
     if (_isFlowActive) return;
     setState(() => _isFlowActive = true);
+
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+    final cancelToken = CancelToken();
+    MaterialPageRoute<void>? analysisRoute;
+
+    void showAnalysis() {
+      if (analysisRoute != null) return;
+      analysisRoute = MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => ReceiptAnalysisPage(
+          onCancel: () => cancelToken.cancel('User cancelled receipt parsing'),
+        ),
+      );
+      unawaited(rootNavigator.push<void>(analysisRoute!));
+    }
+
+    if (showAnalysisWhileLaunching) showAnalysis();
 
     String? rawText;
     try {
       rawText =
           retryOcrText ??
-          await (widget.scanReceipt ?? _launchReceiptScanner)(context);
+          await (launcher ?? widget.scanReceipt ?? _launchReceiptScanner)(
+            context,
+          );
     } on Exception catch (error, stackTrace) {
       debugPrint('Fiş tarama hatası: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (!context.mounted) return;
+      _removeRouteIfMounted(rootNavigator, analysisRoute);
       _setFlowActive(false);
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -155,19 +197,12 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
 
     if (!context.mounted) return;
     if (rawText == null || rawText.trim().isEmpty) {
+      _removeRouteIfMounted(rootNavigator, analysisRoute);
       _setFlowActive(false);
       return;
     }
 
-    final rootNavigator = Navigator.of(context, rootNavigator: true);
-    final cancelToken = CancelToken();
-    final analysisRoute = MaterialPageRoute<void>(
-      fullscreenDialog: true,
-      builder: (_) => ReceiptAnalysisPage(
-        onCancel: () => cancelToken.cancel('User cancelled receipt parsing'),
-      ),
-    );
-    unawaited(rootNavigator.push<void>(analysisRoute));
+    showAnalysis();
 
     ReceiptParseResult? result;
     ReceiptParserException? parseFailure;
@@ -286,6 +321,18 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     return Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => const ReceiptScannerScreen()),
     );
+  }
+
+  Future<String?> _pickReceiptFromGallery(BuildContext context) async {
+    const imageTypes = XTypeGroup(
+      label: 'Görseller',
+      extensions: <String>['jpg', 'jpeg', 'png', 'heic', 'webp'],
+    );
+    final image = await openFile(
+      acceptedTypeGroups: const <XTypeGroup>[imageTypes],
+    );
+    if (image == null) return null;
+    return recognizeReceiptImage(image.path);
   }
 
   Future<void> _openManualEntry(BuildContext context) async {

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_main/src/app/finance_app.dart';
 import 'package:app_main/src/screens/expense_screen.dart';
+import 'package:app_main/src/screens/statistics_screen.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,13 +28,16 @@ void main() {
     expect(find.text('Kontrol sende.'), findsOneWidget);
     expect(find.text('₺2.000,00'), findsOneWidget);
 
+    expect(find.byType(StatisticsScreen, skipOffstage: false), findsNothing);
+
     await tester.tap(find.byIcon(Icons.insights_outlined));
     await tester.pumpAndSettle();
 
+    expect(find.byType(StatisticsScreen, skipOffstage: false), findsOneWidget);
     expect(find.text('Genel İstatistik'), findsOneWidget);
   });
 
-  testWidgets('dashboard expense action starts the scanner only once', (
+  testWidgets('dashboard expense action waits for the scanner choice', (
     tester,
   ) async {
     var scanLaunchCount = 0;
@@ -51,8 +55,13 @@ void main() {
     await tester.tap(find.text('Gider Gir'));
     await tester.pumpAndSettle();
 
-    expect(scanLaunchCount, 1);
-    await tester.pump(const Duration(seconds: 1));
+    expect(scanLaunchCount, 0);
+    expect(find.byType(ExpenseScreen), findsOneWidget);
+    expect(find.byKey(const Key('ocr_camera_button')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('ocr_camera_button')));
+    await tester.pumpAndSettle();
+
     expect(scanLaunchCount, 1);
   });
 

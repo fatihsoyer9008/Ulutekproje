@@ -1,5 +1,9 @@
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../controllers/auth_session_controller.dart';
 
 class AuthScaffold extends StatelessWidget {
   const AuthScaffold({
@@ -19,7 +23,7 @@ class AuthScaffold extends StatelessWidget {
   Widget build(BuildContext context) => Scaffold(
     appBar: showBackButton
         ? AppBar(
-            leading: const BackButton(),
+            leading: const _AuthBackButton(),
             backgroundColor: Colors.transparent,
           )
         : null,
@@ -56,6 +60,43 @@ class AuthScaffold extends StatelessWidget {
         ),
       ),
     ),
+  );
+}
+
+class _AuthBackButton extends ConsumerWidget {
+  const _AuthBackButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => BackButton(
+    onPressed: () {
+      final routerState = GoRouterState.of(context);
+      switch (routerState.matchedLocation) {
+        case '/verify-email':
+          ref
+              .read(authSessionControllerProvider.notifier)
+              .leaveEmailVerification();
+          final origin = routerState.uri.queryParameters['from'];
+          context.go(origin == 'register' ? '/register' : '/login');
+          return;
+        case '/login':
+        case '/register':
+          context.go('/welcome');
+          return;
+        case '/forgot-password':
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/login');
+          }
+          return;
+        default:
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/welcome');
+          }
+      }
+    },
   );
 }
 

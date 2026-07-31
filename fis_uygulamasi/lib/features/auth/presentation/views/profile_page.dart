@@ -87,8 +87,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                           : const Icon(Icons.settings_backup_restore_rounded),
                       label: Text(
                         _isImporting
-                            ? 'JSON yedeği okunuyor...'
-                            : 'JSON Yedeğini İçe Aktar',
+                            ? ' Yedek okunuyor...'
+                            : 'JSON / CSV Yedeğini İçe Aktar',
                       ),
                     ),
                   ),
@@ -103,7 +103,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               leading: const Icon(Icons.ios_share_rounded),
               title: const Text('Verileri Dışa Aktar'),
               subtitle: const Text(
-                'İşlem geçmişini JSON veya Excel uyumlu CSV olarak paylaş',
+                'İşlem geçmişini uygun formatta aktar ve paylaş',
               ),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () => _selectAndExportTransactions(context, ref),

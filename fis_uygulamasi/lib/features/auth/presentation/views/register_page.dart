@@ -110,7 +110,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           password: _password.text,
           displayName: _name.text,
         );
-    if (success && mounted) context.go('/verify-email');
+    if (success && mounted) context.go('/verify-email?from=register');
   }
 
   static double _score(String value) {
