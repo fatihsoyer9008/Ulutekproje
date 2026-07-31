@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/notifications/notification_navigation_controller.dart';
+import '../../features/categories/presentation/category_management_page.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/auth/presentation/views/forgot_password_page.dart';
 import '../../features/auth/presentation/views/email_verification_page.dart';
@@ -38,6 +39,7 @@ GoRouter createAppRouter({
       final isProtectedPage = {
         '/home',
         '/profile',
+        '/categories',
         NotificationNavigationController.expenseReceiptRoute,
       }.contains(location);
 
@@ -71,9 +73,8 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/verify-email',
-        builder: (_, state) => EmailVerificationPage(
-          token: state.uri.queryParameters['token'],
-        ),
+        builder: (_, state) =>
+            EmailVerificationPage(token: state.uri.queryParameters['token']),
       ),
       GoRoute(
         path: '/home',
@@ -105,6 +106,10 @@ GoRouter createAppRouter({
         },
       ),
       GoRoute(path: '/profile', builder: (_, _) => const ProfilePage()),
+      GoRoute(
+        path: '/categories',
+        builder: (_, _) => const CategoryManagementPage(),
+      ),
     ],
   );
 }

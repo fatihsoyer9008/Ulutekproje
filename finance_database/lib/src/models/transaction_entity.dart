@@ -29,6 +29,9 @@ class TransactionEntity {
   @Enumerated(EnumType.name)
   late TransactionCategory category;
 
+  /// Özel kategorilerde gerçek adı, eski kayıtlarda null değerini taşır.
+  String? categoryName;
+
   late DateTime date;
 
   String? merchantName;

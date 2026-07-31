@@ -24,6 +24,7 @@ Future<void> main() async {
   );
 
   final isar = await IsarService.getInstance();
+  await CategoryRepository(isar).ensureDefaultCategories();
 
   runApp(
     ProviderScope(

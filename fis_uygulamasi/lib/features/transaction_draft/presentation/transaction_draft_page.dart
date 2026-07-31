@@ -1,9 +1,9 @@
 import 'package:core_ui/core_ui.dart';
+import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
-import '../model/transaction_draft.dart';
 import '../model/turkish_money.dart';
 
 enum TransactionDraftPageMode { manual, ocrReview, income }
@@ -16,6 +16,7 @@ class TransactionDraftPage extends StatefulWidget {
     this.confidenceScore,
     this.isParseSuccessful = true,
     this.mode = TransactionDraftPageMode.ocrReview,
+    this.categories,
   }) : assert(
          confidenceScore == null ||
              (confidenceScore >= 0 && confidenceScore <= 1),
@@ -26,6 +27,7 @@ class TransactionDraftPage extends StatefulWidget {
   final double? confidenceScore;
   final bool isParseSuccessful;
   final TransactionDraftPageMode mode;
+  final List<CategoryEntity>? categories;
 
   @override
   State<TransactionDraftPage> createState() => _TransactionDraftPageState();
@@ -34,9 +36,10 @@ class TransactionDraftPage extends StatefulWidget {
 class _TransactionDraftPageState extends State<TransactionDraftPage> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _institutionController;
-  late final TextEditingController _categoryController;
   late final TextEditingController _amountController;
   late DateTime _selectedDate;
+  late final List<CategoryEntity> _categories;
+  String? _selectedCategory;
   bool _isConfirming = false;
 
   @override
@@ -45,8 +48,13 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
     _institutionController = TextEditingController(
       text: widget.initialDraft.institutionName,
     );
-    _categoryController = TextEditingController(
-      text: widget.initialDraft.category,
+    _categories = _buildCategories(
+      widget.categories ?? createDefaultCategoryEntities(),
+      widget.initialDraft.category,
+    );
+    _selectedCategory = _matchingCategoryName(
+      _categories,
+      widget.initialDraft.category,
     );
     final initialAmount = widget.initialDraft.amountInMinor;
     _amountController = TextEditingController(
@@ -60,7 +68,6 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   @override
   void dispose() {
     _institutionController.dispose();
-    _categoryController.dispose();
     _amountController.dispose();
     super.dispose();
   }
@@ -72,7 +79,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
     Navigator.of(context).pop(
       TransactionDraft(
         institutionName: _institutionController.text.trim(),
-        category: _categoryController.text.trim(),
+        category: _selectedCategory!.trim(),
         amountInMinor: parseTurkishLiraToMinor(_amountController.text)!,
         transactionDate: _selectedDate,
       ),
@@ -155,16 +162,28 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                         : null,
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
+                  DropdownButtonFormField<String>(
                     key: const Key('category_field'),
-                    controller: _categoryController,
+                    initialValue: _selectedCategory,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Kategori',
-                      hintText: 'Örneğin: Market',
+                      hintText: 'Kategori seçin',
                       prefixIcon: Icon(Icons.category_outlined),
                       border: OutlineInputBorder(),
                     ),
-                    textInputAction: TextInputAction.next,
+                    items: [
+                      for (final category in _categories)
+                        DropdownMenuItem(
+                          value: category.name,
+                          child: Text(
+                            category.name,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _selectedCategory = value),
                     validator: (value) => value == null || value.trim().isEmpty
                         ? 'Kategori zorunludur'
                         : null,
@@ -280,6 +299,48 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
     ),
   );
 }
+
+List<CategoryEntity> _buildCategories(
+  List<CategoryEntity> source,
+  String initialCategory,
+) {
+  final categories = [...source];
+  final trimmedInitial = initialCategory.trim();
+  if (trimmedInitial.isNotEmpty &&
+      _matchingCategoryName(categories, trimmedInitial) == null) {
+    categories.add(
+      CategoryEntity()
+        ..name = trimmedInitial
+        ..colorValue = 0xFF546E7A
+        ..iconCodePoint = Icons.category_outlined.codePoint
+        ..createdAt = DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+  return categories;
+}
+
+String? _matchingCategoryName(
+  List<CategoryEntity> categories,
+  String categoryName,
+) {
+  final normalised = _normaliseCategory(categoryName);
+  if (normalised.isEmpty) return null;
+  for (final category in categories) {
+    if (_normaliseCategory(category.name) == normalised) return category.name;
+  }
+  return null;
+}
+
+String _normaliseCategory(String value) => value
+    .trim()
+    .toLowerCase()
+    .replaceAll('ı', 'i')
+    .replaceAll('ş', 's')
+    .replaceAll('ğ', 'g')
+    .replaceAll('ü', 'u')
+    .replaceAll('ö', 'o')
+    .replaceAll('ç', 'c')
+    .replaceAll(RegExp(r'\s+'), '');
 
 class _DraftHeader extends StatelessWidget {
   const _DraftHeader({required this.mode});

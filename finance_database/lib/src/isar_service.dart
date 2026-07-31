@@ -2,6 +2,7 @@ import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'models/offline_task.dart';
+import 'models/category_entity.dart';
 import 'models/transaction_entity.dart';
 
 class IsarService {
@@ -12,10 +13,11 @@ class IsarService {
 
     final dir = await getApplicationDocumentsDirectory();
 
-    _instance = await Isar.open(
-      [TransactionEntitySchema, OfflineTaskSchema],
-      directory: dir.path,
-    );
+    _instance = await Isar.open([
+      TransactionEntitySchema,
+      OfflineTaskSchema,
+      CategoryEntitySchema,
+    ], directory: dir.path);
 
     return _instance!;
   }

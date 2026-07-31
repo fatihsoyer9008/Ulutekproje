@@ -127,7 +127,7 @@ void main() {
       find.byKey(const Key('institution_name_field')),
       'Market',
     );
-    await tester.enterText(find.byKey(const Key('category_field')), 'Market');
+    await _selectCategory(tester, 'Market');
     await tester.enterText(find.byKey(const Key('amount_field')), '100,00');
     await tester.tap(find.byKey(const Key('confirm_draft_button')));
     await tester.pumpAndSettle();
@@ -188,7 +188,7 @@ void main() {
       find.byKey(const Key('institution_name_field')),
       'Maaş',
     );
-    await tester.enterText(find.byKey(const Key('category_field')), 'Maaş');
+    await _selectCategory(tester, 'Maaş');
     await tester.enterText(find.byKey(const Key('amount_field')), '1.000,00');
     await tester.tap(find.byKey(const Key('confirm_draft_button')));
     await tester.pumpAndSettle();
@@ -208,6 +208,13 @@ void main() {
     expect(find.text('Maaş'), findsOneWidget);
     expect(find.text('+₺1.000,00'), findsOneWidget);
   });
+}
+
+Future<void> _selectCategory(WidgetTester tester, String category) async {
+  await tester.tap(find.byKey(const Key('category_field')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(category).last);
+  await tester.pumpAndSettle();
 }
 
 TransactionEntity _transaction({
