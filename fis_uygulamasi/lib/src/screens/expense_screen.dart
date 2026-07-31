@@ -160,7 +160,13 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
         MaterialPageRoute(
           builder: (_) => TransactionDraftPage(
-            initialDraft: result.draft,
+            initialDraft: TransactionDraft(
+              institutionName: result.draft.institutionName,
+              category: result.draft.category,
+              amountInMinor: result.draft.amountInMinor,
+              transactionDate: result.draft.transactionDate,
+              rawOcrText: rawText,
+            ),
             normalizedOcrText: result.normalizedOcrText,
             confidenceScore: result.confidenceScore,
             isParseSuccessful: result.isParseSuccessful,

@@ -50,7 +50,7 @@ void main() {
       result.draft.transactionDate,
       DateTime.parse('2026-07-28T12:00:00Z'),
     );
-    expect(result.draft.rawOcrText, 'MİGROS\nTOPLAM 25,50 TL');
+    expect(result.draft.rawOcrText, isNull);
     expect(result.normalizedOcrText, 'MİGROS\nTOPLAM 25,50 TL');
     expect(result.confidenceScore, 0.92);
     expect(result.isParseSuccessful, isTrue);

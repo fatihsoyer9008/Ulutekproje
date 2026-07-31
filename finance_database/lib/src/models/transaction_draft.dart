@@ -26,7 +26,7 @@ class TransactionDraft {
   /// Backend'in fişten çıkardığı veya kullanıcının onay ekranında seçtiği tarih.
   final DateTime? transactionDate;
 
-  /// Backend'in normalize ettiği OCR metni.
+  /// Tarayıcının ürettiği, backend'e gönderilen ham OCR metni.
   final String? rawOcrText;
 
   factory TransactionDraft.fromJson(Map<String, dynamic> json) {
@@ -36,12 +36,10 @@ class TransactionDraft {
       category: json['category']?.toString().trim() ?? '',
       amountInMinor: _parseAmountInMinor(json),
       transactionDate: _parseTransactionDate(json['date']),
-      rawOcrText: _nullIfBlank(
-        json['normalized_ocr_text'] ?? json['raw_ocr_text'],
-      ),
+      rawOcrText: _nullIfBlank(json['raw_ocr_text']),
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{
       'merchant_name': institutionName,
@@ -59,8 +57,6 @@ class TransactionDraft {
 
     return json;
   }
-
-
 
   static DateTime? _parseTransactionDate(Object? value) {
     if (value == null) return null;

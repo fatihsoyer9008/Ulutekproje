@@ -110,4 +110,24 @@ void main() {
       expect(updatedDateField.controller?.text, '20.07.2026');
     },
   );
+
+  testWidgets('OCR modunda tarih seçilmeden onay verilemez', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: TransactionDraftPage(
+          initialDraft: TransactionDraft(
+            institutionName: 'Migros',
+            category: 'Market',
+            amountInMinor: 2550,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('confirm_draft_button')));
+    await tester.pump();
+
+    expect(find.text('Fiş tarihi zorunludur'), findsOneWidget);
+    expect(find.byKey(const Key('transaction_date_field')), findsOneWidget);
+  });
 }

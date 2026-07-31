@@ -38,6 +38,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   late final TextEditingController _amountController;
   late final TextEditingController _dateController;
   DateTime? _transactionDate;
+  bool _showDateRequiredError = false;
 
   @override
   void initState() {
@@ -104,10 +105,16 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
     setState(() {
       _transactionDate = selectedDate;
       _dateController.text = _formatTransactionDate(selectedDate);
+      _showDateRequiredError = false;
     });
   }
 
   void _confirmDraft() {
+    if (widget.mode == TransactionDraftPageMode.ocrReview &&
+        _transactionDate == null) {
+      setState(() => _showDateRequiredError = true);
+      return;
+    }
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     Navigator.of(context).pop(
@@ -172,6 +179,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                       labelText: 'Kurum Adı',
                       hintText: 'Örneğin: Migros',
                       prefixIcon: Icon(Icons.storefront_outlined),
+
                       border: OutlineInputBorder(),
                     ),
                     textInputAction: TextInputAction.next,
@@ -209,6 +217,9 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                         onPressed: _selectTransactionDate,
                         icon: const Icon(Icons.edit_calendar_outlined),
                       ),
+                      errorText: _showDateRequiredError
+                          ? 'Fiş tarihi zorunludur'
+                          : null,
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -221,6 +232,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                       hintText: '0,00',
                       prefixIcon: Icon(Icons.payments_outlined),
                       suffixText: 'TL',
+
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: const TextInputType.numberWithOptions(
@@ -280,7 +292,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
               label: const Text('Vazgeç'),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(width: 12),
           Expanded(
             child: FilledButton.icon(
               key: const Key('confirm_draft_button'),
