@@ -110,6 +110,18 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
           ),
           const SizedBox(height: 20),
+          AppCard(
+            child: ListTile(
+              key: const Key('category_management_tile'),
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.category_outlined),
+              title: const Text('Kategoriler'),
+              subtitle: const Text('Kategori, renk ve ikonlarını yönet'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => context.push('/categories'),
+            ),
+          ),
+          const SizedBox(height: 20),
           if (isGuest)
             FilledButton(
               onPressed: () => context.go('/login'),

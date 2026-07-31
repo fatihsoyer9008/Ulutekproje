@@ -1,5 +1,5 @@
-import 'package:app_main/features/transaction_draft/model/transaction_draft.dart';
 import 'package:app_main/features/transaction_draft/presentation/transaction_draft_page.dart';
+import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -130,4 +130,68 @@ void main() {
     expect(find.text('Fiş tarihi zorunludur'), findsOneWidget);
     expect(find.byKey(const Key('transaction_date_field')), findsOneWidget);
   });
+
+  testWidgets('OCR kategorisini listede olmasa da seçili tutar', (
+    tester,
+  ) async {
+    TransactionDraft? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => FilledButton(
+            onPressed: () async {
+              result = await Navigator.of(context).push<TransactionDraft>(
+                MaterialPageRoute(
+                  builder: (_) => TransactionDraftPage(
+                    initialDraft: TransactionDraft(
+                      institutionName: 'Kafe',
+                      category: 'Yeme İçme',
+                      amountInMinor: 2500,
+                      transactionDate: DateTime(2026, 7, 31),
+                    ),
+                    categories: [_category('Market')],
+                  ),
+                ),
+              );
+            },
+            child: const Text('Aç'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Aç'));
+    await tester.pumpAndSettle();
+    expect(find.text('Yeme İçme'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('confirm_draft_button')));
+    await tester.pumpAndSettle();
+    expect(result?.category, 'Yeme İçme');
+  });
+
+  testWidgets('veritabanından gelen özel kategoriyi dropdown içinde gösterir', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TransactionDraftPage(
+          initialDraft: const TransactionDraft(
+            institutionName: 'Veteriner',
+            category: 'Evcil Hayvan',
+            amountInMinor: 5000,
+          ),
+          categories: [_category('Market'), _category('Evcil Hayvan')],
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('category_field')));
+    await tester.pumpAndSettle();
+    expect(find.text('Evcil Hayvan'), findsWidgets);
+  });
 }
+
+CategoryEntity _category(String name) => CategoryEntity()
+  ..name = name
+  ..colorValue = 0xFF546E7A
+  ..iconCodePoint = Icons.category_outlined.codePoint
+  ..createdAt = DateTime(2026);

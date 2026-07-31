@@ -23,6 +23,7 @@ class TransactionDraftMapper {
       ..transactionType = transactionType
       ..amountInMinor = _safeAmountInMinor(draft.amountInMinor)
       ..category = _categoryFromDraft(draft.category)
+      ..categoryName = _nullIfBlank(draft.category)
       ..date = date ?? draft.transactionDate ?? now
       ..merchantName = _nullIfBlank(draft.institutionName)
       ..source = source
@@ -35,7 +36,9 @@ class TransactionDraftMapper {
   static TransactionDraft toDraft(TransactionEntity entity) {
     return TransactionDraft(
       institutionName: entity.merchantName?.trim() ?? '',
-      category: _categoryToDraft(entity.category),
+      category:
+          _nullIfBlank(entity.categoryName) ??
+          _categoryToDraft(entity.category),
       amountInMinor: _safeAmountInMinor(entity.amountInMinor),
       transactionDate: entity.date,
       rawOcrText: entity.rawOcrText,

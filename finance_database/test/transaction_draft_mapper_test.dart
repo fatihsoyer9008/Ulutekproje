@@ -20,6 +20,7 @@ void main() {
 
       expect(entity.amountInMinor, 1250);
       expect(entity.category, TransactionCategory.market);
+      expect(entity.categoryName, 'Market');
       expect(entity.merchantName, 'Migros');
       expect(entity.source, TransactionSource.ocrLlm);
       expect(entity.transactionType, TransactionType.income);
@@ -55,6 +56,7 @@ void main() {
 
       expect(entity.amountInMinor, 0);
       expect(entity.category, TransactionCategory.diger);
+      expect(entity.categoryName, isNull);
       expect(entity.merchantName, isNull);
       expect(entity.source, TransactionSource.manual);
       expect(entity.transactionType, TransactionType.expense);
@@ -127,7 +129,9 @@ void main() {
       ).toTransactionEntity();
 
       expect(entity.category, TransactionCategory.diger);
+      expect(entity.categoryName, 'BilinmeyenKategori');
       expect(entity.merchantName, isNull);
+      expect(entity.toTransactionDraft().category, 'BilinmeyenKategori');
     });
 
     test('ham OCR metnini entity ve draft arasında korur', () {

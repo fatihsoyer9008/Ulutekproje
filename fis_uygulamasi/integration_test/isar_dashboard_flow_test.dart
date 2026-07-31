@@ -78,7 +78,10 @@ void main() {
         find.byKey(const Key('institution_name_field')),
         'Entegrasyon Test Market',
       );
-      await tester.enterText(find.byKey(const Key('category_field')), 'Market');
+      await tester.tap(find.byKey(const Key('category_field')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Market').last);
+      await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const Key('amount_field')), '25,00');
 
       await tester.tap(find.byKey(const Key('confirm_draft_button')));

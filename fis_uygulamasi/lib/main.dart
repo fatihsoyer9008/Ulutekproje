@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:finance_database/finance_database.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'application/service/isar_service.dart';
@@ -25,6 +26,7 @@ Future<void> main() async {
   );
 
   final isar = await IsarService.getInstance();
+  await CategoryRepository(isar).ensureDefaultCategories();
 
   runApp(
     ProviderScope(

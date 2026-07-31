@@ -13,6 +13,7 @@ class IsarService {
     _instance = await Isar.open([
       TransactionEntitySchema,
       OfflineTaskSchema,
+      CategoryEntitySchema,
     ], directory: directory.path);
     return _instance!;
   }

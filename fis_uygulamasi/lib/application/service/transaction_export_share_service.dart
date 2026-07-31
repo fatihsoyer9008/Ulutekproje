@@ -23,7 +23,8 @@ enum TransactionExportFormat {
 typedef TemporaryDirectoryProvider = Future<Directory> Function();
 typedef FileSharer = Future<void> Function(File file);
 typedef FileDeleter = Future<void> Function(File file);
-typedef DirectoryLister = Stream<FileSystemEntity> Function(Directory directory);
+typedef DirectoryLister =
+    Stream<FileSystemEntity> Function(Directory directory);
 
 /// Kullanıcıya ait dosya sistemi ve paylaşım işlemlerini yürütür.
 class TransactionExportShareService {
@@ -69,48 +70,35 @@ class TransactionExportShareService {
   }
 
   /// Seçilen formata göre dışa aktarım dosyasını oluşturur.
-  Future<File> createExportFile(
-    TransactionExportFormat format,
-  ) async {
+  Future<File> createExportFile(TransactionExportFormat format) async {
     final content = format == TransactionExportFormat.json
         ? await _exportJson()
         : await _exportCsv();
 
     final directory = await _temporaryDirectory();
 
-    final timestamp = _now()
-        .toIso8601String()
-        .replaceAll(':', '-');
+    final timestamp = _now().toIso8601String().replaceAll(':', '-');
 
-    final extension =
-        format == TransactionExportFormat.json ? 'json' : 'csv';
+    final extension = format == TransactionExportFormat.json ? 'json' : 'csv';
 
     final file = File(
       '${directory.path}/transactions_export_$timestamp.$extension',
     );
 
-    await file.writeAsString(
-      content,
-      encoding: utf8,
-    );
+    await file.writeAsString(content, encoding: utf8);
 
     return file;
   }
 
   /// Dosyayı oluşturur ve paylaşım ekranını açar.
-  Future<void> exportAndShare(
-    TransactionExportFormat format,
-  ) async {
+  Future<void> exportAndShare(TransactionExportFormat format) async {
     await cleanupOldExportFiles();
     final file = await createExportFile(format);
 
     try {
       await _shareFile(file);
     } catch (error, stackTrace) {
-      throw TransactionExportShareException(
-        error,
-        stackTrace,
-      );
+      throw TransactionExportShareException(error, stackTrace);
     } finally {
       try {
         if (await file.exists()) {
@@ -123,9 +111,7 @@ class TransactionExportShareService {
   }
 
   /// Eski export dosyalarını temizler.
-Future<void> cleanupOldExportFiles([
-    Directory? customDirectory,
-  ]) async {
+  Future<void> cleanupOldExportFiles([Directory? customDirectory]) async {
     try {
       final directory = customDirectory ?? await _temporaryDirectory();
 
@@ -152,9 +138,7 @@ Future<void> cleanupOldExportFiles([
   static Stream<FileSystemEntity> _listDirectoryStatic(Directory directory) =>
       directory.list();
 
-  static Future<void> _shareFileStatic(
-    File file,
-  ) async {
+  static Future<void> _shareFileStatic(File file) async {
     final isJson = file.path.endsWith('.json');
 
     final formatLabel = isJson ? 'JSON' : 'CSV';
@@ -170,15 +154,11 @@ Future<void> cleanupOldExportFiles([
 }
 
 class TransactionExportShareException implements Exception {
-  TransactionExportShareException(
-    this.cause,
-    this.stackTrace,
-  );
+  TransactionExportShareException(this.cause, this.stackTrace);
 
   final Object cause;
   final StackTrace stackTrace;
 
   @override
-  String toString() =>
-      'TransactionExportShareException: $cause';
+  String toString() => 'TransactionExportShareException: $cause';
 }

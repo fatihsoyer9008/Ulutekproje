@@ -36,7 +36,7 @@ void main() {
       find.byKey(const Key('institution_name_field')),
       'Market',
     );
-    await tester.enterText(find.byKey(const Key('category_field')), 'Market');
+    await _selectCategory(tester, 'Market');
     await tester.enterText(find.byKey(const Key('amount_field')), '0');
     await tester.tap(find.byKey(const Key('confirm_draft_button')));
     await tester.pump();
@@ -73,7 +73,7 @@ void main() {
       find.byKey(const Key('institution_name_field')),
       'Market',
     );
-    await tester.enterText(find.byKey(const Key('category_field')), 'Market');
+    await _selectCategory(tester, 'Market');
     await tester.enterText(find.byKey(const Key('amount_field')), '100,00');
     await tester.tap(find.byKey(const Key('confirm_draft_button')));
     await tester.pump();
@@ -148,7 +148,7 @@ void main() {
       find.byKey(const Key('institution_name_field')),
       'Market',
     );
-    await tester.enterText(find.byKey(const Key('category_field')), 'Market');
+    await _selectCategory(tester, 'Market');
     await tester.enterText(find.byKey(const Key('amount_field')), '10,00');
     await tester.tap(find.byKey(const Key('confirm_draft_button')));
     await tester.pumpAndSettle();
@@ -156,7 +156,6 @@ void main() {
     await openManualForm();
     for (final key in const [
       Key('institution_name_field'),
-      Key('category_field'),
       Key('amount_field'),
     ]) {
       expect(
@@ -164,5 +163,16 @@ void main() {
         isEmpty,
       );
     }
+    final categoryField = tester.widget<DropdownButtonFormField<String>>(
+      find.byKey(const Key('category_field')),
+    );
+    expect(categoryField.initialValue, isNull);
   });
+}
+
+Future<void> _selectCategory(WidgetTester tester, String category) async {
+  await tester.tap(find.byKey(const Key('category_field')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(category).last);
+  await tester.pumpAndSettle();
 }

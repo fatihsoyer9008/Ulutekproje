@@ -84,7 +84,14 @@ void main() {
     expect(parsedText, 'MİGROS TOPLAM 25,50 TL');
     expect(find.text('İşlemi Kontrol Et'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'MİGROS'), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'Market'), findsOneWidget);
+    expect(
+      tester
+          .widget<DropdownButtonFormField<String>>(
+            find.byKey(const Key('category_field')),
+          )
+          .initialValue,
+      'Market',
+    );
     expect(find.widgetWithText(TextFormField, '25,50'), findsOneWidget);
     expect(find.byKey(const Key('transaction_date_field')), findsOneWidget);
     expect(savedTransactions, isEmpty);

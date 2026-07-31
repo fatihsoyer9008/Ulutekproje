@@ -4,11 +4,13 @@ import 'package:core_ui/core_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../../features/transaction_draft/presentation/receipt_analysis_page.dart';
 import '../../features/transaction_draft/presentation/transaction_draft_page.dart';
+import '../../core/database/database_providers.dart';
 
 typedef ReceiptScanLauncher = Future<String?> Function(BuildContext context);
 typedef ReceiptParseHandler =
@@ -204,6 +206,8 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       return;
     }
 
+    final categories = await _loadCategories(context);
+    if (!context.mounted) return;
     final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
       MaterialPageRoute(
         builder: (_) => TransactionDraftPage(
@@ -217,6 +221,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
           normalizedOcrText: result.normalizedOcrText,
           confidenceScore: result.confidenceScore,
           isParseSuccessful: result.isParseSuccessful,
+          categories: categories,
         ),
       ),
     );
@@ -287,10 +292,14 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     if (_isFlowActive) return;
     setState(() => _isFlowActive = true);
     try {
+      final categories = await _loadCategories(context);
+      if (!context.mounted) return;
       final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
         MaterialPageRoute(
-          builder: (_) =>
-              const TransactionDraftPage(mode: TransactionDraftPageMode.manual),
+          builder: (_) => TransactionDraftPage(
+            mode: TransactionDraftPageMode.manual,
+            categories: categories,
+          ),
         ),
       );
       if (!context.mounted) return;
@@ -301,6 +310,15 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       );
     } finally {
       if (mounted) setState(() => _isFlowActive = false);
+    }
+  }
+
+  Future<List<CategoryEntity>> _loadCategories(BuildContext context) async {
+    try {
+      final container = ProviderScope.containerOf(context, listen: false);
+      return await container.read(categoriesProvider.future);
+    } on StateError {
+      return createDefaultCategoryEntities();
     }
   }
 

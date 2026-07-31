@@ -17,3 +17,11 @@ final transactionRepositoryProvider = Provider<TransactionRepository>(
 final offlineTaskRepositoryProvider = Provider<OfflineTaskRepository>(
   (ref) => OfflineTaskRepository(ref.watch(isarProvider)),
 );
+
+final categoryRepositoryProvider = Provider<CategoryRepository>(
+  (ref) => CategoryRepository(ref.watch(isarProvider)),
+);
+
+final categoriesProvider = StreamProvider<List<CategoryEntity>>(
+  (ref) => ref.watch(categoryRepositoryProvider).watchAllCategories(),
+);

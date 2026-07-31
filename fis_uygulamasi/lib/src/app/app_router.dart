@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/notifications/notification_navigation_controller.dart';
+import '../../features/categories/presentation/category_management_page.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/auth/presentation/views/forgot_password_page.dart';
 import '../../features/auth/presentation/views/email_verification_page.dart';
@@ -40,6 +41,7 @@ GoRouter createAppRouter({
       final isProtectedPage = {
         '/home',
         '/profile',
+        '/categories',
         NotificationNavigationController.expenseReceiptRoute,
       }.contains(location);
 
@@ -109,6 +111,10 @@ GoRouter createAppRouter({
         path: '/profile',
         builder: (_, _) =>
             ProfilePage(transactionImportService: transactionImportService),
+      ),
+      GoRoute(
+        path: '/categories',
+        builder: (_, _) => const CategoryManagementPage(),
       ),
     ],
   );
