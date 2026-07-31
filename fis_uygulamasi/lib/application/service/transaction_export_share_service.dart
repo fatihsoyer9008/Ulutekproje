@@ -23,6 +23,7 @@ enum TransactionExportFormat {
 typedef TemporaryDirectoryProvider = Future<Directory> Function();
 typedef FileSharer = Future<void> Function(File file);
 typedef FileDeleter = Future<void> Function(File file);
+typedef DirectoryLister = Stream<FileSystemEntity> Function(Directory directory);
 
 /// Kullanıcıya ait dosya sistemi ve paylaşım işlemlerini yürütür.
 class TransactionExportShareService {
@@ -32,6 +33,7 @@ class TransactionExportShareService {
     required TemporaryDirectoryProvider temporaryDirectory,
     required FileSharer shareFile,
     FileDeleter? deleteFile,
+    DirectoryLister? listDirectory,
     DateTime Function()? now,
   }) : // Public parameter names intentionally differ from private fields.
        // ignore: prefer_initializing_formals
@@ -43,6 +45,7 @@ class TransactionExportShareService {
        // ignore: prefer_initializing_formals
        _shareFile = shareFile,
        _deleteFile = deleteFile ?? _deleteFileStatic,
+       _listDirectory = listDirectory ?? _listDirectoryStatic,
        _now = now ?? DateTime.now;
 
   final Future<String> Function() _exportJson;
@@ -50,6 +53,7 @@ class TransactionExportShareService {
   final TemporaryDirectoryProvider _temporaryDirectory;
   final FileSharer _shareFile;
   final FileDeleter _deleteFile;
+  final DirectoryLister _listDirectory;
   final DateTime Function() _now;
 
   /// Uygulamanın başlatırken açtığı Isar instance'ını kullanır.
@@ -119,29 +123,34 @@ class TransactionExportShareService {
   }
 
   /// Eski export dosyalarını temizler.
-  Future<void> cleanupOldExportFiles([
+Future<void> cleanupOldExportFiles([
     Directory? customDirectory,
   ]) async {
-    final directory =
-        customDirectory ?? await _temporaryDirectory();
+    try {
+      final directory = customDirectory ?? await _temporaryDirectory();
 
-    if (!await directory.exists()) {
-      return;
-    }
+      if (!await directory.exists()) {
+        return;
+      }
 
-    for (final entity in directory.listSync()) {
-      if (entity is File &&
-          entity.path.contains('transactions_export_')) {
-        try {
-          await _deleteFile(entity);
-        } catch (_) {
-          // Silinemeyen dosyaları atla.
+      await for (final entity in _listDirectory(directory)) {
+        if (entity is File && entity.path.contains('transactions_export_')) {
+          try {
+            await _deleteFile(entity);
+          } catch (_) {
+            // Silinemeyen bireysel dosyaları atla.
+          }
         }
       }
+    } catch (_) {
+      // Dizin bulunamazsa veya listeleme erişim hatası verirse sessizce yut.
     }
   }
 
   static Future<void> _deleteFileStatic(File file) => file.delete();
+
+  static Stream<FileSystemEntity> _listDirectoryStatic(Directory directory) =>
+      directory.list();
 
   static Future<void> _shareFileStatic(
     File file,

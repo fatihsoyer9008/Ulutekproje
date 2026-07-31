@@ -330,4 +330,22 @@ void main() {
       throwsA(isA<TransactionExportShareException>()),
     );
   });
+
+  test('directory listing failure does not block sharing', () async {
+    var shared = false;
+    final service = TransactionExportShareService(
+      exportJson: () async => '[]',
+      exportCsv: () async => '',
+      temporaryDirectory: () async => tempDirectory,
+      listDirectory: (_) => Stream<FileSystemEntity>.error(
+        FileSystemException('listing failed'),
+      ),
+      shareFile: (_) async => shared = true,
+      now: () => DateTime.utc(2026, 7, 30, 10),
+    );
+
+    await service.exportAndShare(TransactionExportFormat.json);
+
+    expect(shared, isTrue);
+  });
 }
