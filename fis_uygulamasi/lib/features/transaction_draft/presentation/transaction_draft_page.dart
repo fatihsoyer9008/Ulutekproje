@@ -37,9 +37,11 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _institutionController;
   late final TextEditingController _amountController;
-  late DateTime _selectedDate;
   late final List<CategoryEntity> _categories;
   String? _selectedCategory;
+  late final TextEditingController _dateController;
+  DateTime? _transactionDate;
+  bool _showDateRequiredError = false;
   bool _isConfirming = false;
 
   @override
@@ -56,45 +58,87 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
       _categories,
       widget.initialDraft.category,
     );
+
     final initialAmount = widget.initialDraft.amountInMinor;
     _amountController = TextEditingController(
       text: initialAmount == null
           ? ''
           : formatMinorAsTurkishLira(initialAmount),
     );
-    _selectedDate = widget.initialDraft.transactionDate ?? DateTime.now();
+
+    _transactionDate = widget.initialDraft.transactionDate;
+    _dateController = TextEditingController(
+      text: _formatTransactionDate(_transactionDate),
+    );
   }
 
   @override
   void dispose() {
     _institutionController.dispose();
     _amountController.dispose();
+    _dateController.dispose();
     super.dispose();
+  }
+
+  String _formatTransactionDate(DateTime? date) {
+    if (date == null) return '';
+
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return '$day.$month.${date.year}';
+  }
+
+  Future<void> _selectTransactionDate() async {
+    final now = DateTime.now();
+    final firstDate = DateTime(2000);
+    final lastDate = DateTime(now.year + 5);
+    final currentDate = _transactionDate ?? now;
+
+    final initialDate = currentDate.isBefore(firstDate)
+        ? firstDate
+        : currentDate.isAfter(lastDate)
+        ? lastDate
+        : currentDate;
+
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      helpText: 'Fiş tarihini seçin',
+    );
+
+    if (selectedDate == null) return;
+
+    setState(() {
+      _transactionDate = selectedDate;
+      _dateController.text = _formatTransactionDate(selectedDate);
+      _showDateRequiredError = false;
+    });
   }
 
   void _confirmDraft() {
     if (_isConfirming) return;
+
+    if (widget.mode == TransactionDraftPageMode.ocrReview &&
+        _transactionDate == null) {
+      setState(() => _showDateRequiredError = true);
+      return;
+    }
+
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    _isConfirming = true;
+
+    setState(() => _isConfirming = true);
+
     Navigator.of(context).pop(
       TransactionDraft(
         institutionName: _institutionController.text.trim(),
         category: _selectedCategory!.trim(),
         amountInMinor: parseTurkishLiraToMinor(_amountController.text)!,
-        transactionDate: _selectedDate,
+        transactionDate: _transactionDate,
+        rawOcrText: widget.initialDraft.rawOcrText,
       ),
     );
-  }
-
-  Future<void> _pickDate() async {
-    final selectedDate = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
-    );
-    if (selectedDate == null || !mounted) return;
-    setState(() => _selectedDate = selectedDate);
   }
 
   @override
@@ -154,6 +198,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                       labelText: 'Kurum Adı',
                       hintText: 'Örneğin: Migros',
                       prefixIcon: Icon(Icons.storefront_outlined),
+
                       border: OutlineInputBorder(),
                     ),
                     textInputAction: TextInputAction.next,
@@ -190,6 +235,27 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
+                    key: const Key('transaction_date_field'),
+                    controller: _dateController,
+                    readOnly: true,
+                    onTap: _selectTransactionDate,
+                    decoration: InputDecoration(
+                      labelText: 'Fiş Tarihi',
+                      hintText: 'Tarih bulunamadı - seçmek için dokunun',
+                      prefixIcon: const Icon(Icons.calendar_today_outlined),
+                      suffixIcon: IconButton(
+                        tooltip: 'Tarih seç',
+                        onPressed: _selectTransactionDate,
+                        icon: const Icon(Icons.edit_calendar_outlined),
+                      ),
+                      errorText: _showDateRequiredError
+                          ? 'Fiş tarihi zorunludur'
+                          : null,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
                     key: const Key('amount_field'),
                     controller: _amountController,
                     decoration: const InputDecoration(
@@ -197,6 +263,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                       hintText: '0,00',
                       prefixIcon: Icon(Icons.payments_outlined),
                       suffixText: 'TL',
+
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: const TextInputType.numberWithOptions(
@@ -215,29 +282,6 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                       }
                       return null;
                     },
-                  ),
-                  const SizedBox(height: 16),
-                  Semantics(
-                    button: true,
-                    label: 'İşlem tarihini seç',
-                    child: InkWell(
-                      key: const Key('date_field'),
-                      onTap: _pickDate,
-                      borderRadius: BorderRadius.circular(4),
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Tarih',
-                          prefixIcon: Icon(Icons.calendar_today_outlined),
-                          suffixIcon: Icon(Icons.arrow_drop_down_rounded),
-                          border: OutlineInputBorder(),
-                        ),
-                        child: Text(
-                          MaterialLocalizations.of(
-                            context,
-                          ).formatCompactDate(_selectedDate),
-                        ),
-                      ),
-                    ),
                   ),
                 ],
               ),

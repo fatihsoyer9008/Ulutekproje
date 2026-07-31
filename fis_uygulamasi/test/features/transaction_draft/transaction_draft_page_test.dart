@@ -4,51 +4,131 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('shows editable UI and returns amountInMinor', (tester) async {
-    TransactionDraft? result;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: FilledButton(
-              onPressed: () async {
-                result = await Navigator.of(context).push<TransactionDraft>(
-                  MaterialPageRoute(
-                    builder: (_) => const TransactionDraftPage(
-                      initialDraft: TransactionDraft(
-                        institutionName: 'Migros',
-                        category: 'Market',
-                        amountInMinor: 123456,
+  testWidgets(
+    'OCR tarihi ve metni onay ekranında korunur, kullanıcı tarihi değiştirir',
+    (tester) async {
+      TransactionDraft? result;
+      final receiptDate = DateTime(2026, 7, 30);
+      final selectedDate = DateTime(2026, 7, 15);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: FilledButton(
+                onPressed: () async {
+                  result = await Navigator.of(context).push<TransactionDraft>(
+                    MaterialPageRoute(
+                      builder: (_) => TransactionDraftPage(
+                        initialDraft: TransactionDraft(
+                          institutionName: 'Migros',
+                          category: 'Market',
+                          amountInMinor: 123456,
+                          transactionDate: receiptDate,
+                          rawOcrText: 'MIGROS\nTOPLAM 1.234,56 TL',
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
-              child: const Text('Aç'),
+                  );
+                },
+                child: const Text('Aç'),
+              ),
             ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Aç'));
+      await tester.pumpAndSettle();
+
+      final dateField = tester.widget<TextFormField>(
+        find.byKey(const Key('transaction_date_field')),
+      );
+      expect(dateField.controller?.text, '30.07.2026');
+
+      await tester.tap(find.byKey(const Key('transaction_date_field')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DatePickerDialog), findsOneWidget);
+
+      final dialogContext = tester.element(find.byType(DatePickerDialog));
+      Navigator.of(dialogContext).pop(selectedDate);
+      await tester.pumpAndSettle();
+
+      final updatedDateField = tester.widget<TextFormField>(
+        find.byKey(const Key('transaction_date_field')),
+      );
+      expect(updatedDateField.controller?.text, '15.07.2026');
+
+      await tester.tap(find.byKey(const Key('confirm_draft_button')));
+      await tester.pumpAndSettle();
+
+      expect(result?.amountInMinor, 123456);
+      expect(result?.transactionDate, selectedDate);
+      expect(result?.rawOcrText, 'MIGROS\nTOPLAM 1.234,56 TL');
+    },
+  );
+
+  testWidgets(
+    'Backend tarih göndermediğinde tarih alanı boş açılır ve kullanıcı tarih seçebilir',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TransactionDraftPage(
+            initialDraft: TransactionDraft(
+              institutionName: 'Migros',
+              category: 'Market',
+              amountInMinor: 2550,
+              rawOcrText: 'MIGROS\nTOPLAM 25,50 TL',
+            ),
+          ),
+        ),
+      );
+
+      final dateField = tester.widget<TextFormField>(
+        find.byKey(const Key('transaction_date_field')),
+      );
+
+      expect(dateField.controller?.text, '');
+      expect(
+        find.text('Tarih bulunamadı - seçmek için dokunun'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('transaction_date_field')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DatePickerDialog), findsOneWidget);
+
+      final dialogContext = tester.element(find.byType(DatePickerDialog));
+      Navigator.of(dialogContext).pop(DateTime(2026, 7, 20));
+      await tester.pumpAndSettle();
+
+      final updatedDateField = tester.widget<TextFormField>(
+        find.byKey(const Key('transaction_date_field')),
+      );
+      expect(updatedDateField.controller?.text, '20.07.2026');
+    },
+  );
+
+  testWidgets('OCR modunda tarih seçilmeden onay verilemez', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: TransactionDraftPage(
+          initialDraft: TransactionDraft(
+            institutionName: 'Migros',
+            category: 'Market',
+            amountInMinor: 2550,
           ),
         ),
       ),
     );
 
-    await tester.tap(find.text('Aç'));
-    await tester.pumpAndSettle();
-    expect(find.text('TASLAK'), findsOneWidget);
-    expect(find.text('Fiş bilgilerini kontrol edin'), findsOneWidget);
-    expect(find.text('İşlem bilgileri'), findsOneWidget);
-    expect(find.byKey(const Key('institution_name_field')), findsOneWidget);
-    expect(find.byKey(const Key('category_field')), findsOneWidget);
-    expect(find.byKey(const Key('amount_field')), findsOneWidget);
-
-    final amountField = tester.widget<TextFormField>(
-      find.byKey(const Key('amount_field')),
-    );
-    expect(amountField.controller?.text, '1.234,56');
-    expect(find.text('TL'), findsOneWidget);
-
     await tester.tap(find.byKey(const Key('confirm_draft_button')));
-    await tester.pumpAndSettle();
-    expect(result?.amountInMinor, 123456);
+    await tester.pump();
+
+    expect(find.text('Fiş tarihi zorunludur'), findsOneWidget);
+    expect(find.byKey(const Key('transaction_date_field')), findsOneWidget);
   });
 
   testWidgets('OCR kategorisini listede olmasa da seçili tutar', (
@@ -63,10 +143,11 @@ void main() {
               result = await Navigator.of(context).push<TransactionDraft>(
                 MaterialPageRoute(
                   builder: (_) => TransactionDraftPage(
-                    initialDraft: const TransactionDraft(
+                    initialDraft: TransactionDraft(
                       institutionName: 'Kafe',
                       category: 'Yeme İçme',
                       amountInMinor: 2500,
+                      transactionDate: DateTime(2026, 7, 31),
                     ),
                     categories: [_category('Market')],
                   ),

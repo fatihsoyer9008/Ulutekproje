@@ -1,10 +1,9 @@
 import 'dart:async';
 
 import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
-import 'package:app_main/features/transaction_draft/model/transaction_draft.dart';
 import 'package:app_main/src/screens/expense_screen.dart';
 import 'package:finance_database/finance_database.dart'
-    show TransactionEntity, TransactionSource;
+    show TransactionDraft, TransactionEntity, TransactionSource;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -59,11 +58,12 @@ void main() {
           scanReceipt: (_) async => 'MİGROS TOPLAM 25,50 TL',
           parseReceipt: (text, {cancelToken}) async {
             parsedText = text;
-            return const ReceiptParseResult(
+            return ReceiptParseResult(
               draft: TransactionDraft(
                 institutionName: 'MİGROS',
                 category: 'Market',
                 amountInMinor: 2550,
+                transactionDate: DateTime(2026, 7, 28),
               ),
               normalizedOcrText: 'MİGROS\nTOPLAM 25,50 TL',
               confidenceScore: 0.92,
@@ -93,7 +93,7 @@ void main() {
       'Market',
     );
     expect(find.widgetWithText(TextFormField, '25,50'), findsOneWidget);
-    expect(find.byKey(const Key('date_field')), findsOneWidget);
+    expect(find.byKey(const Key('transaction_date_field')), findsOneWidget);
     expect(savedTransactions, isEmpty);
     await tester.drag(find.byType(ListView), const Offset(0, -500));
     await tester.pumpAndSettle();
@@ -158,5 +158,68 @@ void main() {
           .onPressed,
       isNotNull,
     );
+  });
+
+  testWidgets('OCR kaydı fiş tarihi, ham metin ve OCR kaynağıyla kaydedilir', (
+    tester,
+  ) async {
+    const rawOcrText = 'MIGROS TOPLAM 25.50 TL';
+    const normalizedOcrText = 'MIGROS\nTOPLAM 25,50 TL';
+
+    TransactionEntity? savedTransaction;
+    final receiptDate = DateTime(2026, 7, 28, 12);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              key: const Key('open_expense_screen'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ExpenseScreen(
+                      scanReceipt: (_) async => rawOcrText,
+                      parseReceipt: (_, {cancelToken}) async =>
+                          ReceiptParseResult(
+                            draft: TransactionDraft(
+                              institutionName: 'MIGROS',
+                              category: 'Market',
+                              amountInMinor: 2550,
+                              transactionDate: receiptDate,
+                            ),
+                            normalizedOcrText: normalizedOcrText,
+                            confidenceScore: 0.92,
+                            isParseSuccessful: true,
+                          ),
+                      saveTransaction: (transaction) async {
+                        savedTransaction = transaction;
+                      },
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Gider ekranını aç'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('open_expense_screen')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('ocr_camera_button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('confirm_draft_button')));
+    await tester.pumpAndSettle();
+
+    expect(savedTransaction, isNotNull);
+    expect(savedTransaction!.source, TransactionSource.ocrLlm);
+    expect(savedTransaction!.rawOcrText, rawOcrText);
+    expect(savedTransaction!.rawOcrText, isNot(normalizedOcrText));
+    expect(savedTransaction!.date, receiptDate);
+    expect(savedTransaction!.amountInMinor, 2550);
   });
 }

@@ -48,10 +48,8 @@ void main() {
   });
 
   test('yalnızca bekleyen görevleri oluşturulma sırasıyla getirir', () async {
-    final first = task('task-first')
-      ..createdAt = DateTime(2026, 7, 30, 10);
-    final second = task('task-second')
-      ..createdAt = DateTime(2026, 7, 30, 11);
+    final first = task('task-first')..createdAt = DateTime(2026, 7, 30, 10);
+    final second = task('task-second')..createdAt = DateTime(2026, 7, 30, 11);
 
     await repository.add(first);
     final secondId = await repository.add(second);

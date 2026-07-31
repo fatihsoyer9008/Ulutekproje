@@ -138,7 +138,7 @@ class _MockFlutterLocalNotificationsPlugin
     required InitializationSettings settings,
     DidReceiveNotificationResponseCallback? onDidReceiveNotificationResponse,
     DidReceiveBackgroundNotificationResponseCallback?
-        onDidReceiveBackgroundNotificationResponse,
+    onDidReceiveBackgroundNotificationResponse,
   }) async {
     initializeCallCount += 1;
     foregroundCallback = onDidReceiveNotificationResponse;
@@ -161,15 +161,14 @@ class _MockFlutterLocalNotificationsPlugin
 
   @override
   Future<NotificationAppLaunchDetails?>
-      getNotificationAppLaunchDetails() async {
+  getNotificationAppLaunchDetails() async {
     return launchDetails;
   }
 
   void simulateTap(String? payload) {
     foregroundCallback?.call(
       NotificationResponse(
-        notificationResponseType:
-            NotificationResponseType.selectedNotification,
+        notificationResponseType: NotificationResponseType.selectedNotification,
         payload: payload,
       ),
     );

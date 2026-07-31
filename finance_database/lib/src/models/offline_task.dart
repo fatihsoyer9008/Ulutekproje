@@ -2,11 +2,7 @@ import 'package:isar/isar.dart';
 
 part 'offline_task.g.dart';
 
-enum OfflineTaskType {
-  createTransaction,
-  updateTransaction,
-  deleteTransaction,
-}
+enum OfflineTaskType { createTransaction, updateTransaction, deleteTransaction }
 
 enum OfflineTaskStatus { pending, processing, failed }
 

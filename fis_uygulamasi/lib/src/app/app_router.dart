@@ -13,6 +13,7 @@ import '../../features/auth/presentation/views/profile_page.dart';
 import '../../features/auth/presentation/views/register_page.dart';
 import '../../features/auth/presentation/views/startup_page.dart';
 import '../../features/auth/presentation/views/welcome_page.dart';
+import '../../features/backup/data/transaction_json_import_service.dart';
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../screens/expense_screen.dart';
 import 'finance_home.dart';
@@ -23,6 +24,7 @@ GoRouter createAppRouter({
   required Future<void> Function(TransactionEntity transaction)?
   saveTransaction,
   required ReceiptScanLauncher? scanReceipt,
+  TransactionJsonImportService? transactionImportService,
 }) {
   return GoRouter(
     initialLocation: '/startup',
@@ -105,7 +107,11 @@ GoRouter createAppRouter({
           );
         },
       ),
-      GoRoute(path: '/profile', builder: (_, _) => const ProfilePage()),
+      GoRoute(
+        path: '/profile',
+        builder: (_, _) =>
+            ProfilePage(transactionImportService: transactionImportService),
+      ),
       GoRoute(
         path: '/categories',
         builder: (_, _) => const CategoryManagementPage(),

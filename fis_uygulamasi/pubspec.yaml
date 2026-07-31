@@ -50,12 +50,14 @@ dependencies:
   go_router: ^17.3.0
   flutter_riverpod: ^2.6.1
   dio: ^5.11.0
+  file_selector: ^1.1.0
   flutter_secure_storage: ^10.3.1
   google_sign_in: ^7.2.0
   shared_preferences: ^2.5.5
   isar: ^3.1.0+1
   isar_flutter_libs: ^3.1.0+1
-  path_provider: ^2.1.2
+  path_provider: ^2.1.6
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:
@@ -75,6 +77,11 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+# path_provider_foundation 2.6.0, Windows'ta boşluk içeren kullanıcı yolu
+# altında objective_c native-asset hook'unun çalışmasını engelliyor.
+dependency_overrides:
+  path_provider_foundation: 2.5.1
 
   # To add assets to your application, add an assets section, like this:
   # assets:
