@@ -3,16 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/notifications/notification_navigation_controller.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/auth/presentation/views/forgot_password_page.dart';
+import '../../features/auth/presentation/views/email_verification_page.dart';
 import '../../features/auth/presentation/views/login_page.dart';
 import '../../features/auth/presentation/views/profile_page.dart';
 import '../../features/auth/presentation/views/register_page.dart';
 import '../../features/auth/presentation/views/startup_page.dart';
 import '../../features/auth/presentation/views/welcome_page.dart';
+import '../../features/backup/data/transaction_json_import_service.dart';
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../screens/expense_screen.dart';
-import 'finance_app.dart';
+import 'finance_home.dart';
 
 GoRouter createAppRouter({
   required WidgetRef ref,
@@ -20,6 +23,7 @@ GoRouter createAppRouter({
   required Future<void> Function(TransactionEntity transaction)?
   saveTransaction,
   required ReceiptScanLauncher? scanReceipt,
+  TransactionJsonImportService? transactionImportService,
 }) {
   return GoRouter(
     initialLocation: '/startup',
@@ -31,13 +35,24 @@ GoRouter createAppRouter({
         '/login',
         '/register',
         '/forgot-password',
+        '/verify-email',
+      }.contains(location);
+      final isProtectedPage = {
+        '/home',
+        '/profile',
+        NotificationNavigationController.expenseReceiptRoute,
       }.contains(location);
 
       if (auth.status == AuthStatus.initializing) {
-        return location == '/startup' ? null : '/startup';
+        return location == '/startup' || location == '/verify-email'
+            ? null
+            : '/startup';
       }
-      if (auth.status == AuthStatus.unauthenticated &&
-          (location == '/home' || location == '/profile')) {
+      if (auth.status == AuthStatus.emailVerificationRequired &&
+          location != '/verify-email') {
+        return '/verify-email';
+      }
+      if (auth.status == AuthStatus.unauthenticated && isProtectedPage) {
         return '/welcome';
       }
       if ((auth.status == AuthStatus.authenticated ||
@@ -57,6 +72,11 @@ GoRouter createAppRouter({
         builder: (_, _) => const ForgotPasswordPage(),
       ),
       GoRoute(
+        path: '/verify-email',
+        builder: (_, state) =>
+            EmailVerificationPage(token: state.uri.queryParameters['token']),
+      ),
+      GoRoute(
         path: '/home',
         builder: (context, state) {
           final parser = ReceiptParserClient(
@@ -70,7 +90,26 @@ GoRouter createAppRouter({
           );
         },
       ),
-      GoRoute(path: '/profile', builder: (_, _) => const ProfilePage()),
+      GoRoute(
+        path: NotificationNavigationController.expenseReceiptRoute,
+        builder: (context, state) {
+          final parser = ReceiptParserClient(
+            apiClient: ref.read(apiClientProvider),
+          );
+
+          return ExpenseScreen(
+            saveTransaction: saveTransaction,
+            scanReceipt: scanReceipt,
+            parseReceipt: parser.parse,
+            openScannerOnStart: true,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/profile',
+        builder: (_, _) =>
+            ProfilePage(transactionImportService: transactionImportService),
+      ),
     ],
   );
 }

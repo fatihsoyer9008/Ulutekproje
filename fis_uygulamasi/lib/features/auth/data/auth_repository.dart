@@ -9,15 +9,40 @@ import '../../../core/network/api_config.dart';
 import '../domain/auth_user.dart';
 
 class AuthException implements Exception {
-  const AuthException(this.message);
+  const AuthException(this.message, {this.code});
 
   final String message;
+  final String? code;
 
   @override
   String toString() => message;
 }
 
-class AuthRepository {
+abstract interface class AuthRepositoryBase {
+  Future<AuthUser> login({required String email, required String password});
+
+  Future<String> register({
+    required String email,
+    required String password,
+    String? displayName,
+  });
+
+  Future<String> verifyEmail(String token);
+
+  Future<String> resendVerification(String email);
+
+  Future<String> forgotPassword(String email);
+
+  Future<AuthUser> signInWithGoogle();
+
+  Future<AuthUser?> silentRefresh();
+
+  Future<void> logout();
+
+  Future<void> deleteAccount({String? currentPassword});
+}
+
+class AuthRepository implements AuthRepositoryBase {
   AuthRepository({required ApiClient apiClient, GoogleSignIn? googleSignIn})
     // ignore: prefer_initializing_formals
     : _apiClient = apiClient,
@@ -26,6 +51,7 @@ class AuthRepository {
   final ApiClient _apiClient;
   final GoogleSignIn _googleSignIn;
 
+  @override
   Future<AuthUser> login({
     required String email,
     required String password,
@@ -38,10 +64,11 @@ class AuthRepository {
       );
       return _saveTokenResponse(response.data);
     } on DioException catch (error) {
-      throw AuthException(_messageFrom(error, 'Giriş yapılamadı.'));
+      throw _exceptionFrom(error, 'Giriş yapılamadı.');
     }
   }
 
+  @override
   Future<String> register({
     required String email,
     required String password,
@@ -61,10 +88,41 @@ class AuthRepository {
       return response.data?['message'] as String? ??
           'Doğrulama bağlantısı e-posta adresinize gönderildi.';
     } on DioException catch (error) {
-      throw AuthException(_messageFrom(error, 'Kayıt oluşturulamadı.'));
+      throw _exceptionFrom(error, 'Kayıt oluşturulamadı.');
     }
   }
 
+  @override
+  Future<String> verifyEmail(String token) async {
+    try {
+      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+        '/api/v1/auth/verify-email',
+        data: {'token': token},
+        options: Options(extra: const {'skipAuth': true}),
+      );
+      return response.data?['message'] as String? ??
+          'E-posta adresiniz doğrulandı.';
+    } on DioException catch (error) {
+      throw _exceptionFrom(error, 'E-posta doğrulanamadı.');
+    }
+  }
+
+  @override
+  Future<String> resendVerification(String email) async {
+    try {
+      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+        '/api/v1/auth/resend-verification',
+        data: {'email': email.trim()},
+        options: Options(extra: const {'skipAuth': true}),
+      );
+      return response.data?['message'] as String? ??
+          'Doğrulama bağlantısı yeniden gönderildi.';
+    } on DioException catch (error) {
+      throw _exceptionFrom(error, 'Doğrulama e-postası gönderilemedi.');
+    }
+  }
+
+  @override
   Future<String> forgotPassword(String email) async {
     try {
       final response = await _apiClient.dio.post<Map<String, dynamic>>(
@@ -75,12 +133,11 @@ class AuthRepository {
       return response.data?['message'] as String? ??
           'Uygunsa sıfırlama bağlantısı e-posta adresinize gönderildi.';
     } on DioException catch (error) {
-      throw AuthException(
-        _messageFrom(error, 'Şifre sıfırlama isteği gönderilemedi.'),
-      );
+      throw _exceptionFrom(error, 'Şifre sıfırlama isteği gönderilemedi.');
     }
   }
 
+  @override
   Future<AuthUser> signInWithGoogle() async {
     if (ApiConfig.googleServerClientId.isEmpty) {
       throw const AuthException(
@@ -113,15 +170,17 @@ class AuthRepository {
     } on GoogleSignInException catch (error) {
       throw AuthException('Google girişi tamamlanamadı: ${error.code.name}');
     } on DioException catch (error) {
-      throw AuthException(_messageFrom(error, 'Google girişi yapılamadı.'));
+      throw _exceptionFrom(error, 'Google girişi yapılamadı.');
     }
   }
 
+  @override
   Future<AuthUser?> silentRefresh() async {
     final bundle = await _apiClient.refreshSession();
     return bundle == null ? null : AuthUser.fromJson(bundle.user);
   }
 
+  @override
   Future<void> logout() async {
     String? refreshToken;
     try {
@@ -141,6 +200,7 @@ class AuthRepository {
     }
   }
 
+  @override
   Future<void> deleteAccount({String? currentPassword}) async {
     try {
       await _apiClient.dio.delete<void>(
@@ -150,7 +210,7 @@ class AuthRepository {
       await _apiClient.clearSession();
       await _googleSignIn.signOut();
     } on DioException catch (error) {
-      throw AuthException(_messageFrom(error, 'Hesap silinemedi.'));
+      throw _exceptionFrom(error, 'Hesap silinemedi.');
     }
   }
 
@@ -165,13 +225,16 @@ class AuthRepository {
     }
   }
 
-  static String _messageFrom(DioException error, String fallback) {
+  static AuthException _exceptionFrom(DioException error, String fallback) {
     final data = error.response?.data;
     if (data is Map) {
       final detail = data['detail'];
-      if (detail is String) return detail;
+      if (detail is String) return AuthException(detail);
       if (detail is Map && detail['message'] is String) {
-        return detail['message'] as String;
+        return AuthException(
+          detail['message'] as String,
+          code: detail['code'] as String?,
+        );
       }
       if (detail is List && detail.isNotEmpty) {
         final first = detail.first;
@@ -180,25 +243,27 @@ class AuthRepository {
           final field = location is List && location.isNotEmpty
               ? location.last
               : null;
-          return field == null
-              ? first['msg'] as String
-              : '$field: ${first['msg']}';
+          return AuthException(
+            field == null ? first['msg'] as String : '$field: ${first['msg']}',
+          );
         }
       }
     }
     final statusCode = error.response?.statusCode;
     if (statusCode != null) {
-      return '$fallback (HTTP $statusCode)';
+      return AuthException('$fallback (HTTP $statusCode)');
     }
     if (error.type == DioExceptionType.connectionError ||
         error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.receiveTimeout ||
         error.type == DioExceptionType.sendTimeout) {
-      return 'Auth sunucusuna ulaşılamadı: ${ApiConfig.baseUrl}. '
-          'Telefon kullanıyorsanız güncel HTTPS tünel adresiyle yeniden '
-          'derleyin.';
+      return AuthException(
+        'Auth sunucusuna ulaşılamadı: ${ApiConfig.baseUrl}. '
+        'Telefon kullanıyorsanız güncel HTTPS tünel adresiyle yeniden '
+        'derleyin.',
+      );
     }
-    return '$fallback ${error.message ?? ''}'.trim();
+    return AuthException('$fallback ${error.message ?? ''}'.trim());
   }
 
   static String _createNonce() {

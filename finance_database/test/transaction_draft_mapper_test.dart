@@ -116,6 +116,7 @@ void main() {
       expect(draft.institutionName, 'İETT');
       expect(draft.category, 'Ulaşım');
       expect(draft.amountInMinor, 1875);
+      expect(draft.transactionDate, DateTime(2026, 7, 28));
     });
 
     test('unknown category and blank merchant use safe defaults', () {
@@ -188,6 +189,7 @@ void main() {
         'merchant_name': 'Market',
         'category': 'Gıda',
         'amountInMinor': 123456,
+        'date': null,
       });
     });
 
@@ -197,6 +199,19 @@ void main() {
       expect(draft.institutionName, '');
       expect(draft.category, '');
       expect(draft.amountInMinor, isNull);
+      expect(draft.transactionDate, isNull);
+    });
+
+    test('maps the receipt date from JSON into the persisted entity', () {
+      final draft = TransactionDraft.fromJson({
+        'merchant': 'Market',
+        'category': 'Market',
+        'total_amount_minor': 2500,
+        'date': '2026-07-28T12:00:00Z',
+      });
+
+      expect(draft.transactionDate, DateTime.utc(2026, 7, 28, 12));
+      expect(draft.toTransactionEntity().date, DateTime.utc(2026, 7, 28, 12));
     });
   });
 }

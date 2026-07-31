@@ -1,15 +1,28 @@
 import 'package:core_ui/core_ui.dart';
+import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../application/service/transaction_export_share_service.dart';
+import '../../../../core/database/database_providers.dart';
+import '../../../backup/data/transaction_json_import_service.dart';
 import '../controllers/auth_session_controller.dart';
 
-class ProfilePage extends ConsumerWidget {
-  const ProfilePage({super.key});
+class ProfilePage extends ConsumerStatefulWidget {
+  const ProfilePage({this.transactionImportService, super.key});
+
+  final TransactionJsonImportService? transactionImportService;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends ConsumerState<ProfilePage> {
+  bool _isImporting = false;
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(authSessionControllerProvider);
     final user = state.user;
     final isGuest = state.status == AuthStatus.guest;
@@ -45,6 +58,57 @@ class ProfilePage extends ConsumerWidget {
               ],
             ),
           ),
+          if (widget.transactionImportService != null) ...[
+            const SizedBox(height: 20),
+            Text(
+              'Veri yedekleme',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 10),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Daha önce dışa aktarılan JSON yedeğini seçerek işlemlerini '
+                    'bu cihaza geri yükleyebilirsin.',
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      key: const Key('transaction_import_button'),
+                      onPressed: _isImporting ? null : _importTransactions,
+                      icon: _isImporting
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.settings_backup_restore_rounded),
+                      label: Text(
+                        _isImporting
+                            ? 'JSON yedeği okunuyor...'
+                            : 'JSON Yedeğini İçe Aktar',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          AppCard(
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.ios_share_rounded),
+              title: const Text('Verileri Dışa Aktar'),
+              subtitle: const Text(
+                'İşlem geçmişini JSON veya Excel uyumlu CSV olarak paylaş',
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => _selectAndExportTransactions(context, ref),
+            ),
+          ),
           const SizedBox(height: 20),
           if (isGuest)
             FilledButton(
@@ -67,9 +131,7 @@ class ProfilePage extends ConsumerWidget {
             const SizedBox(height: 14),
             FilledButton.icon(
               style: FilledButton.styleFrom(backgroundColor: AppColors.expense),
-              onPressed: state.isLoading
-                  ? null
-                  : () => _confirmDelete(context, ref),
+              onPressed: state.isLoading ? null : () => _confirmDelete(context),
               icon: const Icon(Icons.delete_forever_outlined),
               label: const Text('Hesabı Sil'),
             ),
@@ -79,7 +141,127 @@ class ProfilePage extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+  Future<void> _importTransactions() async {
+    final service = widget.transactionImportService;
+    if (service == null || _isImporting) return;
+
+    setState(() => _isImporting = true);
+    try {
+      final preview = await service.selectBackup();
+      if (!mounted || preview == null) return;
+      if (preview.transactions.isEmpty) {
+        _showMessage('Seçilen yedekte içe aktarılacak işlem bulunamadı.');
+        return;
+      }
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('JSON yedeği içe aktarılsın mı?'),
+          content: Text(
+            '${preview.fileName} dosyasında ${preview.transactions.length} '
+            'işlem bulundu. Mevcut işlemler korunacak ve aynı kayıtlar tekrar '
+            'eklenmeyecek.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              key: const Key('confirm_transaction_import_button'),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('İçe Aktar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+
+      final result = await service.importBackup(preview);
+      if (!mounted) return;
+      final skippedText = result.skippedDuplicateCount == 0
+          ? ''
+          : ' ${result.skippedDuplicateCount} tekrar eden kayıt atlandı.';
+      _showMessage('${result.importedCount} işlem içe aktarıldı.$skippedText');
+    } on TransactionJsonImportException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } on Exception {
+      if (mounted) {
+        _showMessage(
+          'JSON yedeği içe aktarılırken beklenmeyen bir hata oluştu.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isImporting = false);
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _selectAndExportTransactions(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final format = await showDialog<TransactionExportFormat>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Dışa aktarma formatı'),
+        content: const Text('Paylaşmak istediğiniz dosya formatını seçin.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, TransactionExportFormat.json),
+            child: const Text('JSON'),
+          ),
+          FilledButton.tonal(
+            onPressed: () =>
+                Navigator.pop(dialogContext, TransactionExportFormat.csv),
+            child: const Text('CSV (Excel)'),
+          ),
+        ],
+      ),
+    );
+    if (format == null || !context.mounted) return;
+    await _exportTransactions(context, ref, format);
+  }
+
+  Future<void> _exportTransactions(
+    BuildContext context,
+    WidgetRef ref,
+    TransactionExportFormat format,
+  ) async {
+    try {
+      final service = TransactionExportShareService.fromIsar(
+        ref.read(isarProvider),
+      );
+      await service.exportAndShare(format);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${format.label} dosyası paylaşım için hazır.')),
+      );
+    } on TransactionExportShareException catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Veriler paylaşılırken bir hata oluştu.')),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Dışa aktarma hazırlanamadı.')),
+      );
+    }
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
     final password = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,

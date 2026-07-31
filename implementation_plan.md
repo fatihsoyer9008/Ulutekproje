@@ -350,7 +350,8 @@ Resmi referanslar:
 - `api`: FastAPI
 - `postgres`: kalıcı volume, healthcheck ve ayrı uygulama kullanıcısı
 - `redis`: authentication, kalıcı olmayan güvenlik cache'i ve healthcheck
-- Geliştirme için isteğe bağlı `mailpit`; production e-posta sağlayıcısı değildir.
+- E-posta teslimatı geliştirme ve production ortamlarında gerçek SMTP sağlayıcısı
+  üzerinden yapılır; yerel Mailpit servisi kullanılmaz.
 
 ### Alembic sırası
 
@@ -465,4 +466,3 @@ DigitalOcean yapılandırmasına `DATABASE_URL`, `REDIS_URL`, JWT key/issuer/aud
 5. Access JWT 15 dakika, refresh session 30 gün olacak.
 6. E-posta doğrulanmadan cloud sync açılmayacak; misafir özellikler çalışmaya devam edecek.
 7. E-posta sağlayıcısı ve production/deep-link domain'i uygulama başlamadan ekip tarafından sağlanacak.
-
