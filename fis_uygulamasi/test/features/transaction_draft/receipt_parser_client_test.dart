@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:app_main/core/network/api_client.dart';
@@ -9,82 +10,360 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('posts OCR text and maps the backend response to a draft', () async {
-    final dio = Dio(BaseOptions(baseUrl: 'https://example.com'));
-    dio.httpClientAdapter = _FakeAdapter((options) {
+    final client = _clientWithResponse((options) {
       expect(options.method, 'POST');
       expect(options.path, '/api/v1/parse-receipt');
-      expect(options.data, {'ocr_text': 'MİGROS TOPLAM 25,50 TL'});
+      expect(options.data, {'ocr_text': 'MIGROS TOPLAM 25,50 TL'});
+      return _jsonResponse({
+        'normalized_ocr_text': 'MIGROS\nTOPLAM 25,50 TL',
+        'merchant': 'MIGROS',
+        'total_amount_minor': 2550,
+        'date': '2026-07-28T12:00:00Z',
+        'category': 'Market',
+        'confidence_score': 0.92,
+        'is_parse_successful': true,
+      });
+    });
 
-      return ResponseBody.fromString(
-        jsonEncode({
-          'normalized_ocr_text': 'MİGROS\nTOPLAM 25,50 TL',
-          'merchant': 'MİGROS',
-          'total_amount_minor': 2550,
-          'currency': 'TRY',
-          'date': '2026-07-28T12:00:00Z',
-          'category': 'Market',
-          'confidence_score': 0.92,
-          'is_parse_successful': true,
-          'items': <Object>[],
-        }),
-        200,
-        headers: {
-          Headers.contentTypeHeader: [Headers.jsonContentType],
-        },
+    final result = await client.parse('MIGROS TOPLAM 25,50 TL');
+
+    expect(result.draft.institutionName, 'MIGROS');
+    expect(result.draft.category, 'Market');
+    expect(result.draft.amountInMinor, 2550);
+    expect(result.draft.transactionDate, DateTime.utc(2026, 7, 28, 12));
+    expect(result.draft.rawOcrText, isNull);
+    expect(result.normalizedOcrText, 'MIGROS\nTOPLAM 25,50 TL');
+    expect(result.confidenceScore, 0.92);
+    expect(result.isParseSuccessful, isTrue);
+  });
+
+  test('rejects an empty OCR text without making a request', () async {
+    final client = _clientWithResponse((_) => fail('request must not happen'));
+
+    expect(
+      () => client.parse('   '),
+      throwsA(
+        isA<ReceiptParserException>().having(
+          (error) => error.kind,
+          'kind',
+          ReceiptParserFailureKind.emptyOcr,
+        ),
+      ),
+    );
+  });
+
+  for (final entry in <int, ReceiptParserFailureKind>{
+    501: ReceiptParserFailureKind.geminiUnavailable,
+    502: ReceiptParserFailureKind.serviceUnavailable,
+    503: ReceiptParserFailureKind.serviceConfiguration,
+  }.entries) {
+    test('maps HTTP ${entry.key} to a user-safe parser failure', () async {
+      final client = _clientWithResponse(
+        (_) => ResponseBody.fromString('upstream failure', entry.key),
+      );
+
+      expect(
+        () => client.parse('MIGROS\nTOPLAM 25,50 TL'),
+        throwsA(
+          isA<ReceiptParserException>()
+              .having((error) => error.kind, 'kind', entry.value)
+              .having(
+                (error) => error.message,
+                'message',
+                isNot(contains('Dio')),
+              ),
+        ),
+      );
+    });
+  }
+
+  test('maps timeout to a retryable user-safe parser failure', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionTimeout,
       );
     });
 
-    final apiClient = ApiClient(
-      baseUrl: 'https://example.com',
-      tokenStorage: _MemoryTokenStorage(),
-      dio: dio,
-    );
-    final client = ReceiptParserClient(apiClient: apiClient);
-
-    final result = await client.parse('MİGROS TOPLAM 25,50 TL');
-
-    expect(result.draft.institutionName, 'MİGROS');
-    expect(result.draft.category, 'Market');
-    expect(result.draft.amountInMinor, 2550);
     expect(
-      result.draft.transactionDate,
-      DateTime.parse('2026-07-28T12:00:00Z'),
+      () => client.parse('OCR'),
+      throwsA(
+        isA<ReceiptParserException>()
+            .having(
+              (error) => error.kind,
+              'kind',
+              ReceiptParserFailureKind.timeout,
+            )
+            .having((error) => error.canRetry, 'canRetry', isTrue),
+      ),
     );
-    expect(result.draft.rawOcrText, isNull);
-    expect(result.normalizedOcrText, 'MİGROS\nTOPLAM 25,50 TL');
-    expect(result.confidenceScore, 0.92);
-    expect(result.isParseSuccessful, isTrue);
-
-    apiClient.close();
   });
 
-  test('throws a readable error for a non-success response', () async {
-    final dio = Dio(BaseOptions(baseUrl: 'https://example.com'));
-    dio.httpClientAdapter = _FakeAdapter(
-      (_) => ResponseBody.fromString('error', 502),
-    );
+  test('does not use the local fallback for a cancelled request', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.cancel,
+      );
+    });
 
-    final apiClient = ApiClient(
-      baseUrl: 'https://example.com',
-      tokenStorage: _MemoryTokenStorage(),
-      dio: dio,
+    expect(
+      () => client.parse('MIGROS\nTOPLAM 25,50 TL'),
+      throwsA(
+        isA<ReceiptParserException>().having(
+          (error) => error.kind,
+          'kind',
+          ReceiptParserFailureKind.cancelled,
+        ),
+      ),
     );
-    final client = ReceiptParserClient(apiClient: apiClient);
+  });
+
+  test(
+    'does not use the local fallback for an unsupported Dio error',
+    () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.badCertificate,
+        );
+      });
+
+      expect(
+        () => client.parse('MIGROS\nTOPLAM 25,50 TL'),
+        throwsA(isA<ReceiptParserException>()),
+      );
+    },
+  );
+
+  test(
+    'uses the local fallback for a timeout with a usable OCR amount',
+    () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.receiveTimeout,
+        );
+      });
+
+      final result = await client.parse('MIGROS\nTOPLAM 25,50 TL');
+
+      expect(result.usedLocalFallback, isTrue);
+      expect(result.draft.amountInMinor, 2550);
+    },
+  );
+
+  test(
+    'maps DNS lookup failures without exposing SocketException details',
+    () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+          error: const SocketException('Failed host lookup'),
+        );
+      });
+
+      expect(
+        () => client.parse('OCR'),
+        throwsA(
+          isA<ReceiptParserException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                ReceiptParserFailureKind.dns,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                isNot(contains('SocketException')),
+              ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'maps an offline connection failure to the internet guidance message',
+    () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+        );
+      });
+
+      expect(
+        () => client.parse('OCR'),
+        throwsA(
+          isA<ReceiptParserException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                ReceiptParserFailureKind.noInternet,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('İnternet'),
+              ),
+        ),
+      );
+    },
+  );
+
+  test('does not classify a connection reset as a DNS failure', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+        error: const SocketException('Connection reset by peer'),
+      );
+    });
 
     expect(
       () => client.parse('OCR'),
       throwsA(
         isA<ReceiptParserException>().having(
-          (error) => error.message,
-          'message',
-          contains('Fiş servisine'),
+          (error) => error.kind,
+          'kind',
+          ReceiptParserFailureKind.noInternet,
         ),
       ),
     );
+  });
 
-    apiClient.close();
+  test('rejects a malformed backend response as invalidResponse', () async {
+    final client = _clientWithResponse(
+      (_) => _jsonResponse({
+        'normalized_ocr_text': 'OCR',
+        'confidence_score': 'not-a-number',
+        'is_parse_successful': true,
+      }),
+    );
+
+    expect(
+      () => client.parse('OCR'),
+      throwsA(
+        isA<ReceiptParserException>().having(
+          (error) => error.kind,
+          'kind',
+          ReceiptParserFailureKind.invalidResponse,
+        ),
+      ),
+    );
+  });
+
+  test(
+    'uses a low-confidence local fallback when the server is unreachable',
+    () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+        );
+      });
+
+      final result = await client.parse('MIGROS\nTOPLAM 25,50 TL');
+
+      expect(result.usedLocalFallback, isTrue);
+      expect(result.isParseSuccessful, isFalse);
+      expect(result.confidenceScore, lessThan(.70));
+      expect(result.draft.institutionName, 'MIGROS');
+      expect(result.draft.amountInMinor, 2550);
+    },
+  );
+
+  test('parses a dotted decimal amount in the local fallback', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+      );
+    });
+
+    final result = await client.parse('MIGROS\nTOPLAM 25.50 TL');
+
+    expect(result.usedLocalFallback, isTrue);
+    expect(result.draft.amountInMinor, 2550);
+  });
+
+  for (final entry in <String, int>{
+    '25,50': 2550,
+    '25.50': 2550,
+    '1.234,56': 123456,
+    '1,234.56': 123456,
+  }.entries) {
+    test('normalizes ${entry.key} in the local fallback', () async {
+      final client = _clientWithResponse((options) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+        );
+      });
+
+      final result = await client.parse('MIGROS\nTOPLAM ${entry.key} TL');
+
+      expect(result.usedLocalFallback, isTrue);
+      expect(result.draft.amountInMinor, entry.value);
+    });
+  }
+
+  test('prefers the amount on a total line over KDV and ara toplam', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+      );
+    });
+
+    final result = await client.parse(
+      'MIGROS\nARA TOPLAM 20,00 TL\nKDV 4,00 TL\nGENEL TOPLAM 24,00 TL',
+    );
+
+    expect(result.usedLocalFallback, isTrue);
+    expect(result.draft.amountInMinor, 2400);
+  });
+
+  test('keeps genel toplam priority when toplam KDV appears later', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+      );
+    });
+
+    final result = await client.parse(
+      'MIGROS\nGENEL TOPLAM 100,00 TL\nTOPLAM KDV 20,00 TL',
+    );
+
+    expect(result.usedLocalFallback, isTrue);
+    expect(result.draft.amountInMinor, 10000);
   });
 }
+
+ReceiptParserClient _clientWithResponse(
+  ResponseBody Function(RequestOptions) handler,
+) {
+  final dio = Dio(BaseOptions(baseUrl: 'https://example.com'));
+  dio.httpClientAdapter = _FakeAdapter(handler);
+  return ReceiptParserClient(
+    apiClient: ApiClient(
+      baseUrl: 'https://example.com',
+      tokenStorage: _MemoryTokenStorage(),
+      dio: dio,
+    ),
+  );
+}
+
+ResponseBody _jsonResponse(Map<String, dynamic> body) =>
+    ResponseBody.fromString(
+      jsonEncode(body),
+      200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
 
 class _FakeAdapter implements HttpClientAdapter {
   _FakeAdapter(this.handler);

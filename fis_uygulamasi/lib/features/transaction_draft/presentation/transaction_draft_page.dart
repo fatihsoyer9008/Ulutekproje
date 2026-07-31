@@ -39,6 +39,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   late final TextEditingController _dateController;
   DateTime? _transactionDate;
   bool _showDateRequiredError = false;
+  bool _isConfirming = false;
 
   @override
   void initState() {
@@ -110,12 +111,17 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   }
 
   void _confirmDraft() {
+    if (_isConfirming) return;
+
     if (widget.mode == TransactionDraftPageMode.ocrReview &&
         _transactionDate == null) {
       setState(() => _showDateRequiredError = true);
       return;
     }
+
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    setState(() => _isConfirming = true);
 
     Navigator.of(context).pop(
       TransactionDraft(
@@ -302,7 +308,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
           Expanded(
             child: FilledButton.icon(
               key: const Key('confirm_draft_button'),
-              onPressed: _confirmDraft,
+              onPressed: _isConfirming ? null : _confirmDraft,
               icon: const Icon(Icons.check_rounded),
               label: Text(
                 widget.mode == TransactionDraftPageMode.manual
