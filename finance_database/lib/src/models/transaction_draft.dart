@@ -1,4 +1,4 @@
-/// OCR'dan gelen veya kullanıcı tarafından onaylanan işlemin, kalıcı depolama
+/// OCR'dan gelen veya kullanıcının onayladığı işlemin, kalıcı depolama
 /// öncesindeki ortak uygulama modelidir.
 ///
 /// Para değeri, kayan nokta hatalarını önlemek için her zaman kuruş cinsinden
@@ -9,18 +9,25 @@ class TransactionDraft {
     required this.category,
     required this.amountInMinor,
     this.transactionDate,
+    this.rawOcrText,
   });
 
   const TransactionDraft.empty()
     : institutionName = '',
       category = '',
       amountInMinor = null,
-      transactionDate = null;
+      transactionDate = null,
+      rawOcrText = null;
 
   final String institutionName;
   final String category;
   final int? amountInMinor;
+
+  /// Backend'in fişten çıkardığı veya kullanıcının onay ekranında seçtiği tarih.
   final DateTime? transactionDate;
+
+  /// Tarayıcının ürettiği, backend'e gönderilen ham OCR metni.
+  final String? rawOcrText;
 
   factory TransactionDraft.fromJson(Map<String, dynamic> json) {
     return TransactionDraft(
@@ -29,20 +36,39 @@ class TransactionDraft {
       category: json['category']?.toString().trim() ?? '',
       amountInMinor: _parseAmountInMinor(json),
       transactionDate: _parseTransactionDate(json['date']),
+      rawOcrText: _nullIfBlank(json['raw_ocr_text']),
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'merchant_name': institutionName,
-    'category': category,
-    'amountInMinor': amountInMinor,
-    'date': transactionDate?.toIso8601String(),
-  };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{
+      'merchant_name': institutionName,
+      'category': category,
+      'amountInMinor': amountInMinor,
+    };
+
+    if (transactionDate != null) {
+      json['date'] = transactionDate!.toIso8601String();
+    }
+
+    if (rawOcrText != null) {
+      json['raw_ocr_text'] = rawOcrText;
+    }
+
+    return json;
+  }
 
   static DateTime? _parseTransactionDate(Object? value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+
+    final text = value.toString().trim();
+    return text.isEmpty ? null : DateTime.tryParse(text);
+  }
+
+  static String? _nullIfBlank(Object? value) {
     final text = value?.toString().trim();
-    if (text == null || text.isEmpty) return null;
-    return DateTime.tryParse(text);
+    return text == null || text.isEmpty ? null : text;
   }
 
   static int? _parseAmountInMinor(Map<String, dynamic> json) {
@@ -61,7 +87,7 @@ class TransactionDraft {
   }
 
   /// Yalnızca eski API cevaplarıyla geriye uyumluluk için ana para birimini
-  /// kuruşa çevirir. Hesaplama ondalık sayı kullanmadan metin üzerinden yapılır.
+  /// kuruşa çevirir. Hesaplama ondalık sayı kullanmadan metin üzerinde yapılır.
   static int? _parseMajorAmountToMinor(Object? value) {
     if (value == null) return null;
     if (value is int) return value * 100;

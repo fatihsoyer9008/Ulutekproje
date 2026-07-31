@@ -30,6 +30,21 @@ void main() {
       expect(entity.note, 'weekly shopping');
     });
 
+    test('draft tarihini ve OCR metnini Isar kaydına aktarır', () {
+      final receiptDate = DateTime.utc(2026, 7, 30, 12, 15);
+
+      final entity = TransactionDraft(
+        institutionName: 'Migros',
+        category: 'Market',
+        amountInMinor: 2550,
+        transactionDate: receiptDate,
+        rawOcrText: 'MIGROS\nTOPLAM 25,50 TL',
+      ).toTransactionEntity(source: TransactionSource.ocrLlm);
+
+      expect(entity.date, receiptDate);
+      expect(entity.rawOcrText, 'MIGROS\nTOPLAM 25,50 TL');
+    });
+
     test('uses safe defaults for an incomplete draft', () {
       final entity = const TransactionDraft.empty().toTransactionEntity(
         date: DateTime(2026, 7, 28),
@@ -114,6 +129,20 @@ void main() {
       expect(entity.category, TransactionCategory.diger);
       expect(entity.merchantName, isNull);
     });
+
+    test('ham OCR metnini entity ve draft arasında korur', () {
+      const rawOcrText = 'MIGROS TOPLAM 25.50 TL';
+
+      final entity = const TransactionDraft(
+        institutionName: 'MIGROS',
+        category: 'Market',
+        amountInMinor: 2550,
+        rawOcrText: rawOcrText,
+      ).toTransactionEntity(date: DateTime(2026, 7, 28));
+
+      expect(entity.rawOcrText, rawOcrText);
+      expect(entity.toTransactionDraft().rawOcrText, rawOcrText);
+    });
   });
 
   group('TransactionDraft JSON contract', () {
@@ -135,6 +164,19 @@ void main() {
       }
     });
 
+    test('backend tarihini korur, normalize OCR metnini ham metin saymaz', () {
+      final draft = TransactionDraft.fromJson({
+        'merchant': 'MİGROS',
+        'category': 'Market',
+        'total_amount_minor': 2550,
+        'date': '2026-07-30T12:15:00Z',
+        'normalized_ocr_text': 'MİGROS\nTOPLAM 25,50 TL',
+      });
+
+      expect(draft.transactionDate, DateTime.parse('2026-07-30T12:15:00Z'));
+      expect(draft.rawOcrText, isNull);
+    });
+
     test('supports legacy major amount without floating-point arithmetic', () {
       final draft = TransactionDraft.fromJson({
         'merchant_name': 'Market',
@@ -147,7 +189,6 @@ void main() {
         'merchant_name': 'Market',
         'category': 'Gıda',
         'amountInMinor': 123456,
-        'date': null,
       });
     });
 

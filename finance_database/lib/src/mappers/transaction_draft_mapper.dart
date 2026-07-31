@@ -26,7 +26,7 @@ class TransactionDraftMapper {
       ..date = date ?? draft.transactionDate ?? now
       ..merchantName = _nullIfBlank(draft.institutionName)
       ..source = source
-      ..rawOcrText = _nullIfBlank(rawOcrText)
+      ..rawOcrText = _nullIfBlank(rawOcrText ?? draft.rawOcrText)
       ..note = _nullIfBlank(note)
       ..createdAt = effectiveCreatedAt
       ..updatedAt = updatedAt ?? effectiveCreatedAt;
@@ -38,6 +38,7 @@ class TransactionDraftMapper {
       category: _categoryToDraft(entity.category),
       amountInMinor: _safeAmountInMinor(entity.amountInMinor),
       transactionDate: entity.date,
+      rawOcrText: entity.rawOcrText,
     );
   }
 }
