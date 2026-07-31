@@ -7,6 +7,7 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'application/service/isar_service.dart';
 import 'core/database/database_providers.dart';
+import 'features/backup/data/transaction_json_import_service.dart';
 import 'features/notifications/daily_budget_reminder_service.dart';
 import 'features/notifications/notification_navigation_controller.dart';
 import 'features/notifications/notification_preferences.dart';
@@ -93,12 +94,16 @@ class _AppBootstrap extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final transactionRepository = ref.watch(transactionRepositoryProvider);
+    final transactionImportService = TransactionJsonImportService(
+      importTransactions: transactionRepository.importTransactions,
+    );
 
     return FinanceApp(
       enableAuth: true,
       notificationNavigationController: notificationNavigationController,
       transactionStream: transactionRepository.watchAllTransactions(),
       saveTransaction: transactionRepository.addTransaction,
+      transactionImportService: transactionImportService,
     );
   }
 }

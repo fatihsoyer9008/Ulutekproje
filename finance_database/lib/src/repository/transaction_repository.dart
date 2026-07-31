@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:isar/isar.dart';
+
+import '../backup/transaction_json_backup.dart';
 import '../models/transaction_entity.dart';
 
 class TransactionRepository {
@@ -21,6 +25,49 @@ class TransactionRepository {
   /// Veritabanındaki tüm işlemleri getirir.
   Future<List<TransactionEntity>> getAllTransactions() async {
     return await _isar.transactionEntitys.where().findAll();
+  }
+
+  /// Doğrulanmış bir JSON yedeğindeki işlemleri tek transaction'da içe aktarır.
+  ///
+  /// İçe aktarılan ID'ler kullanılmaz; böylece mevcut kayıtların üzerine
+  /// yazılmaz. Aynı finansal işlem veritabanında veya seçilen dosyada birden
+  /// fazla kez bulunuyorsa yalnızca ilk kayıt eklenir.
+  Future<TransactionImportResult> importTransactions(
+    List<TransactionEntity> transactions,
+  ) async {
+    if (transactions.isEmpty) {
+      return const TransactionImportResult(
+        selectedCount: 0,
+        importedCount: 0,
+        skippedDuplicateCount: 0,
+      );
+    }
+
+    return await _isar.writeTxn(() async {
+      final existing = await _isar.transactionEntitys.where().findAll();
+      final fingerprints = existing.map(_fingerprint).toSet();
+      final insertions = <TransactionEntity>[];
+      var skippedDuplicateCount = 0;
+
+      for (final transaction in transactions) {
+        if (!fingerprints.add(_fingerprint(transaction))) {
+          skippedDuplicateCount++;
+          continue;
+        }
+        transaction.id = Isar.autoIncrement;
+        insertions.add(transaction);
+      }
+
+      if (insertions.isNotEmpty) {
+        await _isar.transactionEntitys.putAll(insertions);
+      }
+
+      return TransactionImportResult(
+        selectedCount: transactions.length,
+        importedCount: insertions.length,
+        skippedDuplicateCount: skippedDuplicateCount,
+      );
+    });
   }
 
   /// Verilen tarih aralığındaki tüm işlemleri en yeniden en eskiye sıralar.
@@ -87,9 +134,11 @@ class TransactionRepository {
     );
     final transactions = await getExpensesBetween(startDay, referenceDay);
     final totals = <DateTime, int>{
-      for (var day = startDay;
-          !day.isAfter(referenceDay);
-          day = _nextDayStart(day))
+      for (
+        var day = startDay;
+        !day.isAfter(referenceDay);
+        day = _nextDayStart(day)
+      )
         day: 0,
     };
 
@@ -122,6 +171,7 @@ class TransactionRepository {
 
     return totals;
   }
+
   /// Mevcut işlemleri ve veritabanındaki sonraki değişiklikleri yayınlar.
   Stream<List<TransactionEntity>> watchAllTransactions() {
     return _isar.transactionEntitys.where().watch(fireImmediately: true);
@@ -152,5 +202,16 @@ class TransactionRepository {
       DateTime(date.year, date.month, date.day);
 
   DateTime _nextDayStart(DateTime date) =>
-    _startOfDay(date).add(const Duration(days: 1));
+      _startOfDay(date).add(const Duration(days: 1));
+
+  String _fingerprint(TransactionEntity transaction) => jsonEncode([
+    transaction.transactionType.name,
+    transaction.amountInMinor,
+    transaction.category.name,
+    transaction.date.toUtc().microsecondsSinceEpoch,
+    transaction.merchantName,
+    transaction.source.name,
+    transaction.rawOcrText,
+    transaction.note,
+  ]);
 }

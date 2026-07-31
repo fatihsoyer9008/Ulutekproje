@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
+import '../../features/backup/data/transaction_json_import_service.dart';
 import '../../features/notifications/notification_navigation_controller.dart';
 import '../screens/expense_screen.dart';
 import 'app_router.dart';
@@ -20,6 +21,7 @@ class FinanceApp extends ConsumerStatefulWidget {
     this.transactionStream = const Stream<List<TransactionEntity>>.empty(),
     this.saveTransaction,
     this.scanReceipt,
+    this.transactionImportService,
   });
 
   final bool enableAuth;
@@ -27,6 +29,7 @@ class FinanceApp extends ConsumerStatefulWidget {
   final Stream<List<TransactionEntity>> transactionStream;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
+  final TransactionJsonImportService? transactionImportService;
 
   @override
   ConsumerState<FinanceApp> createState() => _FinanceAppState();
@@ -45,6 +48,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
         transactionStream: widget.transactionStream,
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
+        transactionImportService: widget.transactionImportService,
       );
 
       final router = _router;
