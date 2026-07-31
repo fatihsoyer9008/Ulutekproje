@@ -58,13 +58,13 @@ void main() {
           scanReceipt: (_) async => 'MİGROS TOPLAM 25,50 TL',
           parseReceipt: (text, {cancelToken}) async {
             parsedText = text;
-           return ReceiptParseResult(
-  draft: TransactionDraft(
-    institutionName: 'MİGROS',
-    category: 'Market',
-    amountInMinor: 2550,
-    transactionDate: DateTime(2026, 7, 28),
-  ),
+            return ReceiptParseResult(
+              draft: TransactionDraft(
+                institutionName: 'MİGROS',
+                category: 'Market',
+                amountInMinor: 2550,
+                transactionDate: DateTime(2026, 7, 28),
+              ),
               normalizedOcrText: 'MİGROS\nTOPLAM 25,50 TL',
               confidenceScore: 0.92,
               isParseSuccessful: true,
