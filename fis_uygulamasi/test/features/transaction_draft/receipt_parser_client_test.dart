@@ -77,7 +77,7 @@ void main() {
         isA<ReceiptParserException>().having(
           (error) => error.message,
           'message',
-          contains('502'),
+          contains('Fiş servisine'),
         ),
       ),
     );

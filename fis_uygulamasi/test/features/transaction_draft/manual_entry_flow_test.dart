@@ -18,7 +18,7 @@ void main() {
     expect(find.byKey(const Key('institution_name_field')), findsOneWidget);
     expect(find.byKey(const Key('category_field')), findsOneWidget);
     expect(find.byKey(const Key('amount_field')), findsOneWidget);
-    expect(find.byKey(const Key('date_field')), findsOneWidget);
+    expect(find.byKey(const Key('transaction_date_field')), findsOneWidget);
     expect(find.text('TASLAK'), findsNothing);
   });
 

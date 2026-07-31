@@ -185,12 +185,11 @@ void main() {
       });
 
       expect(draft.amountInMinor, 123456);
-      expect(draft.toJson(), {
-        'merchant_name': 'Market',
-        'category': 'Gıda',
-        'amountInMinor': 123456,
-        'date': null,
-      });
+     expect(draft.toJson(), {
+  'merchant_name': 'Market',
+  'category': 'Gıda',
+  'amountInMinor': 123456,
+});
     });
 
     test('uses null and empty defaults for missing data', () {
