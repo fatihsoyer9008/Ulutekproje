@@ -36,6 +36,10 @@ class InvalidOneTimeToken(ValueError):
     pass
 
 
+class EmailNotVerified(ValueError):
+    pass
+
+
 class ReauthenticationRequired(ValueError):
     pass
 
@@ -115,6 +119,9 @@ class AuthService:
             or user.status is not UserStatus.active
         ):
             raise InvalidCredentials("Invalid email or password")
+
+        if not user.is_email_verified:
+            raise EmailNotVerified("Email address is not verified")
 
         if password_needs_rehash(user.password_hash):
             user.password_hash = hash_password(password)

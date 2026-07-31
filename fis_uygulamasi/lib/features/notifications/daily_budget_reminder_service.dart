@@ -4,40 +4,65 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
+typedef NotificationTapHandler = void Function(String? payload);
+typedef TimeZoneIdentifierLoader = Future<String> Function();
+
 /// Her gün kullanıcının seçtiği saatte harcama girmeyi hatırlatır.
-///
-/// Bu servis yalnızca bildirimi planlar. Bildirime tıklanınca hangi ekrana
-/// gidileceği, yönlendirme (deep link) görevi kapsamında ayrıca ele alınır.
 class DailyBudgetReminderService {
-  DailyBudgetReminderService({FlutterLocalNotificationsPlugin? plugin})
-    : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
+  DailyBudgetReminderService({
+    FlutterLocalNotificationsPlugin? plugin,
+    this.onNotificationTap,
+    TimeZoneIdentifierLoader? loadTimeZoneIdentifier,
+  }) : _plugin = plugin ?? FlutterLocalNotificationsPlugin(),
+       _loadTimeZoneIdentifier =
+           loadTimeZoneIdentifier ?? _loadDeviceTimeZoneIdentifier;
 
   static const notificationId = 1001;
+
+  /// Bildirime basıldığında hangi işlemin yapılacağını belirtir.
+  static const expenseReceiptPayload = 'expense_receipt';
+
   static const _channelId = 'daily_budget_reminders';
   static const _channelName = 'Günlük bütçe hatırlatıcıları';
   static const _channelDescription = 'Günlük harcama girişi için hatırlatmalar';
 
   final FlutterLocalNotificationsPlugin _plugin;
+  final TimeZoneIdentifierLoader _loadTimeZoneIdentifier;
+  final NotificationTapHandler? onNotificationTap;
+
   Future<void>? _initialization;
 
-  /// Platforma ait bildirim izinlerini hazırlar ve cihazın saat dilimini ayarlar.
+  /// Bildirim eklentisini ve cihaz saat dilimini hazırlar.
   Future<void> initialize() => _initialization ??= _initialize();
+
+  static Future<String> _loadDeviceTimeZoneIdentifier() async {
+    final deviceTimeZone = await FlutterTimezone.getLocalTimezone();
+    return deviceTimeZone.identifier;
+  }
 
   Future<void> _initialize() async {
     tz.initializeTimeZones();
-    final deviceTimeZone = await FlutterTimezone.getLocalTimezone();
-    tz.setLocalLocation(tz.getLocation(deviceTimeZone.identifier));
+
+    final timeZoneIdentifier = await _loadTimeZoneIdentifier();
+
+    tz.setLocalLocation(tz.getLocation(timeZoneIdentifier));
 
     const settings = InitializationSettings(
       android: AndroidInitializationSettings('ic_notification'),
     );
-    await _plugin.initialize(settings: settings);
+
+    await _plugin.initialize(
+      settings: settings,
+      onDidReceiveNotificationResponse: (response) {
+        onNotificationTap?.call(response.payload);
+      },
+    );
   }
 
-  /// Seçilen saate göre bir sonraki güncel zamanı döndürür.
   @visibleForTesting
   static tz.TZDateTime nextOccurrence(TimeOfDay time, {tz.TZDateTime? now}) {
     final current = now ?? tz.TZDateTime.now(tz.local);
+
     var scheduled = tz.TZDateTime(
       tz.local,
       current.year,
@@ -46,34 +71,42 @@ class DailyBudgetReminderService {
       time.hour,
       time.minute,
     );
+
     if (!scheduled.isAfter(current)) {
-      scheduled = scheduled.add(const Duration(days: 1));
+      scheduled = tz.TZDateTime(
+        tz.local,
+        current.year,
+        current.month,
+        current.day + 1,
+        time.hour,
+        time.minute,
+      );
     }
+
     return scheduled;
   }
 
-  /// Android 13 ve sonrasında kullanıcıdan bildirim izni ister.
+  /// Android 13 ve sonrasında bildirim izni ister.
   Future<bool> requestPermission() async {
     await initialize();
+
     final androidPlugin = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
+
     return await androidPlugin?.requestNotificationsPermission() ?? true;
   }
 
-  /// Her gün [time] saatinde gösterilecek bütçe hatırlatıcısını planlar.
+  /// Her gün seçilen saatte hatırlatıcı planlar.
   Future<void> scheduleDailyReminder(TimeOfDay time) async {
     await initialize();
-    final granted = await requestPermission();
-    if (!granted) {
-      throw StateError('Bildirim izni verilmedi.');
-    }
 
     await _plugin.zonedSchedule(
       id: notificationId,
-      title: 'Günlük harcamanı eklemeyi unutma',
+      title: 'Günlük harcamanı eklemeyi unutma!',
       body: 'Bugünkü harcamalarını kaydederek bütçeni güncel tut.',
+      payload: expenseReceiptPayload,
       scheduledDate: nextOccurrence(time),
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
@@ -89,7 +122,21 @@ class DailyBudgetReminderService {
     );
   }
 
-  /// Daha önce planlanan günlük hatırlatıcıyı kaldırır.
+  /// Uygulama tamamen kapalıyken bildirime basılarak
+  /// başlatılıp başlatılmadığını kontrol eder.
+  Future<String?> getLaunchPayload() async {
+    await initialize();
+
+    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+
+    if (launchDetails?.didNotificationLaunchApp != true) {
+      return null;
+    }
+
+    return launchDetails?.notificationResponse?.payload;
+  }
+
+  /// Planlanmış günlük hatırlatıcıyı iptal eder.
   Future<void> cancelDailyReminder() async {
     await initialize();
     await _plugin.cancel(id: notificationId);

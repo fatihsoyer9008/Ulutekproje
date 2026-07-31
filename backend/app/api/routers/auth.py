@@ -1,6 +1,9 @@
+import html
+import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +41,7 @@ from app.services.apple_oauth import AppleOAuthProvider
 from app.services.auth_service import (
     AccountDeletionFailed,
     AuthService,
+    EmailNotVerified,
     InvalidCredentials,
     InvalidOneTimeToken,
     ReauthenticationRequired,
@@ -158,6 +162,17 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
+        ) from None
+    except EmailNotVerified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "email_not_verified",
+                "message": (
+                    "E-posta adresi henüz doğrulanmadı. "
+                    "Doğrulama bağlantısını kontrol edin."
+                ),
+            },
         ) from None
     return _token_response(issued)
 
@@ -382,6 +397,132 @@ async def verify_email(
     return MessageResponse(message="Email address verified.")
 
 
+@router.get(
+    "/verify-email-link",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def verify_email_link(
+    request: Request,
+    token: str = Query(min_length=32, max_length=512),
+    limiter: RateLimiter = Depends(get_rate_limiter),
+) -> HTMLResponse:
+    await limiter.enforce(
+        TOKEN_ACTION_IP,
+        identifier=f"ip:{request_ip(request)}",
+    )
+    return _verification_confirmation_page(token)
+
+
+@router.post(
+    "/verify-email-link",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def confirm_verify_email_link(
+    request: Request,
+    token: str = Query(min_length=32, max_length=512),
+    db: AsyncSession = Depends(get_db_session),
+    email_sender: EmailSender = Depends(get_email_sender),
+    limiter: RateLimiter = Depends(get_rate_limiter),
+) -> HTMLResponse:
+    await limiter.enforce(
+        TOKEN_ACTION_IP,
+        identifier=f"ip:{request_ip(request)}",
+    )
+    try:
+        await AuthService(db, email_sender).verify_email(token)
+    except InvalidOneTimeToken:
+        return _verification_page(
+            title="Bağlantı geçersiz",
+            message=(
+                "Bu doğrulama bağlantısının süresi dolmuş veya bağlantı "
+                "daha önce kullanılmış. Uygulamadan yeni bir bağlantı isteyin."
+            ),
+            successful=False,
+        )
+    return _verification_page(
+        title="E-posta doğrulandı",
+        message=(
+            "E-posta adresiniz başarıyla doğrulandı. FisKon uygulamasına "
+            "dönüp “Doğrulandım / Devam Et” butonuna basabilirsiniz."
+        ),
+        successful=True,
+    )
+
+
+def _verification_confirmation_page(token: str) -> HTMLResponse:
+    escaped_token = html.escape(token, quote=True)
+    content = f"""<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>E-posta doğrulama | FisKon</title>
+</head>
+<body style="margin:0;background:#f3faf7;font-family:Arial,sans-serif;color:#17312b">
+  <main style="max-width:560px;margin:64px auto;padding:24px">
+    <section style="background:white;border-radius:24px;padding:40px;
+      box-shadow:0 12px 40px rgba(22,133,107,.12);text-align:center">
+      <h1 style="margin:0 0 16px;color:#16856b">E-posta adresini doğrula</h1>
+      <p style="font-size:17px;line-height:1.6;margin:0 0 24px">
+        Bu işlem yalnızca aşağıdaki butona bastığınızda tamamlanacaktır.
+      </p>
+      <form method="post"
+        action="/api/v1/auth/verify-email-link?token={escaped_token}">
+        <button type="submit" style="border:0;border-radius:14px;padding:14px 24px;
+          background:#16856b;color:white;font-size:16px;font-weight:bold;cursor:pointer">
+          E-posta adresimi doğrula
+        </button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>"""
+    return HTMLResponse(
+        content=content,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'",
+            "Referrer-Policy": "no-referrer",
+        },
+    )
+
+
+def _verification_page(
+    *,
+    title: str,
+    message: str,
+    successful: bool,
+) -> HTMLResponse:
+    color = "#16856b" if successful else "#b42318"
+    icon = "✓" if successful else "!"
+    content = f"""<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} | FisKon</title>
+</head>
+<body style="margin:0;background:#f3faf7;font-family:Arial,sans-serif;color:#17312b">
+  <main style="max-width:560px;margin:64px auto;padding:24px">
+    <section style="background:white;border-radius:24px;padding:40px;
+      box-shadow:0 12px 40px rgba(22,133,107,.12);text-align:center">
+      <div style="width:64px;height:64px;margin:0 auto 20px;border-radius:50%;
+        background:{color};color:white;font-size:40px;line-height:64px">{icon}</div>
+      <h1 style="margin:0 0 16px;color:{color}">{title}</h1>
+      <p style="font-size:17px;line-height:1.6;margin:0">{message}</p>
+    </section>
+  </main>
+</body>
+</html>"""
+    return HTMLResponse(
+        content=content,
+        status_code=200 if successful else 400,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.post(
     "/resend-verification",
     response_model=MessageResponse,
@@ -426,6 +567,90 @@ async def forgot_password(
     )
     await AuthService(db, email_sender).forgot_password(str(payload.email))
     return MessageResponse(message=GENERIC_EMAIL_MESSAGE)
+
+
+@router.get(
+    "/reset-password-link",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def reset_password_link(
+    request: Request,
+    token: str = Query(min_length=32, max_length=512),
+    limiter: RateLimiter = Depends(get_rate_limiter),
+) -> HTMLResponse:
+    await limiter.enforce(
+        TOKEN_ACTION_IP,
+        identifier=f"ip:{request_ip(request)}",
+    )
+    return _password_reset_page(token)
+
+
+def _password_reset_page(token: str) -> HTMLResponse:
+    token_json = json.dumps(token).replace("</", "<\\/")
+    content = f"""<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Şifre sıfırlama | FisKon</title>
+</head>
+<body style="margin:0;background:#f3faf7;font-family:Arial,sans-serif;color:#17312b">
+  <main style="max-width:560px;margin:64px auto;padding:24px">
+    <section style="background:white;border-radius:24px;padding:40px;
+      box-shadow:0 12px 40px rgba(22,133,107,.12)">
+      <h1 style="margin:0 0 16px;color:#16856b">Yeni şifreni belirle</h1>
+      <form id="reset-form">
+        <label for="password">Yeni şifre</label>
+        <input id="password" name="password" type="password" minlength="12"
+          autocomplete="new-password" required
+          style="box-sizing:border-box;width:100%;margin:8px 0 18px;padding:14px;
+          border:1px solid #8aa79f;border-radius:12px;font-size:16px">
+        <button type="submit" style="width:100%;border:0;border-radius:14px;
+          padding:14px 24px;background:#16856b;color:white;font-size:16px;
+          font-weight:bold;cursor:pointer">Şifremi sıfırla</button>
+      </form>
+      <p id="result" role="status" style="font-size:16px;line-height:1.5"></p>
+    </section>
+  </main>
+  <script>
+    const token = {token_json};
+    const form = document.getElementById('reset-form');
+    const result = document.getElementById('result');
+    form.addEventListener('submit', async (event) => {{
+      event.preventDefault();
+      result.textContent = 'Şifreniz güncelleniyor...';
+      const response = await fetch('/api/v1/auth/reset-password', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{
+          token,
+          new_password: document.getElementById('password').value
+        }})
+      }});
+      if (response.ok) {{
+        form.hidden = true;
+        result.textContent = 'Şifreniz güncellendi. Uygulamadan giriş yapabilirsiniz.';
+      }} else {{
+        result.textContent = response.status === 400
+          ? 'Bu bağlantı geçersiz, kullanılmış veya süresi dolmuş.'
+          : 'Şifre güncellenemedi. Lütfen bilgileri kontrol edip tekrar deneyin.';
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(
+        content=content,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": (
+                "default-src 'none'; style-src 'unsafe-inline'; "
+                "script-src 'unsafe-inline'; connect-src 'self'"
+            ),
+            "Referrer-Policy": "no-referrer",
+        },
+    )
 
 
 @router.post("/reset-password", response_model=MessageResponse)

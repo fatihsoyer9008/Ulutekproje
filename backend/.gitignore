@@ -1,5 +1,7 @@
+# Python virtual environment
 .venv/
-__pycache__/
+
+
 *.py[cod]
 
 # Local environment files may contain API keys, OAuth secrets and passwords.
@@ -9,5 +11,41 @@ __pycache__/
 !.env.example
 
 .pytest_cache/
-pytest-cache-files-*/
 
+# Python cache and compiled files
+__pycache__/
+
+*.py[cod]
+*$py.class
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Pytest cache
+.pytest_cache/
+pytest-cache-files-/
+
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Type checker and linter caches
+.mypy_cache/
+.ruff_cache/
+.pyright/
+
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Operating system files
+.DS_Store
+Thumbs.db

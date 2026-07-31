@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
 import 'package:app_main/features/transaction_draft/model/transaction_draft.dart';
 import 'package:app_main/src/screens/expense_screen.dart';
+import 'package:finance_database/finance_database.dart'
+    show TransactionEntity, TransactionSource;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -15,7 +17,7 @@ void main() {
       MaterialApp(
         home: ExpenseScreen(
           scanReceipt: (_) async => 'OCR metni',
-          parseReceipt: (_) => response.future,
+          parseReceipt: (_, {cancelToken}) => response.future,
         ),
       ),
     );
@@ -50,11 +52,12 @@ void main() {
     tester,
   ) async {
     String? parsedText;
+    final savedTransactions = <TransactionEntity>[];
     await tester.pumpWidget(
       MaterialApp(
         home: ExpenseScreen(
           scanReceipt: (_) async => 'MİGROS TOPLAM 25,50 TL',
-          parseReceipt: (text) async {
+          parseReceipt: (text, {cancelToken}) async {
             parsedText = text;
             return const ReceiptParseResult(
               draft: TransactionDraft(
@@ -66,6 +69,9 @@ void main() {
               confidenceScore: 0.92,
               isParseSuccessful: true,
             );
+          },
+          saveTransaction: (transaction) async {
+            savedTransactions.add(transaction);
           },
         ),
       ),
@@ -80,24 +86,16 @@ void main() {
     expect(find.widgetWithText(TextFormField, 'MİGROS'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'Market'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, '25,50'), findsOneWidget);
+    expect(find.byKey(const Key('date_field')), findsOneWidget);
+    expect(savedTransactions, isEmpty);
     await tester.drag(find.byType(ListView), const Offset(0, -500));
     await tester.pumpAndSettle();
     expect(find.text('Düzeltilmiş OCR metni'), findsOneWidget);
-  });
 
-  testWidgets('manual entry uses manual copy instead of AI draft copy', (
-    tester,
-  ) async {
-    await tester.pumpWidget(const MaterialApp(home: ExpenseScreen()));
-
-    await tester.tap(find.byKey(const Key('manual_entry_button')));
+    await tester.tap(find.byKey(const Key('confirm_draft_button')));
     await tester.pumpAndSettle();
-
-    expect(find.text('Manuel Gider Ekle'), findsOneWidget);
-    expect(find.text('MANUEL'), findsOneWidget);
-    expect(find.text('Gider bilgilerini girin'), findsOneWidget);
-    expect(find.textContaining('yapay zekânın çıkardığı'), findsNothing);
-    expect(find.text('TASLAK'), findsNothing);
+    expect(savedTransactions, hasLength(1));
+    expect(savedTransactions.single.source, TransactionSource.ocrLlm);
   });
 
   testWidgets('shows the confidence warning for an unsuccessful parse', (
@@ -107,7 +105,7 @@ void main() {
       MaterialApp(
         home: ExpenseScreen(
           scanReceipt: (_) async => 'bozuk OCR',
-          parseReceipt: (_) async => const ReceiptParseResult(
+          parseReceipt: (_, {cancelToken}) async => const ReceiptParseResult(
             draft: TransactionDraft.empty(),
             normalizedOcrText: 'bozuk OCR',
             confidenceScore: 0.85,
@@ -135,7 +133,7 @@ void main() {
       MaterialApp(
         home: ExpenseScreen(
           scanReceipt: (_) async => 'OCR',
-          parseReceipt: (_) async =>
+          parseReceipt: (_, {cancelToken}) async =>
               throw const ReceiptParserException('Sunucuya ulaşılamadı'),
         ),
       ),
@@ -146,5 +144,12 @@ void main() {
 
     expect(find.text('Gider Ekle'), findsOneWidget);
     expect(find.textContaining('Sunucuya ulaşılamadı'), findsOneWidget);
+    expect(find.byKey(const Key('subscriptions_empty_state')), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('ocr_camera_button')))
+          .onPressed,
+      isNotNull,
+    );
   });
 }

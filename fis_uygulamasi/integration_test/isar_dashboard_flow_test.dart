@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:app_main/main.dart';
+import 'package:app_main/src/app/finance_app.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

@@ -103,13 +103,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
-    await ref
+    final success = await ref
         .read(authSessionControllerProvider.notifier)
         .register(
           email: _email.text,
           password: _password.text,
           displayName: _name.text,
         );
+    if (success && mounted) context.go('/verify-email');
   }
 
   static double _score(String value) {

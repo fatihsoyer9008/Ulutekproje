@@ -53,16 +53,14 @@ void main() {
   });
 }
 
-ResponseBody _jsonResponse(
-  Map<String, dynamic> body, {
-  int statusCode = 200,
-}) => ResponseBody.fromString(
-  jsonEncode(body),
-  statusCode,
-  headers: {
-    Headers.contentTypeHeader: [Headers.jsonContentType],
-  },
-);
+ResponseBody _jsonResponse(Map<String, dynamic> body, {int statusCode = 200}) =>
+    ResponseBody.fromString(
+      jsonEncode(body),
+      statusCode,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
 
 class _HandlerAdapter implements HttpClientAdapter {
   _HandlerAdapter(this.handler);
