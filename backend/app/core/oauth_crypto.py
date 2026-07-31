@@ -14,7 +14,10 @@ class OAuthTokenCipher:
         configured = key
         if configured is None and settings.apple_token_encryption_key is not None:
             configured = settings.apple_token_encryption_key.get_secret_value()
-        if configured is None:
+        # Empty environment variables are common for optional integrations.
+        # Treat an empty Apple key as unconfigured so unrelated auth flows do
+        # not fail while FastAPI resolves this dependency.
+        if configured is None or not configured.strip():
             self._fernet: Fernet | None = None
             return
         encoded = configured.encode("utf-8") if isinstance(configured, str) else configured
