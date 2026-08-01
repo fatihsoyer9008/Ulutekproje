@@ -67,16 +67,22 @@ void main() {
     expect(streamCreationCount, 1);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.byIcon(Icons.person_outline_rounded));
+    final profileButton = find.byKey(const Key('profile_button'));
+    await tester.ensureVisible(profileButton);
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.logout_rounded));
+    await tester.tap(profileButton);
+    await tester.pumpAndSettle();
+    final logoutButton = find.byKey(const Key('logout_button'));
+    await tester.ensureVisible(logoutButton);
+    await tester.pumpAndSettle();
+    await tester.tap(logoutButton);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(FilledButton));
+    await tester.tap(find.byKey(const Key('welcome_login_button')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), 'user@example.com');
     await tester.enterText(find.byType(TextFormField).at(1), 'password');
-    await tester.tap(find.byType(FilledButton));
+    await tester.tap(find.byKey(const Key('login_submit_button')));
     await tester.pumpAndSettle();
 
     expect(streamCreationCount, 2);

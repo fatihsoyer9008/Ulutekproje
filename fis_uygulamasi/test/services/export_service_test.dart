@@ -267,14 +267,15 @@ void main() {
         savedContent = await file.readAsString();
         expect(fileName, endsWith('.json'));
         expect(mimeType, 'application/json');
-        return fileName;
+        return TransactionExportSaveResult.documents(fileName);
       },
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
 
-    final fileName = await service.exportAndSave(TransactionExportFormat.json);
+    final result = await service.exportAndSave(TransactionExportFormat.json);
 
-    expect(fileName, endsWith('.json'));
+    expect(result.displayValue, endsWith('.json'));
+    expect(result.destination, TransactionExportSaveDestination.documents);
     expect(savedContent, '[{"id":1}]');
     expect(savedFile.path, endsWith('.json'));
     expect(await savedFile.exists(), isFalse);
@@ -285,7 +286,8 @@ void main() {
       exportJson: () async => '[]',
       exportCsv: () async => '\uFEFFid\r\n1\r\n',
       temporaryDirectory: () async => tempDirectory,
-      saveFile: (_, fileName, _) async => fileName,
+      saveFile: (_, fileName, _) async =>
+          TransactionExportSaveResult.documents(fileName),
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
 
@@ -307,7 +309,8 @@ void main() {
       exportJson: () async => '[]',
       exportCsv: () async => '',
       temporaryDirectory: () async => tempDirectory,
-      saveFile: (_, fileName, _) async => fileName,
+      saveFile: (_, fileName, _) async =>
+          TransactionExportSaveResult.documents(fileName),
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
 
@@ -328,7 +331,8 @@ void main() {
         exportJson: () async => '[]',
         exportCsv: () async => '',
         temporaryDirectory: () async => tempDirectory,
-        saveFile: (_, fileName, _) async => fileName,
+        saveFile: (_, fileName, _) async =>
+            TransactionExportSaveResult.documents(fileName),
         now: () => DateTime.utc(2026, 7, 30, 10),
       );
 
@@ -347,7 +351,8 @@ void main() {
       exportJson: () async => '[]',
       exportCsv: () async => '',
       temporaryDirectory: () async => tempDirectory,
-      saveFile: (_, fileName, _) async => fileName,
+      saveFile: (_, fileName, _) async =>
+          TransactionExportSaveResult.documents(fileName),
       deleteFile: (_) async => throw FileSystemException('silinemedi'),
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
@@ -381,7 +386,7 @@ void main() {
           Stream<FileSystemEntity>.error(FileSystemException('listing failed')),
       saveFile: (_, fileName, _) async {
         saved = true;
-        return fileName;
+        return TransactionExportSaveResult.documents(fileName);
       },
       now: () => DateTime.utc(2026, 7, 30, 10),
     );
@@ -389,5 +394,86 @@ void main() {
     await service.exportAndSave(TransactionExportFormat.json);
 
     expect(saved, isTrue);
+  });
+
+  group('platform export fallback', () {
+    late File exportFile;
+    late List<String> calls;
+
+    setUp(() async {
+      exportFile = File('${tempDirectory.path}/platform_export.json');
+      await exportFile.writeAsString('[]');
+      calls = <String>[];
+    });
+
+    Future<String> androidSaver(File _, String fileName, String _) async {
+      calls.add('android');
+      return fileName;
+    }
+
+    Future<String> iosShareFallback(File _, String fileName, String _) async {
+      calls.add('ios');
+      return fileName;
+    }
+
+    Future<String> saveDialogFallback(File _, String fileName, String _) async {
+      calls.add('dialog');
+      return fileName;
+    }
+
+    Future<TransactionExportSaveResult> saveFor(
+      TransactionExportPlatform platform,
+    ) => saveTransactionExportFile(
+      exportFile,
+      'transactions.json',
+      'application/json',
+      platform: platform,
+      androidSaver: androidSaver,
+      iosShareFallback: iosShareFallback,
+      saveDialogFallback: saveDialogFallback,
+    );
+
+    test('Android MediaStore kaydedicisini korur', () async {
+      final result = await saveFor(TransactionExportPlatform.android);
+
+      expect(result.displayValue, 'transactions.json');
+      expect(result.destination, TransactionExportSaveDestination.documents);
+      expect(calls, ['android']);
+    });
+
+    test('iOS paylaşım fallback yolunu kullanır', () async {
+      final result = await saveFor(TransactionExportPlatform.ios);
+
+      expect(result.displayValue, 'transactions.json');
+      expect(result.destination, TransactionExportSaveDestination.shareSheet);
+      expect(calls, ['ios']);
+    });
+
+    test('diğer platformlarda kaydetme diyaloğunu kullanır', () async {
+      final result = await saveFor(TransactionExportPlatform.other);
+
+      expect(result.displayValue, 'transactions.json');
+      expect(
+        result.destination,
+        TransactionExportSaveDestination.selectedLocation,
+      );
+      expect(calls, ['dialog']);
+    });
+  });
+
+  test('kullanıcı iptalini kayıt hatasına dönüştürmez', () async {
+    final service = TransactionExportFileService(
+      exportJson: () async => '[]',
+      exportCsv: () async => '',
+      temporaryDirectory: () async => tempDirectory,
+      saveFile: (_, _, _) async =>
+          throw const TransactionExportCancelledException(),
+      now: () => DateTime.utc(2026, 7, 30, 10),
+    );
+
+    await expectLater(
+      service.exportAndSave(TransactionExportFormat.json),
+      throwsA(isA<TransactionExportCancelledException>()),
+    );
   });
 }

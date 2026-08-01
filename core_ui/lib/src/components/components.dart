@@ -61,6 +61,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     title: Text(title, style: Theme.of(context).textTheme.titleLarge),
     actions: [
       IconButton.filledTonal(
+        key: const Key('profile_button'),
         tooltip: 'Profil',
         onPressed: onProfilePressed,
         icon: const Icon(Icons.person_outline_rounded),

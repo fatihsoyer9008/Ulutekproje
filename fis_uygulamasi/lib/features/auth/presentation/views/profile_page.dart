@@ -109,7 +109,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'İşlem geçmişini JSON veya CSV dosyası olarak Documents klasörüne kaydedebilirsin.',
+                  'İşlem geçmişini JSON veya CSV dosyası olarak dışa aktarabilirsin.',
                 ),
                 const SizedBox(height: 14),
                 SizedBox(
@@ -174,6 +174,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             )
           else ...[
             OutlinedButton.icon(
+              key: const Key('logout_button'),
               onPressed: state.isLoading
                   ? null
                   : () async {
@@ -245,9 +246,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       if (mounted) _showMessage(error.message);
     } on Exception {
       if (mounted) {
-        _showMessage(
-          'Yedek içe aktarılırken beklenmeyen bir hata oluştu.',
-        );
+        _showMessage('Yedek içe aktarılırken beklenmeyen bir hata oluştu.');
       }
     } finally {
       if (mounted) setState(() => _isImporting = false);
@@ -281,16 +280,21 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       final service = TransactionExportFileService.fromIsar(
         ref.read(isarProvider),
       );
-      final fileName = await service.exportAndSave(format);
+      final saveResult = await service.exportAndSave(format);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$fileName Documents klasörüne kaydedildi.')),
+        SnackBar(content: Text(_exportSuccessMessage(saveResult))),
+      );
+    } on TransactionExportCancelledException {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Dışa aktarma iptal edildi.')),
       );
     } on TransactionExportFileException catch (_) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Dosya Documents klasörüne kaydedilemedi.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Dosya dışa aktarılamadı.')));
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -300,6 +304,16 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       if (mounted) setState(() => _exportingFormat = null);
     }
   }
+
+  String _exportSuccessMessage(TransactionExportSaveResult result) =>
+      switch (result.destination) {
+        TransactionExportSaveDestination.documents =>
+          '${result.displayValue} Documents klasörüne kaydedildi.',
+        TransactionExportSaveDestination.shareSheet =>
+          '${result.displayValue} paylaşım işlemi tamamlandı.',
+        TransactionExportSaveDestination.selectedLocation =>
+          '${result.displayValue} konumuna kaydedildi.',
+      };
 
   Future<void> _confirmDelete(BuildContext context) async {
     final password = TextEditingController();

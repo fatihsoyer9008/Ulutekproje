@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/services.dart';
 import 'package:isar/isar.dart';
@@ -18,17 +19,79 @@ enum TransactionExportFormat {
 }
 
 typedef TemporaryDirectoryProvider = Future<Directory> Function();
-typedef DocumentFileSaver = Future<String> Function(
-  File file,
-  String fileName,
-  String mimeType,
-);
+typedef PlatformFileSaver =
+    Future<String> Function(File file, String fileName, String mimeType);
+typedef DocumentFileSaver =
+    Future<TransactionExportSaveResult> Function(
+      File file,
+      String fileName,
+      String mimeType,
+    );
 typedef FileDeleter = Future<void> Function(File file);
 typedef DirectoryLister =
     Stream<FileSystemEntity> Function(Directory directory);
 
+enum TransactionExportPlatform { android, ios, other }
+
+enum TransactionExportSaveDestination {
+  documents,
+  shareSheet,
+  selectedLocation,
+}
+
+class TransactionExportSaveResult {
+  const TransactionExportSaveResult.documents(this.displayValue)
+    : destination = TransactionExportSaveDestination.documents;
+
+  const TransactionExportSaveResult.shared(this.displayValue)
+    : destination = TransactionExportSaveDestination.shareSheet;
+
+  const TransactionExportSaveResult.selectedLocation(this.displayValue)
+    : destination = TransactionExportSaveDestination.selectedLocation;
+
+  final TransactionExportSaveDestination destination;
+  final String displayValue;
+}
+
+const _documentsChannel = MethodChannel('com.example.fis_uygulamasi/documents');
+
+Future<TransactionExportSaveResult> saveTransactionExportFile(
+  File file,
+  String fileName,
+  String mimeType, {
+  TransactionExportPlatform? platform,
+  PlatformFileSaver? androidSaver,
+  PlatformFileSaver? iosShareFallback,
+  PlatformFileSaver? saveDialogFallback,
+}) async {
+  final effectivePlatform = platform ?? _currentExportPlatform();
+  switch (effectivePlatform) {
+    case TransactionExportPlatform.android:
+      final savedName = await (androidSaver ?? _saveFileToAndroidDocuments)(
+        file,
+        fileName,
+        mimeType,
+      );
+      return TransactionExportSaveResult.documents(savedName);
+    case TransactionExportPlatform.ios:
+      final sharedName = await (iosShareFallback ?? _shareFileOnIOS)(
+        file,
+        fileName,
+        mimeType,
+      );
+      return TransactionExportSaveResult.shared(sharedName);
+    case TransactionExportPlatform.other:
+      final location = await (saveDialogFallback ?? _saveFileWithDialog)(
+        file,
+        fileName,
+        mimeType,
+      );
+      return TransactionExportSaveResult.selectedLocation(location);
+  }
+}
+
 class TransactionExportFileService {
-  TransactionExportFileService({
+  factory TransactionExportFileService({
     required Future<String> Function() exportJson,
     required Future<String> Function() exportCsv,
     required TemporaryDirectoryProvider temporaryDirectory,
@@ -36,17 +99,27 @@ class TransactionExportFileService {
     FileDeleter? deleteFile,
     DirectoryLister? listDirectory,
     DateTime Function()? now,
-  }) : _exportJson = exportJson,
-       _exportCsv = exportCsv,
-       _temporaryDirectory = temporaryDirectory,
-       _saveFile = saveFile,
-       _deleteFile = deleteFile ?? _deleteFileStatic,
+  }) => TransactionExportFileService._(
+    exportJson,
+    exportCsv,
+    temporaryDirectory,
+    saveFile,
+    deleteFile: deleteFile,
+    listDirectory: listDirectory,
+    now: now,
+  );
+
+  TransactionExportFileService._(
+    this._exportJson,
+    this._exportCsv,
+    this._temporaryDirectory,
+    this._saveFile, {
+    FileDeleter? deleteFile,
+    DirectoryLister? listDirectory,
+    DateTime Function()? now,
+  }) : _deleteFile = deleteFile ?? _deleteFileStatic,
        _listDirectory = listDirectory ?? _listDirectoryStatic,
        _now = now ?? DateTime.now;
-
-  static const _documentsChannel = MethodChannel(
-    'com.example.fis_uygulamasi/documents',
-  );
 
   final Future<String> Function() _exportJson;
   final Future<String> Function() _exportCsv;
@@ -62,7 +135,7 @@ class TransactionExportFileService {
       exportJson: exporter.exportJsonString,
       exportCsv: exporter.exportCsvString,
       temporaryDirectory: getTemporaryDirectory,
-      saveFile: _saveFileToDocuments,
+      saveFile: saveTransactionExportFile,
     );
   }
 
@@ -77,13 +150,17 @@ class TransactionExportFileService {
     return file;
   }
 
-  Future<String> exportAndSave(TransactionExportFormat format) async {
+  Future<TransactionExportSaveResult> exportAndSave(
+    TransactionExportFormat format,
+  ) async {
     await cleanupOldExportFiles();
     final file = await createExportFile(format);
     final fileName = file.uri.pathSegments.last;
 
     try {
       return await _saveFile(file, fileName, format.mimeType);
+    } on TransactionExportCancelledException {
+      rethrow;
     } catch (error, stackTrace) {
       throw TransactionExportFileException(error, stackTrace);
     } finally {
@@ -119,34 +196,79 @@ class TransactionExportFileService {
     return 'transactions_export_$timestamp.${format.extension}';
   }
 
-  static Future<String> _saveFileToDocuments(
-    File file,
-    String fileName,
-    String mimeType,
-  ) async {
-    if (!Platform.isAndroid) {
-      throw UnsupportedError(
-        'Documents klasörüne doğrudan kayıt yalnızca Android üzerinde destekleniyor.',
-      );
-    }
-    final savedName = await _documentsChannel.invokeMethod<String>(
-      'saveFile',
+  static Future<void> _deleteFileStatic(File file) => file.delete();
+
+  static Stream<FileSystemEntity> _listDirectoryStatic(Directory directory) =>
+      directory.list();
+}
+
+TransactionExportPlatform _currentExportPlatform() {
+  if (Platform.isAndroid) return TransactionExportPlatform.android;
+  if (Platform.isIOS) return TransactionExportPlatform.ios;
+  return TransactionExportPlatform.other;
+}
+
+Future<String> _saveFileToAndroidDocuments(
+  File file,
+  String fileName,
+  String mimeType,
+) async {
+  final savedName = await _documentsChannel.invokeMethod<String>(
+    'saveFile',
+    <String, String>{
+      'sourcePath': file.path,
+      'fileName': fileName,
+      'mimeType': mimeType,
+    },
+  );
+  if (savedName == null || savedName.isEmpty) {
+    throw const FileSystemException('Dosya Documents klasörüne kaydedilemedi.');
+  }
+  return savedName;
+}
+
+Future<String> _shareFileOnIOS(
+  File file,
+  String fileName,
+  String mimeType,
+) async {
+  String? sharedName;
+  try {
+    sharedName = await _documentsChannel.invokeMethod<String>(
+      'shareFile',
       <String, String>{
         'sourcePath': file.path,
         'fileName': fileName,
         'mimeType': mimeType,
       },
     );
-    if (savedName == null || savedName.isEmpty) {
-      throw const FileSystemException('Dosya Documents klasörüne kaydedilemedi.');
+  } on PlatformException catch (error) {
+    if (error.code == 'share_cancelled') {
+      throw const TransactionExportCancelledException();
     }
-    return savedName;
+    rethrow;
   }
+  if (sharedName == null || sharedName.isEmpty) {
+    throw const FileSystemException('Dosya paylaşılamadı.');
+  }
+  return sharedName;
+}
 
-  static Future<void> _deleteFileStatic(File file) => file.delete();
-
-  static Stream<FileSystemEntity> _listDirectoryStatic(Directory directory) =>
-      directory.list();
+Future<String> _saveFileWithDialog(
+  File file,
+  String fileName,
+  String mimeType,
+) async {
+  final location = await getSaveLocation(suggestedName: fileName);
+  if (location == null) {
+    throw const TransactionExportCancelledException();
+  }
+  await XFile(
+    file.path,
+    name: fileName,
+    mimeType: mimeType,
+  ).saveTo(location.path);
+  return location.path;
 }
 
 class TransactionExportFileException implements Exception {
@@ -157,4 +279,8 @@ class TransactionExportFileException implements Exception {
 
   @override
   String toString() => 'TransactionExportFileException: $cause';
+}
+
+class TransactionExportCancelledException implements Exception {
+  const TransactionExportCancelledException();
 }
