@@ -22,85 +22,92 @@ class DashboardScreen extends StatelessWidget {
   final ReceiptParseHandler? parseReceipt;
 
   @override
-  Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
-    children: [
-      const Text('Finansal durumun'),
-      Text('Kontrol sende.', style: Theme.of(context).textTheme.headlineMedium),
-      const SizedBox(height: 22),
-      _BalanceCard(transactions: transactions),
-      const SizedBox(height: 16),
-      Row(
-        children: [
-          Expanded(
-            child: PrimaryActionButton(
-              label: 'Gelir Gir',
-              icon: Icons.south_west_rounded,
-              onPressed: () => _open(
-                context,
-                IncomeScreen(saveTransaction: saveTransaction),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: PrimaryActionButton(
-              label: 'Gider Gir',
-              icon: Icons.north_east_rounded,
-              isPrimary: false,
-              onPressed: () => _open(
-                context,
-                ExpenseScreen(
-                  saveTransaction: saveTransaction,
-                  scanReceipt: scanReceipt,
-                  parseReceipt: parseReceipt,
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
+      children: [
+        const Text('Finansal durumun'),
+        Text(
+          'Kontrol sende.',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 22),
+        _BalanceCard(transactions: transactions),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: PrimaryActionButton(
+                label: 'Gelir Gir',
+                icon: Icons.south_west_rounded,
+                onPressed: () => _open(
+                  context,
+                  IncomeScreen(saveTransaction: saveTransaction),
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 28),
-      Text('Hatırlatıcı', style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 12),
-      GestureDetector(
-        onTap: () => _open(context, const ReminderSettingsScreen()),
-        child: AppCard(
-          color: AppColors.mintLight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const CircleAvatar(
-                backgroundColor: AppColors.mint,
-                child: Icon(
-                  Icons.notifications_active_outlined,
-                  color: AppColors.primary,
+            const SizedBox(width: 12),
+            Expanded(
+              child: PrimaryActionButton(
+                label: 'Gider Gir',
+                icon: Icons.north_east_rounded,
+                isPrimary: false,
+                onPressed: () => _open(
+                  context,
+                  ExpenseScreen(
+                    saveTransaction: saveTransaction,
+                    scanReceipt: scanReceipt,
+                    parseReceipt: parseReceipt,
+                  ),
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Günlük harcama hatırlatıcısı',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 5),
-                    const Text(
-                      'Her akşam harcamalarını girmek için bir hatırlatma saati belirle.',
-                    ),
-                  ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        Text('Hatırlatıcı', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: () => _open(context, const ReminderSettingsScreen()),
+          child: AppCard(
+            color: isDark ? scheme.surfaceContainerHigh : AppColors.mintLight,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const CircleAvatar(
+                  backgroundColor: AppColors.mint,
+                  child: Icon(
+                    Icons.notifications_active_outlined,
+                    color: AppColors.primary,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(Icons.chevron_right, color: AppColors.primary),
-            ],
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Günlük harcama hatırlatıcısı',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 5),
+                      const Text(
+                        'Her akşam harcamalarını girmek için bir hatırlatma saati belirle.',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_right, color: AppColors.primary),
+              ],
+            ),
           ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 
   static void _open(BuildContext context, Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));

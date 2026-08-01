@@ -13,6 +13,7 @@ import '../widgets/app_drawer.dart';
 class FinanceHome extends StatefulWidget {
   const FinanceHome({
     required this.transactions,
+    this.greetingName = 'Kullanıcı',
     this.saveTransaction,
     this.scanReceipt,
     this.parseReceipt,
@@ -23,6 +24,7 @@ class FinanceHome extends StatefulWidget {
   });
 
   final List<TransactionEntity> transactions;
+  final String greetingName;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
@@ -40,8 +42,8 @@ class _FinanceHomeState extends State<FinanceHome> {
   final StatisticsScreenController _statisticsController =
       StatisticsScreenController();
 
-  static const _titles = [
-    'Günaydın, Deniz',
+  List<String> get _titles => [
+    'Günaydın, ${widget.greetingName}',
     'İstatistikler',
     'Kumbaralarım',
     'Finans Takvimi',

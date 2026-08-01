@@ -66,6 +66,7 @@ void main() {
         child: MaterialApp(
           home: FinanceHome(
             transactions: const [],
+            greetingName: 'Ayşe',
             enableAccountMenu: true,
             pendingOfflineTaskCount: 2,
             onProfilePressed: () => profilePageOpened = true,
@@ -75,11 +76,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Günaydın, Ayşe'), findsOneWidget);
+
     await tester.tap(find.byKey(const Key('app_menu_button')));
     await tester.pumpAndSettle();
     expect(find.text('user@example.com'), findsWidgets);
     expect(find.text('Tema Değiştir'), findsOneWidget);
-    expect(find.text('Çıkış Yap'), findsOneWidget);
+    expect(find.text('Çıkış Yap'), findsNothing);
 
     await tester.tap(find.byKey(const Key('drawer_profile_tile')));
     await tester.pumpAndSettle();
@@ -364,7 +367,6 @@ TransactionEntity _transaction({
     ..source = TransactionSource.manual
     ..createdAt = effectiveDate
     ..updatedAt = effectiveDate;
-
 }
 
 class _AlwaysAuthenticatedRepository implements AuthRepositoryBase {
