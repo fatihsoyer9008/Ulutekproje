@@ -2,7 +2,7 @@ import 'package:core_ui/core_ui.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 
-import '../../features/transaction_draft/presentation/transaction_draft_page.dart';
+import 'income_entry_page.dart';
 
 class IncomeScreen extends StatelessWidget {
   const IncomeScreen({super.key, this.saveTransaction});
@@ -49,10 +49,7 @@ class IncomeScreen extends StatelessWidget {
 
   Future<void> _openIncomeEntry(BuildContext context) async {
     final draft = await Navigator.of(context).push<TransactionDraft>(
-      MaterialPageRoute(
-        builder: (_) =>
-            const TransactionDraftPage(mode: TransactionDraftPageMode.income),
-      ),
+      MaterialPageRoute(builder: (_) => const IncomeEntryPage()),
     );
     if (!context.mounted || draft == null || saveTransaction == null) return;
 

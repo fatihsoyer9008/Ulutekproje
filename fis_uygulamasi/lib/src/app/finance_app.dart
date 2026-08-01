@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/backup/data/transaction_json_import_service.dart';
 import '../../features/notifications/notification_navigation_controller.dart';
+import '../../core/theme/theme_mode_provider.dart';
 import '../screens/expense_screen.dart';
 import 'app_router.dart';
 import 'finance_home.dart';
@@ -73,6 +74,9 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
 
   @override
   Widget build(BuildContext context) {
+    final themeMode = widget.enableAuth
+        ? ref.watch(appThemeModeProvider)
+        : ThemeMode.light;
     if (widget.enableAuth) {
       final authStatus = ref.watch(authSessionControllerProvider).status;
 
@@ -96,6 +100,8 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
         title: 'Cüzdanım',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: themeMode,
         routerConfig: router,
       );
     }
@@ -104,6 +110,8 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
       title: 'Cüzdanım',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: themeMode,
       home: StreamBuilder<List<TransactionEntity>>(
         stream: widget.transactionStream,
         builder: (context, snapshot) {

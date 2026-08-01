@@ -14,6 +14,7 @@ import '../../features/auth/presentation/views/register_page.dart';
 import '../../features/auth/presentation/views/startup_page.dart';
 import '../../features/auth/presentation/views/welcome_page.dart';
 import '../../features/backup/data/transaction_json_import_service.dart';
+import '../../core/database/database_providers.dart';
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../screens/expense_screen.dart';
 import 'finance_home.dart';
@@ -120,7 +121,7 @@ GoRouter createAppRouter({
   );
 }
 
-class _FinanceDataHost extends StatefulWidget {
+class _FinanceDataHost extends ConsumerStatefulWidget {
   const _FinanceDataHost({
     required this.transactionStreamFactory,
     required this.saveTransaction,
@@ -134,10 +135,10 @@ class _FinanceDataHost extends StatefulWidget {
   final ReceiptParseHandler parseReceipt;
 
   @override
-  State<_FinanceDataHost> createState() => _FinanceDataHostState();
+  ConsumerState<_FinanceDataHost> createState() => _FinanceDataHostState();
 }
 
-class _FinanceDataHostState extends State<_FinanceDataHost> {
+class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
   late final Stream<List<TransactionEntity>> _transactionStream;
 
   @override
@@ -147,24 +148,32 @@ class _FinanceDataHostState extends State<_FinanceDataHost> {
   }
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<TransactionEntity>>(
-    stream: _transactionStream,
-    builder: (context, snapshot) {
-      if (snapshot.hasError) {
-        return const Scaffold(
-          body: Center(child: Text('İşlemler yüklenemedi.')),
+  Widget build(BuildContext context) {
+    final pendingTaskCount =
+        ref.watch(pendingOfflineTasksProvider).asData?.value.length ?? 0;
+    return StreamBuilder<List<TransactionEntity>>(
+      stream: _transactionStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Scaffold(
+            body: Center(child: Text('İşlemler yüklenemedi.')),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return FinanceHome(
+          transactions: snapshot.requireData,
+          saveTransaction: widget.saveTransaction,
+          scanReceipt: widget.scanReceipt,
+          parseReceipt: widget.parseReceipt,
+          onProfilePressed: () => context.push('/profile'),
+          pendingOfflineTaskCount: pendingTaskCount,
+          enableAccountMenu: true,
         );
-      }
-      if (!snapshot.hasData) {
-        return const Scaffold(body: Center(child: CircularProgressIndicator()));
-      }
-      return FinanceHome(
-        transactions: snapshot.requireData,
-        saveTransaction: widget.saveTransaction,
-        scanReceipt: widget.scanReceipt,
-        parseReceipt: widget.parseReceipt,
-        onProfilePressed: () => context.push('/profile'),
-      );
-    },
-  );
+      },
+    );
+  }
 }

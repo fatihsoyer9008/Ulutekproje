@@ -8,6 +8,7 @@ import '../screens/expense_screen.dart';
 import '../screens/savings_screen.dart';
 import '../screens/statistics_screen.dart';
 import '../screens/transactions_screen.dart';
+import '../widgets/app_drawer.dart';
 
 class FinanceHome extends StatefulWidget {
   const FinanceHome({
@@ -16,6 +17,8 @@ class FinanceHome extends StatefulWidget {
     this.scanReceipt,
     this.parseReceipt,
     this.onProfilePressed,
+    this.pendingOfflineTaskCount = 0,
+    this.enableAccountMenu = false,
     super.key,
   });
 
@@ -24,6 +27,8 @@ class FinanceHome extends StatefulWidget {
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
   final VoidCallback? onProfilePressed;
+  final int pendingOfflineTaskCount;
+  final bool enableAccountMenu;
 
   @override
   State<FinanceHome> createState() => _FinanceHomeState();
@@ -32,6 +37,8 @@ class FinanceHome extends StatefulWidget {
 class _FinanceHomeState extends State<FinanceHome> {
   int _index = 0;
   final Set<int> _visitedIndices = {0};
+  final StatisticsScreenController _statisticsController =
+      StatisticsScreenController();
 
   static const _titles = [
     'Günaydın, Deniz',
@@ -50,7 +57,10 @@ class _FinanceHomeState extends State<FinanceHome> {
         scanReceipt: widget.scanReceipt,
         parseReceipt: widget.parseReceipt,
       ),
-      StatisticsScreen(transactions: widget.transactions),
+      StatisticsScreen(
+        controller: _statisticsController,
+        transactions: widget.transactions,
+      ),
       const SavingsScreen(),
       const CalendarScreen(),
       TransactionsScreen(transactions: widget.transactions),
@@ -66,7 +76,14 @@ class _FinanceHomeState extends State<FinanceHome> {
           _visitedIndices.add(value);
         });
       },
-      onProfilePressed: widget.onProfilePressed,
+      drawer: widget.enableAccountMenu
+          ? AppDrawer(onProfilePressed: widget.onProfilePressed ?? () {})
+          : null,
+      notificationCount: widget.pendingOfflineTaskCount,
+      onNotificationsPressed: () => _showSynchronizationStatus(context),
+      onAiAssistantPressed: _index == 1
+          ? _statisticsController.showSummary
+          : null,
       body: IndexedStack(
         index: _index,
         children: List.generate(
@@ -74,6 +91,55 @@ class _FinanceHomeState extends State<FinanceHome> {
           (index) => _visitedIndices.contains(index)
               ? screens[index]
               : const SizedBox.shrink(),
+        ),
+      ),
+    );
+  }
+
+  void _showSynchronizationStatus(BuildContext context) {
+    final pendingCount = widget.pendingOfflineTaskCount;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 30,
+                backgroundColor: pendingCount > 0
+                    ? AppColors.warning.withValues(alpha: .14)
+                    : AppColors.mint,
+                child: Icon(
+                  pendingCount > 0
+                      ? Icons.cloud_upload_outlined
+                      : Icons.cloud_done_outlined,
+                  color: pendingCount > 0
+                      ? AppColors.warning
+                      : AppColors.primary,
+                  size: 30,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                pendingCount > 0
+                    ? 'Senkronizasyon bekliyor'
+                    : 'Senkronizasyon tamamlandı',
+                style: Theme.of(sheetContext).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                pendingCount > 0
+                    ? '$pendingCount adet fiş senkronize edilmeyi bekliyor.'
+                    : 'Tüm verileriniz eşitlendi.',
+                key: const Key('synchronization_status_message'),
+                textAlign: TextAlign.center,
+                style: Theme.of(sheetContext).textTheme.bodyLarge,
+              ),
+            ],
+          ),
         ),
       ),
     );
