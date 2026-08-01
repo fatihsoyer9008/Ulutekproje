@@ -19,6 +19,7 @@ class FinanceApp extends ConsumerStatefulWidget {
     this.enableAuth = false,
     this.notificationNavigationController,
     this.transactionStream = const Stream<List<TransactionEntity>>.empty(),
+    this.transactionStreamFactory,
     this.saveTransaction,
     this.scanReceipt,
     this.transactionImportService,
@@ -27,6 +28,7 @@ class FinanceApp extends ConsumerStatefulWidget {
   final bool enableAuth;
   final NotificationNavigationController? notificationNavigationController;
   final Stream<List<TransactionEntity>> transactionStream;
+  final Stream<List<TransactionEntity>> Function()? transactionStreamFactory;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
   final TransactionJsonImportService? transactionImportService;
@@ -45,7 +47,8 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
     if (widget.enableAuth) {
       _router = createAppRouter(
         ref: ref,
-        transactionStream: widget.transactionStream,
+        transactionStreamFactory:
+            widget.transactionStreamFactory ?? () => widget.transactionStream,
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
         transactionImportService: widget.transactionImportService,
