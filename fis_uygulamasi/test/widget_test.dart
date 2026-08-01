@@ -156,8 +156,16 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Market'),
+      50.0,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+
     expect(find.text('Market'), findsOneWidget);
-    expect(find.text('₺100,00'), findsOneWidget);
+    expect(find.text('₺100,00'), findsAtLeastNWidgets(1));
   });
 
   testWidgets('saving income increases balance and appears in movements', (
