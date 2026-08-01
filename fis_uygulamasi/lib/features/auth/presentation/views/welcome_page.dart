@@ -40,6 +40,7 @@ class WelcomePage extends ConsumerWidget {
             ),
             const Spacer(),
             FilledButton(
+              key: const Key('welcome_login_button'),
               onPressed: () => context.go('/login'),
               child: const Text('Giriş Yap'),
             ),

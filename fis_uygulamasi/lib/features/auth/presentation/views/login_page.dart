@@ -76,6 +76,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ),
             ),
             AuthSubmitButton(
+              key: const Key('login_submit_button'),
               label: 'Giriş Yap',
               isLoading: state.isLoading,
               onPressed: _login,
@@ -119,7 +120,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (success) {
       context.go('/home');
     } else if (state.status == AuthStatus.emailVerificationRequired) {
-      context.go('/verify-email');
+      context.go('/verify-email?from=login');
     }
   }
 

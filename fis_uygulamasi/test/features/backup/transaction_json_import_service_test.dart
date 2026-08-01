@@ -65,6 +65,35 @@ void main() {
     expect(importCalled, isFalse);
   });
 
+  test('seçilen CSV dosyasını doğrulayıp içe aktarır', () async {
+    List<TransactionEntity>? importedTransactions;
+    final service = TransactionJsonImportService(
+      pickFile: () async => const TransactionJsonFile(
+        name: 'islemler.csv',
+        contents:
+            '\uFEFFsep=;\r\n'
+            'transactionType;amountInMinor;category;date;merchantName;source\r\n'
+            'income;12500;diger;2026-07-30T08:00:00;Maaş;manual\r\n',
+      ),
+      importTransactions: (transactions) async {
+        importedTransactions = transactions;
+        return TransactionImportResult(
+          selectedCount: transactions.length,
+          importedCount: transactions.length,
+          skippedDuplicateCount: 0,
+        );
+      },
+    );
+
+    final preview = await service.selectBackup();
+    expect(preview, isNotNull);
+    expect(preview!.format, TransactionImportFormat.csv);
+    expect(preview.transactions.single.amountInMinor, 12500);
+
+    await service.importBackup(preview);
+    expect(importedTransactions, hasLength(1));
+  });
+
   test('geçersiz JSON repository callbackini çağırmaz', () async {
     var importCalled = false;
     final service = TransactionJsonImportService(

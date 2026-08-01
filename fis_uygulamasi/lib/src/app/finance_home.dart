@@ -31,6 +31,7 @@ class FinanceHome extends StatefulWidget {
 
 class _FinanceHomeState extends State<FinanceHome> {
   int _index = 0;
+  final Set<int> _visitedIndices = {0};
 
   static const _titles = [
     'Günaydın, Deniz',
@@ -58,9 +59,23 @@ class _FinanceHomeState extends State<FinanceHome> {
     return AppShell(
       title: _titles[_index],
       currentIndex: _index,
-      onDestinationSelected: (value) => setState(() => _index = value),
+      onDestinationSelected: (value) {
+        if (value == _index) return;
+        setState(() {
+          _index = value;
+          _visitedIndices.add(value);
+        });
+      },
       onProfilePressed: widget.onProfilePressed,
-      body: IndexedStack(index: _index, children: screens),
+      body: IndexedStack(
+        index: _index,
+        children: List.generate(
+          screens.length,
+          (index) => _visitedIndices.contains(index)
+              ? screens[index]
+              : const SizedBox.shrink(),
+        ),
+      ),
     );
   }
 }
