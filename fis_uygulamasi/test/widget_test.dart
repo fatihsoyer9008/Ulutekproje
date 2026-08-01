@@ -4,6 +4,7 @@ import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
 import 'package:app_main/src/app/finance_app.dart';
+import 'package:app_main/src/app/finance_home.dart';
 import 'package:app_main/src/screens/expense_screen.dart';
 import 'package:app_main/src/screens/statistics_screen.dart';
 import 'package:finance_database/finance_database.dart';
@@ -39,12 +40,65 @@ void main() {
 
     expect(find.byType(StatisticsScreen, skipOffstage: false), findsOneWidget);
     expect(find.text('Genel İstatistik'), findsOneWidget);
+    expect(find.text('AI Asistan'), findsOneWidget);
+    expect(find.text('Akıllı Özet'), findsNothing);
+
+    await tester.tap(find.text('AI Asistan'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Akıllı Harcama Özeti'), findsOneWidget);
+  });
+
+  testWidgets('drawer and synchronization status use live application data', (
+    tester,
+  ) async {
+    final authController = AuthSessionController(
+      _AlwaysAuthenticatedRepository(),
+    );
+    await authController.login('user@example.com', 'password');
+    var profilePageOpened = false;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authSessionControllerProvider.overrideWith((ref) => authController),
+        ],
+        child: MaterialApp(
+          home: FinanceHome(
+            transactions: const [],
+            enableAccountMenu: true,
+            pendingOfflineTaskCount: 2,
+            onProfilePressed: () => profilePageOpened = true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('app_menu_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('user@example.com'), findsWidgets);
+    expect(find.text('Tema Değiştir'), findsOneWidget);
+    expect(find.text('Çıkış Yap'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('drawer_profile_tile')));
+    await tester.pumpAndSettle();
+    expect(profilePageOpened, isTrue);
+
+    await tester.tap(find.byKey(const Key('notifications_button')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('2 adet fiş senkronize edilmeyi bekliyor.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('transaction stream is recreated after logout and login', (
     tester,
   ) async {
-    final authController = AuthSessionController(_AlwaysAuthenticatedRepository());
+    final authController = AuthSessionController(
+      _AlwaysAuthenticatedRepository(),
+    );
     await authController.login('user@example.com', 'password');
     var streamCreationCount = 0;
 
@@ -67,10 +121,9 @@ void main() {
     expect(streamCreationCount, 1);
     expect(tester.takeException(), isNull);
 
-    final profileButton = find.byKey(const Key('profile_button'));
-    await tester.ensureVisible(profileButton);
+    await tester.tap(find.byKey(const Key('app_menu_button')));
     await tester.pumpAndSettle();
-    await tester.tap(profileButton);
+    await tester.tap(find.byKey(const Key('drawer_profile_tile')));
     await tester.pumpAndSettle();
     final logoutButton = find.byKey(const Key('logout_button'));
     await tester.ensureVisible(logoutButton);
@@ -80,7 +133,10 @@ void main() {
 
     await tester.tap(find.byKey(const Key('welcome_login_button')));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(0), 'user@example.com');
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      'user@example.com',
+    );
     await tester.enterText(find.byType(TextFormField).at(1), 'password');
     await tester.tap(find.byKey(const Key('login_submit_button')));
     await tester.pumpAndSettle();
@@ -217,8 +273,16 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Market'),
+      50.0,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+
     expect(find.text('Market'), findsOneWidget);
-    expect(find.text('₺100,00'), findsOneWidget);
+    expect(find.text('₺100,00'), findsAtLeastNWidgets(1));
   });
 
   testWidgets('saving income increases balance and appears in movements', (
@@ -246,17 +310,22 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.byKey(const Key('institution_name_field')),
+      find.byKey(const Key('income_source_field')),
       'Maaş',
     );
-    await _selectCategory(tester, 'Maaş');
-    await tester.enterText(find.byKey(const Key('amount_field')), '1.000,00');
-    await tester.tap(find.byKey(const Key('confirm_draft_button')));
+    await tester.pump();
+    expect(find.text('Gelir kategorisi: Maaş'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('income_amount_field')),
+      '1.000,00',
+    );
+    await tester.tap(find.byKey(const Key('save_income_button')));
     await tester.pumpAndSettle();
 
     expect(savedTransactions, hasLength(1));
     expect(savedTransactions.single.amountInMinor, 100000);
     expect(savedTransactions.single.transactionType, TransactionType.income);
+    expect(savedTransactions.single.categoryName, 'Maaş');
     expect(find.text('₺1.000,00'), findsOneWidget);
 
     await tester.tap(
@@ -295,12 +364,15 @@ TransactionEntity _transaction({
     ..source = TransactionSource.manual
     ..createdAt = effectiveDate
     ..updatedAt = effectiveDate;
+
 }
 
 class _AlwaysAuthenticatedRepository implements AuthRepositoryBase {
   @override
-  Future<AuthUser> login({required String email, required String password}) async =>
-      AuthUser(id: 'user-id', email: email, isEmailVerified: true);
+  Future<AuthUser> login({
+    required String email,
+    required String password,
+  }) async => AuthUser(id: 'user-id', email: email, isEmailVerified: true);
 
   @override
   Future<void> logout() async {}

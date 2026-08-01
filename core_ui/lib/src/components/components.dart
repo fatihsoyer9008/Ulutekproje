@@ -5,45 +5,59 @@ class AppCard extends StatelessWidget {
   const AppCard({
     required this.child,
     this.padding = const EdgeInsets.all(20),
-    this.color = Colors.white,
+    this.color,
     this.onTap,
     super.key,
   });
   final Widget child;
   final EdgeInsetsGeometry padding;
-  final Color color;
+  final Color? color;
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: color,
-    borderRadius: BorderRadius.circular(24),
-    child: InkWell(
-      onTap: onTap,
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: color ?? scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(24),
-      child: Container(
-        padding: padding,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.border),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0D13251F),
-              blurRadius: 22,
-              offset: Offset(0, 8),
-            ),
-          ],
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: scheme.outlineVariant),
+            boxShadow: isDark
+                ? const []
+                : const [
+                    BoxShadow(
+                      color: Color(0x0D13251F),
+                      blurRadius: 22,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+          ),
+          child: child,
         ),
-        child: child,
       ),
-    ),
-  );
+    );
+  }
 }
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const CustomAppBar({required this.title, this.onProfilePressed, super.key});
+  const CustomAppBar({
+    required this.title,
+    this.onMenuPressed,
+    this.onNotificationsPressed,
+    this.notificationCount = 0,
+    super.key,
+  });
   final String title;
-  final VoidCallback? onProfilePressed;
+  final VoidCallback? onMenuPressed;
+  final VoidCallback? onNotificationsPressed;
+  final int notificationCount;
   @override
   Size get preferredSize => const Size.fromHeight(70);
   @override
@@ -53,33 +67,24 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     leading: Padding(
       padding: const EdgeInsets.only(left: 16),
       child: IconButton.filledTonal(
+        key: const Key('app_menu_button'),
         tooltip: 'Menü',
-        onPressed: () {},
+        onPressed: onMenuPressed,
         icon: const Icon(Icons.menu_rounded),
       ),
     ),
     title: Text(title, style: Theme.of(context).textTheme.titleLarge),
     actions: [
-      IconButton.filledTonal(
-        key: const Key('profile_button'),
-        tooltip: 'Profil',
-        onPressed: onProfilePressed,
-        icon: const Icon(Icons.person_outline_rounded),
-      ),
-      const SizedBox(width: 8),
-      Stack(
-        children: [
-          IconButton.filledTonal(
-            tooltip: 'Bildirimler',
-            onPressed: () {},
-            icon: const Icon(Icons.notifications_none_rounded),
-          ),
-          const Positioned(
-            right: 5,
-            top: 5,
-            child: CircleAvatar(radius: 4, backgroundColor: AppColors.expense),
-          ),
-        ],
+      Badge.count(
+        count: notificationCount,
+        isLabelVisible: notificationCount > 0,
+        backgroundColor: AppColors.expense,
+        child: IconButton.filledTonal(
+          key: const Key('notifications_button'),
+          tooltip: 'Bildirimler',
+          onPressed: onNotificationsPressed,
+          icon: const Icon(Icons.notifications_none_rounded),
+        ),
       ),
       const SizedBox(width: 16),
     ],
@@ -170,29 +175,49 @@ class AppShell extends StatelessWidget {
     required this.body,
     required this.currentIndex,
     required this.onDestinationSelected,
-    this.onProfilePressed,
+    this.onAiAssistantPressed,
+    this.drawer,
+    this.notificationCount = 0,
+    this.onNotificationsPressed,
     super.key,
   });
   final String title;
   final Widget body;
   final int currentIndex;
   final ValueChanged<int> onDestinationSelected;
-  final VoidCallback? onProfilePressed;
+  final VoidCallback? onAiAssistantPressed;
+  final Widget? drawer;
+  final int notificationCount;
+  final VoidCallback? onNotificationsPressed;
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: CustomAppBar(title: title, onProfilePressed: onProfilePressed),
-    body: SafeArea(top: false, child: body),
-    bottomNavigationBar: FinanceBottomNavBar(
-      currentIndex: currentIndex,
-      onDestinationSelected: onDestinationSelected,
-    ),
-    floatingActionButton: FloatingActionButton.extended(
-      heroTag: 'ai',
-      onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('AI Asistan yakında sizinle.')),
+  Widget build(BuildContext context) {
+    final scaffoldKey = GlobalKey<ScaffoldState>();
+    return Scaffold(
+      key: scaffoldKey,
+      drawer: drawer,
+      appBar: CustomAppBar(
+        title: title,
+        onMenuPressed: drawer == null
+            ? null
+            : () => scaffoldKey.currentState?.openDrawer(),
+        onNotificationsPressed: onNotificationsPressed,
+        notificationCount: notificationCount,
       ),
-      icon: const Icon(Icons.auto_awesome_rounded),
-      label: const Text('AI Asistan'),
-    ),
-  );
+      body: SafeArea(top: false, child: body),
+      bottomNavigationBar: FinanceBottomNavBar(
+        currentIndex: currentIndex,
+        onDestinationSelected: onDestinationSelected,
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'ai',
+        onPressed:
+            onAiAssistantPressed ??
+            () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('AI Asistan yakında sizinle.')),
+            ),
+        icon: const Icon(Icons.auto_awesome_rounded),
+        label: const Text('AI Asistan'),
+      ),
+    );
+  }
 }
