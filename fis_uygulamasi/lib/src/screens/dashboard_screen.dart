@@ -54,7 +54,6 @@ class DashboardScreen extends StatelessWidget {
                   saveTransaction: saveTransaction,
                   scanReceipt: scanReceipt,
                   parseReceipt: parseReceipt,
-                  openScannerOnStart: true,
                 ),
               ),
             ),

@@ -14,14 +14,16 @@ class RegisterPage extends ConsumerStatefulWidget {
 
 class _RegisterPageState extends ConsumerState<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
-  final _name = TextEditingController();
+  final _firstName = TextEditingController();
+  final _lastName = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
   double _strength = 0;
 
   @override
   void dispose() {
-    _name.dispose();
+    _firstName.dispose();
+    _lastName.dispose();
     _email.dispose();
     _password.dispose();
     super.dispose();
@@ -40,9 +42,25 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           children: [
             AuthMessage(error: state.errorMessage, info: state.infoMessage),
             TextFormField(
-              controller: _name,
+              controller: _firstName,
+              keyboardType: TextInputType.name,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.givenName],
               decoration: const InputDecoration(
-                labelText: 'Ad soyad (isteğe bağlı)',
+                labelText: 'Ad (isteğe bağlı)',
+                prefixIcon: Icon(Icons.person_outline_rounded),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _lastName,
+              keyboardType: TextInputType.name,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.familyName],
+              decoration: const InputDecoration(
+                labelText: 'Soyad (isteğe bağlı)',
                 prefixIcon: Icon(Icons.person_outline_rounded),
               ),
             ),
@@ -103,14 +121,18 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
+    final displayName = [
+      _firstName.text.trim(),
+      _lastName.text.trim(),
+    ].where((part) => part.isNotEmpty).join(' ');
     final success = await ref
         .read(authSessionControllerProvider.notifier)
         .register(
           email: _email.text,
           password: _password.text,
-          displayName: _name.text,
+          displayName: displayName,
         );
-    if (success && mounted) context.go('/verify-email');
+    if (success && mounted) context.go('/verify-email?from=register');
   }
 
   static double _score(String value) {

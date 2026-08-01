@@ -1,6 +1,7 @@
 library;
 
 export 'src/backup/transaction_json_backup.dart';
+export 'src/backup/transaction_csv_backup.dart';
 export 'src/models/offline_task.dart';
 export 'src/models/category_entity.dart';
 export 'src/models/transaction_entity.dart';

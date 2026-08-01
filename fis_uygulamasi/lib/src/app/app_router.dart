@@ -20,7 +20,7 @@ import 'finance_home.dart';
 
 GoRouter createAppRouter({
   required WidgetRef ref,
-  required Stream<List<TransactionEntity>> transactionStream,
+  required Stream<List<TransactionEntity>> Function() transactionStreamFactory,
   required Future<void> Function(TransactionEntity transaction)?
   saveTransaction,
   required ReceiptScanLauncher? scanReceipt,
@@ -85,7 +85,7 @@ GoRouter createAppRouter({
             apiClient: ref.read(apiClientProvider),
           );
           return _FinanceDataHost(
-            transactionStream: transactionStream,
+            transactionStreamFactory: transactionStreamFactory,
             saveTransaction: saveTransaction,
             scanReceipt: scanReceipt,
             parseReceipt: parser.parse,
@@ -120,22 +120,35 @@ GoRouter createAppRouter({
   );
 }
 
-class _FinanceDataHost extends StatelessWidget {
+class _FinanceDataHost extends StatefulWidget {
   const _FinanceDataHost({
-    required this.transactionStream,
+    required this.transactionStreamFactory,
     required this.saveTransaction,
     required this.scanReceipt,
     required this.parseReceipt,
   });
 
-  final Stream<List<TransactionEntity>> transactionStream;
+  final Stream<List<TransactionEntity>> Function() transactionStreamFactory;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler parseReceipt;
 
   @override
+  State<_FinanceDataHost> createState() => _FinanceDataHostState();
+}
+
+class _FinanceDataHostState extends State<_FinanceDataHost> {
+  late final Stream<List<TransactionEntity>> _transactionStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _transactionStream = widget.transactionStreamFactory();
+  }
+
+  @override
   Widget build(BuildContext context) => StreamBuilder<List<TransactionEntity>>(
-    stream: transactionStream,
+    stream: _transactionStream,
     builder: (context, snapshot) {
       if (snapshot.hasError) {
         return const Scaffold(
@@ -147,9 +160,9 @@ class _FinanceDataHost extends StatelessWidget {
       }
       return FinanceHome(
         transactions: snapshot.requireData,
-        saveTransaction: saveTransaction,
-        scanReceipt: scanReceipt,
-        parseReceipt: parseReceipt,
+        saveTransaction: widget.saveTransaction,
+        scanReceipt: widget.scanReceipt,
+        parseReceipt: widget.parseReceipt,
         onProfilePressed: () => context.push('/profile'),
       );
     },

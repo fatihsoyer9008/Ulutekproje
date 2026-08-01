@@ -12,6 +12,7 @@ from app.core.database import Base, get_db_session
 from app.core.rate_limit import NoOpRateLimiter
 from app.main import app
 from app.models.refresh_session import RefreshSession
+from app.models.user import User
 
 
 class CapturingEmailSender:
@@ -341,3 +342,34 @@ async def test_logout_invalidates_access_session(auth_context) -> None:
         headers={"Authorization": f"Bearer {tokens['access_token']}"},
     )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_delete_account_requires_password_and_deletes_user(auth_context) -> None:
+    client, sender, session_factory = auth_context
+    password = "A-strong-test-password-123"
+    await _register_and_verify(client, sender, password=password)
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "user@example.com", "password": password},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    rejected = await client.request(
+        "DELETE",
+        "/api/v1/auth/me",
+        headers=headers,
+        json={"current_password": "wrong-password"},
+    )
+    assert rejected.status_code == 401
+
+    deleted = await client.request(
+        "DELETE",
+        "/api/v1/auth/me",
+        headers=headers,
+        json={"current_password": password},
+    )
+    assert deleted.status_code == 204
+
+    async with session_factory() as session:
+        assert (await session.scalars(select(User))).one_or_none() is None

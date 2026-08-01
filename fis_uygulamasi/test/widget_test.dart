@@ -1,9 +1,14 @@
 import 'dart:async';
 
+import 'package:app_main/features/auth/data/auth_repository.dart';
+import 'package:app_main/features/auth/domain/auth_user.dart';
+import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
 import 'package:app_main/src/app/finance_app.dart';
 import 'package:app_main/src/screens/expense_screen.dart';
+import 'package:app_main/src/screens/statistics_screen.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -27,13 +32,64 @@ void main() {
     expect(find.text('Kontrol sende.'), findsOneWidget);
     expect(find.text('₺2.000,00'), findsOneWidget);
 
+    expect(find.byType(StatisticsScreen, skipOffstage: false), findsNothing);
+
     await tester.tap(find.byIcon(Icons.insights_outlined));
     await tester.pumpAndSettle();
 
+    expect(find.byType(StatisticsScreen, skipOffstage: false), findsOneWidget);
     expect(find.text('Genel İstatistik'), findsOneWidget);
   });
 
-  testWidgets('dashboard expense action starts the scanner only once', (
+  testWidgets('transaction stream is recreated after logout and login', (
+    tester,
+  ) async {
+    final authController = AuthSessionController(_AlwaysAuthenticatedRepository());
+    await authController.login('user@example.com', 'password');
+    var streamCreationCount = 0;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authSessionControllerProvider.overrideWith((ref) => authController),
+        ],
+        child: FinanceApp(
+          enableAuth: true,
+          transactionStreamFactory: () {
+            streamCreationCount++;
+            return Stream.value(const <TransactionEntity>[]);
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(streamCreationCount, 1);
+    expect(tester.takeException(), isNull);
+
+    final profileButton = find.byKey(const Key('profile_button'));
+    await tester.ensureVisible(profileButton);
+    await tester.pumpAndSettle();
+    await tester.tap(profileButton);
+    await tester.pumpAndSettle();
+    final logoutButton = find.byKey(const Key('logout_button'));
+    await tester.ensureVisible(logoutButton);
+    await tester.pumpAndSettle();
+    await tester.tap(logoutButton);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('welcome_login_button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(0), 'user@example.com');
+    await tester.enterText(find.byType(TextFormField).at(1), 'password');
+    await tester.tap(find.byKey(const Key('login_submit_button')));
+    await tester.pumpAndSettle();
+
+    expect(streamCreationCount, 2);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('dashboard expense action waits for the scanner choice', (
     tester,
   ) async {
     var scanLaunchCount = 0;
@@ -51,8 +107,13 @@ void main() {
     await tester.tap(find.text('Gider Gir'));
     await tester.pumpAndSettle();
 
-    expect(scanLaunchCount, 1);
-    await tester.pump(const Duration(seconds: 1));
+    expect(scanLaunchCount, 0);
+    expect(find.byType(ExpenseScreen), findsOneWidget);
+    expect(find.byKey(const Key('ocr_camera_button')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('ocr_camera_button')));
+    await tester.pumpAndSettle();
+
     expect(scanLaunchCount, 1);
   });
 
@@ -242,4 +303,40 @@ TransactionEntity _transaction({
     ..source = TransactionSource.manual
     ..createdAt = effectiveDate
     ..updatedAt = effectiveDate;
+
+}
+
+class _AlwaysAuthenticatedRepository implements AuthRepositoryBase {
+  @override
+  Future<AuthUser> login({required String email, required String password}) async =>
+      AuthUser(id: 'user-id', email: email, isEmailVerified: true);
+
+  @override
+  Future<void> logout() async {}
+
+  @override
+  Future<AuthUser?> silentRefresh() async => null;
+
+  @override
+  Future<void> deleteAccount({String? currentPassword}) async {}
+
+  @override
+  Future<String> forgotPassword(String email) async => 'Sent';
+
+  @override
+  Future<String> register({
+    required String email,
+    required String password,
+    String? displayName,
+  }) async => 'Registered';
+
+  @override
+  Future<String> resendVerification(String email) async => 'Sent';
+
+  @override
+  Future<AuthUser> signInWithGoogle() =>
+      login(email: 'user@example.com', password: 'password');
+
+  @override
+  Future<String> verifyEmail(String token) async => 'Verified';
 }

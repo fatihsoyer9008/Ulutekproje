@@ -103,7 +103,7 @@ class _AppBootstrap extends ConsumerWidget {
     return FinanceApp(
       enableAuth: true,
       notificationNavigationController: notificationNavigationController,
-      transactionStream: transactionRepository.watchAllTransactions(),
+      transactionStreamFactory: transactionRepository.watchAllTransactions,
       saveTransaction: transactionRepository.addTransaction,
       transactionImportService: transactionImportService,
     );

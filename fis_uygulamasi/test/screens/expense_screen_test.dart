@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
+import 'package:app_main/features/transaction_draft/model/transaction_draft.dart';
 import 'package:app_main/src/screens/expense_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,7 +19,8 @@ void main() {
     expect(find.text('Kira'), findsNothing);
     expect(find.byType(TextField), findsNothing);
     expect(find.text('Gideri Kaydet'), findsNothing);
-    expect(find.text('Fişi Tara'), findsOneWidget);
+    expect(find.text('Kamerayı Aç'), findsOneWidget);
+    expect(find.text('Galeriden Yükle'), findsOneWidget);
     expect(find.text('Fişim yok, elle gireceğim'), findsOneWidget);
   });
 
@@ -53,6 +56,61 @@ void main() {
     expect(scanCallCount, 1);
 
     scanCompleter.complete();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('gallery action starts the gallery receipt flow', (tester) async {
+    var galleryCallCount = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExpenseScreen(
+          pickGalleryReceipt: (_) async {
+            galleryCallCount++;
+            return null;
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('gallery_upload_button')));
+    await tester.pumpAndSettle();
+
+    expect(galleryCallCount, 1);
+    expect(find.byKey(const Key('expense_screen')), findsOneWidget);
+  });
+
+  testWidgets('gallery action shows analysis while local OCR is pending', (
+    tester,
+  ) async {
+    final galleryResult = Completer<String?>();
+    final parseResult = Completer<ReceiptParseResult>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExpenseScreen(
+          pickGalleryReceipt: (_) => galleryResult.future,
+          parseReceipt: (_, {cancelToken}) => parseResult.future,
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('gallery_upload_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.byKey(const Key('receipt_analysis_page')), findsOneWidget);
+
+    galleryResult.complete('OCR');
+    await tester.pump();
+    expect(find.byKey(const Key('receipt_analysis_page')), findsOneWidget);
+
+    parseResult.complete(
+      const ReceiptParseResult(
+        draft: TransactionDraft.empty(),
+        normalizedOcrText: 'OCR',
+        confidenceScore: 1,
+        isParseSuccessful: true,
+      ),
+    );
     await tester.pumpAndSettle();
   });
 
@@ -94,6 +152,10 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(
       find.byKey(const Key('ocr_camera_button')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('gallery_upload_button')).hitTestable(),
       findsOneWidget,
     );
     expect(
