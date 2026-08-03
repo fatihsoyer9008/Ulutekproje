@@ -208,7 +208,36 @@ def test_total_amount_minor_cannot_be_negative() -> None:
             category=None,
             is_parse_successful=False,
             confidence_score=0.1,
-        )
+    )
+
+
+def test_receipt_item_accepts_optional_pricing_and_tax_fields() -> None:
+    result = ReceiptParserResponse.model_validate(
+        {
+            "normalized_ocr_text": "MARKET",
+            "merchant": None,
+            "total_amount_minor": None,
+            "items": [
+                {
+                    "name": "Süt",
+                    "price_minor": 1200,
+                    "category": "Gıda",
+                    "quantity": 2,
+                    "unit_price_in_minor": 1200,
+                    "tax_rate": 0.2,
+                    "tax_amount_in_minor": 400,
+                }
+            ],
+            "is_parse_successful": False,
+            "confidence_score": 0.3,
+        }
+    )
+
+    item = result.items[0]
+    assert item.quantity == 2
+    assert item.unit_price_in_minor == 1200
+    assert item.tax_rate == 0.2
+    assert item.tax_amount_in_minor == 400
 
 
 def test_normalized_ocr_text_cannot_be_blank() -> None:
