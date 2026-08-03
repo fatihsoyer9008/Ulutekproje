@@ -18,6 +18,9 @@ KESİN KURALLAR:
 3. PARA BİRİMİ: Parasal değerleri kayan noktalı sayı olarak değil, kuruş
    cinsinden tam sayı olarak döndür. Örnek: 220,50 TL -> 22050. Ara toplam,
    KDV ve kart tutarı yerine genel TOPLAM değerini önceliklendir.
+   Ürün satırlarında mümkünse quantity, unit_price_in_minor,
+   total_amount_minor, tax_rate ve tax_amount_in_minor alanlarını da çıkar;
+   OCR metninde güvenilir biçimde yoksa bu alanları null bırak.
 4. BAŞARILI FİŞ: merchant, date ve total_amount_minor alanlarının üçü de
    güvenilir ve tutarlı biçimde çıkarılmışsa is_parse_successful=true yap.
 5. EKSİK FİŞ: Zorunlu alanlardan herhangi biri okunamıyorsa ilgili alanı
