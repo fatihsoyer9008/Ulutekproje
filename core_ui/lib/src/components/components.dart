@@ -169,7 +169,7 @@ class PrimaryActionButton extends StatelessWidget {
   }
 }
 
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   const AppShell({
     required this.title,
     required this.body,
@@ -190,34 +190,38 @@ class AppShell extends StatelessWidget {
   final int notificationCount;
   final VoidCallback? onNotificationsPressed;
   @override
-  Widget build(BuildContext context) {
-    final scaffoldKey = GlobalKey<ScaffoldState>();
-    return Scaffold(
-      key: scaffoldKey,
-      drawer: drawer,
-      appBar: CustomAppBar(
-        title: title,
-        onMenuPressed: drawer == null
-            ? null
-            : () => scaffoldKey.currentState?.openDrawer(),
-        onNotificationsPressed: onNotificationsPressed,
-        notificationCount: notificationCount,
-      ),
-      body: SafeArea(top: false, child: body),
-      bottomNavigationBar: FinanceBottomNavBar(
-        currentIndex: currentIndex,
-        onDestinationSelected: onDestinationSelected,
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'ai',
-        onPressed:
-            onAiAssistantPressed ??
-            () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('AI Asistan yakında sizinle.')),
-            ),
-        icon: const Icon(Icons.auto_awesome_rounded),
-        label: const Text('AI Asistan'),
-      ),
-    );
-  }
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    key: _scaffoldKey,
+    drawer: widget.drawer,
+    appBar: CustomAppBar(
+      title: widget.title,
+      onMenuPressed: widget.drawer == null
+          ? null
+          : () => _scaffoldKey.currentState?.openDrawer(),
+      onNotificationsPressed: widget.onNotificationsPressed,
+      notificationCount: widget.notificationCount,
+    ),
+    body: SafeArea(top: false, child: widget.body),
+    bottomNavigationBar: FinanceBottomNavBar(
+      currentIndex: widget.currentIndex,
+      onDestinationSelected: widget.onDestinationSelected,
+    ),
+    floatingActionButton: FloatingActionButton.extended(
+      heroTag: 'ai',
+      onPressed:
+          widget.onAiAssistantPressed ??
+          () => ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('AI Asistan yakında sizinle.')),
+          ),
+      icon: const Icon(Icons.auto_awesome_rounded),
+      label: const Text('AI Asistan'),
+    ),
+  );
 }

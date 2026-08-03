@@ -149,8 +149,16 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = ref.watch(authSessionControllerProvider);
     final pendingTaskCount =
         ref.watch(pendingOfflineTasksProvider).asData?.value.length ?? 0;
+    final displayName = auth.user?.displayName?.trim();
+    final email = auth.user?.email.trim();
+    final greetingName = displayName != null && displayName.isNotEmpty
+        ? displayName.split(RegExp(r'\s+')).first
+        : (email != null && email.isNotEmpty
+              ? email.split('@').first
+              : 'Misafir');
     return StreamBuilder<List<TransactionEntity>>(
       stream: _transactionStream,
       builder: (context, snapshot) {
@@ -166,6 +174,7 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
         }
         return FinanceHome(
           transactions: snapshot.requireData,
+          greetingName: greetingName,
           saveTransaction: widget.saveTransaction,
           scanReceipt: widget.scanReceipt,
           parseReceipt: widget.parseReceipt,
