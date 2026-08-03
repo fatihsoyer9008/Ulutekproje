@@ -30,7 +30,12 @@ void main() {
     await previousDatabase.close();
 
     final upgradedDatabase = await Isar.open(
-      [TransactionEntitySchema, OfflineTaskSchema, CategoryEntitySchema],
+      [
+        TransactionEntitySchema,
+        ReceiptLineItemEntitySchema,
+        OfflineTaskSchema,
+        CategoryEntitySchema,
+      ],
       directory: directory.path,
       name: databaseName,
     );
@@ -43,6 +48,7 @@ void main() {
     );
     expect(await upgradedDatabase.offlineTasks.count(), 0);
     expect(await upgradedDatabase.categoryEntitys.count(), 0);
+    expect(await upgradedDatabase.receiptLineItemEntitys.count(), 0);
 
     await upgradedDatabase.close(deleteFromDisk: true);
     if (await directory.exists()) {

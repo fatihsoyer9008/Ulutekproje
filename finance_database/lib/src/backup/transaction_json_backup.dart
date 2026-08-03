@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../models/receipt_line_item_entity.dart';
 import '../models/transaction_entity.dart';
 
 class TransactionJsonImportException implements Exception {
@@ -24,7 +25,7 @@ class TransactionImportResult {
 }
 
 abstract final class TransactionJsonBackup {
-  static const supportedSchemaVersion = 1;
+  static const supportedSchemaVersion = 2;
 
   static List<TransactionEntity> decode(String source) {
     final dynamic decoded;
@@ -118,7 +119,7 @@ abstract final class TransactionJsonBackup {
         _readOptionalDate(raw, const ['updatedAt', 'updated_at'], index) ??
         createdAt;
 
-    return TransactionEntity()
+    final transaction = TransactionEntity()
       ..transactionType = transactionType
       ..amountInMinor = amountInMinor
       ..category = category
@@ -135,6 +136,137 @@ abstract final class TransactionJsonBackup {
       ..note = _readOptionalString(raw, const ['note'], index)
       ..createdAt = createdAt
       ..updatedAt = updatedAt;
+    transaction
+      ..receiptLineItems = _readReceiptItems(raw, index)
+      ..receiptLineItemsLoaded = true;
+    return transaction;
+  }
+
+  static List<ReceiptLineItemEntity> _readReceiptItems(
+    Map<String, dynamic> transaction,
+    int transactionIndex,
+  ) {
+    final value = _optionalValue(transaction, const [
+      'receiptItems',
+      'receipt_items',
+      'lineItems',
+      'line_items',
+    ]);
+    if (value == null) return [];
+    if (value is! List<dynamic>) {
+      throw TransactionJsonImportException(
+        '${transactionIndex + 1}. işlemde "receiptItems" liste olmalıdır.',
+      );
+    }
+
+    return List<ReceiptLineItemEntity>.generate(value.length, (itemIndex) {
+      final rawItem = value[itemIndex];
+      if (rawItem is! Map<String, dynamic>) {
+        throw TransactionJsonImportException(
+          '${transactionIndex + 1}. işlemin ${itemIndex + 1}. ürünü geçersiz.',
+        );
+      }
+      final name = _readItemString(
+        rawItem,
+        const ['name'],
+        transactionIndex,
+        itemIndex,
+        required: true,
+      )!;
+
+      return ReceiptLineItemEntity()
+        ..transactionId = 0
+        ..position = itemIndex
+        ..name = name
+        ..category = _readItemString(
+          rawItem,
+          const ['category'],
+          transactionIndex,
+          itemIndex,
+        )
+        ..priceInMinor = _readItemInt(
+          rawItem,
+          const ['priceInMinor', 'price_in_minor', 'price_minor'],
+          transactionIndex,
+          itemIndex,
+        )
+        ..totalAmountInMinor = _readItemInt(
+          rawItem,
+          const ['totalAmountInMinor', 'total_amount_in_minor'],
+          transactionIndex,
+          itemIndex,
+        )
+        ..quantity = _readItemDouble(
+          rawItem,
+          const ['quantity'],
+          transactionIndex,
+          itemIndex,
+        )
+        ..unitPriceInMinor = _readItemInt(
+          rawItem,
+          const ['unitPriceInMinor', 'unit_price_in_minor'],
+          transactionIndex,
+          itemIndex,
+        )
+        ..taxRate = _readItemDouble(
+          rawItem,
+          const ['taxRate', 'tax_rate'],
+          transactionIndex,
+          itemIndex,
+        )
+        ..taxAmountInMinor = _readItemInt(
+          rawItem,
+          const ['taxAmountInMinor', 'tax_amount_in_minor'],
+          transactionIndex,
+          itemIndex,
+        );
+    }, growable: false);
+  }
+
+  static String? _readItemString(
+    Map<String, dynamic> item,
+    List<String> keys,
+    int transactionIndex,
+    int itemIndex, {
+    bool required = false,
+  }) {
+    final value = _optionalValue(item, keys);
+    if (value == null && !required) return null;
+    if (value is String && value.trim().isNotEmpty) return value.trim();
+    throw TransactionJsonImportException(
+      '${transactionIndex + 1}. işlemin ${itemIndex + 1}. ürününde '
+      '"${keys.first}" geçersiz.',
+    );
+  }
+
+  static int? _readItemInt(
+    Map<String, dynamic> item,
+    List<String> keys,
+    int transactionIndex,
+    int itemIndex,
+  ) {
+    final value = _optionalValue(item, keys);
+    if (value == null) return null;
+    if (value is int && value >= 0) return value;
+    throw TransactionJsonImportException(
+      '${transactionIndex + 1}. işlemin ${itemIndex + 1}. ürününde '
+      '"${keys.first}" negatif olmayan tam sayı olmalıdır.',
+    );
+  }
+
+  static double? _readItemDouble(
+    Map<String, dynamic> item,
+    List<String> keys,
+    int transactionIndex,
+    int itemIndex,
+  ) {
+    final value = _optionalValue(item, keys);
+    if (value == null) return null;
+    if (value is num && value.isFinite && value >= 0) return value.toDouble();
+    throw TransactionJsonImportException(
+      '${transactionIndex + 1}. işlemin ${itemIndex + 1}. ürününde '
+      '"${keys.first}" negatif olmayan sayı olmalıdır.',
+    );
   }
 
   static T _readEnum<T extends Enum>(

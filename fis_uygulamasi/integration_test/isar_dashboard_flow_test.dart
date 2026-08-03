@@ -25,7 +25,7 @@ void main() {
     ).create();
 
     isar = await Isar.open(
-      [TransactionEntitySchema],
+      [TransactionEntitySchema, ReceiptLineItemEntitySchema],
       directory: tempDirectory!.path,
       name: 'isar_dashboard_flow',
     );

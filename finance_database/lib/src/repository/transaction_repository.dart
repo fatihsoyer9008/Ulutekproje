@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:isar/isar.dart';
 
 import '../backup/transaction_json_backup.dart';
+import '../models/receipt_line_item_entity.dart';
 import '../models/transaction_entity.dart';
 
 class TransactionRepository {
@@ -18,13 +19,20 @@ class TransactionRepository {
     transaction.updatedAt = now;
 
     return await _isar.writeTxn(() async {
-      return await _isar.transactionEntitys.put(transaction);
+      final transactionId = await _isar.transactionEntitys.put(transaction);
+      await _replaceReceiptLineItems(
+        transactionId,
+        transaction.receiptLineItems,
+      );
+      transaction.receiptLineItemsLoaded = true;
+      return transactionId;
     });
   }
 
   /// Veritabanındaki tüm işlemleri getirir.
   Future<List<TransactionEntity>> getAllTransactions() async {
-    return await _isar.transactionEntitys.where().findAll();
+    final transactions = await _isar.transactionEntitys.where().findAll();
+    return _hydrateReceiptLineItems(transactions);
   }
 
   /// Doğrulanmış bir JSON yedeğindeki işlemleri tek transaction'da içe aktarır.
@@ -59,7 +67,14 @@ class TransactionRepository {
       }
 
       if (insertions.isNotEmpty) {
-        await _isar.transactionEntitys.putAll(insertions);
+        final ids = await _isar.transactionEntitys.putAll(insertions);
+        for (var index = 0; index < insertions.length; index++) {
+          await _replaceReceiptLineItems(
+            ids[index],
+            insertions[index].receiptLineItems,
+          );
+          insertions[index].receiptLineItemsLoaded = true;
+        }
       }
 
       return TransactionImportResult(
@@ -87,11 +102,12 @@ class TransactionRepository {
       return const [];
     }
 
-    return await _isar.transactionEntitys
+    final transactions = await _isar.transactionEntitys
         .filter()
         .dateBetween(startOfDay, _nextDayStart(endOfDay), includeUpper: false)
         .sortByDateDesc()
         .findAll();
+    return _hydrateReceiptLineItems(transactions);
   }
 
   /// Verilen tarih aralığındaki yalnızca gider işlemlerini sıralı getirir.
@@ -109,13 +125,14 @@ class TransactionRepository {
       return const [];
     }
 
-    return await _isar.transactionEntitys
+    final transactions = await _isar.transactionEntitys
         .filter()
         .dateBetween(startOfDay, _nextDayStart(endOfDay), includeUpper: false)
         .and()
         .transactionTypeEqualTo(TransactionType.expense)
         .sortByDateDesc()
         .findAll();
+    return _hydrateReceiptLineItems(transactions);
   }
 
   /// Son yedi günün günlük harcama toplamlarını kuruş cinsinden döndürür.
@@ -174,13 +191,28 @@ class TransactionRepository {
 
   /// Mevcut işlemleri ve veritabanındaki sonraki değişiklikleri yayınlar.
   Stream<List<TransactionEntity>> watchAllTransactions() {
-    return _isar.transactionEntitys.where().watch(fireImmediately: true);
+    return _isar.transactionEntitys
+        .where()
+        .watch(fireImmediately: true)
+        .asyncMap(_hydrateReceiptLineItems);
   }
 
   /// ID'ye göre tek bir işlemi getirir.
   Future<TransactionEntity?> getTransactionById(Id id) async {
-    return await _isar.transactionEntitys.get(id);
+    final transaction = await _isar.transactionEntitys.get(id);
+    if (transaction == null) return null;
+    transaction.receiptLineItems = await getReceiptLineItems(id);
+    transaction.receiptLineItemsLoaded = true;
+    return transaction;
   }
+
+  /// İşleme ait fiş satırlarını fişteki sırasıyla getirir.
+  Future<List<ReceiptLineItemEntity>> getReceiptLineItems(Id transactionId) =>
+      _isar.receiptLineItemEntitys
+          .filter()
+          .transactionIdEqualTo(transactionId)
+          .sortByPosition()
+          .findAll();
 
   /// Mevcut bir işlemi günceller.
   Future<void> updateTransaction(TransactionEntity transaction) async {
@@ -188,14 +220,67 @@ class TransactionRepository {
 
     await _isar.writeTxn(() async {
       await _isar.transactionEntitys.put(transaction);
+      if (transaction.receiptLineItemsLoaded) {
+        await _replaceReceiptLineItems(
+          transaction.id,
+          transaction.receiptLineItems,
+        );
+      }
     });
   }
 
   /// Verilen ID'ye sahip finansal işlemi veritabanından siler.
   Future<bool> deleteTransaction(Id id) async {
     return await _isar.writeTxn(() async {
+      await _deleteReceiptLineItems(id);
       return await _isar.transactionEntitys.delete(id);
     });
+  }
+
+  Future<void> _replaceReceiptLineItems(
+    Id transactionId,
+    List<ReceiptLineItemEntity> items,
+  ) async {
+    await _deleteReceiptLineItems(transactionId);
+    if (items.isEmpty) return;
+
+    for (var index = 0; index < items.length; index++) {
+      items[index]
+        ..id = Isar.autoIncrement
+        ..transactionId = transactionId
+        ..position = index;
+    }
+    await _isar.receiptLineItemEntitys.putAll(items);
+  }
+
+  Future<void> _deleteReceiptLineItems(Id transactionId) async {
+    await _isar.receiptLineItemEntitys
+        .filter()
+        .transactionIdEqualTo(transactionId)
+        .deleteAll();
+  }
+
+  Future<List<TransactionEntity>> _hydrateReceiptLineItems(
+    List<TransactionEntity> transactions,
+  ) async {
+    if (transactions.isEmpty) return transactions;
+
+    final transactionIds = transactions.map((item) => item.id).toSet();
+    final lineItems = await _isar.receiptLineItemEntitys.where().findAll();
+    final itemsByTransaction = <Id, List<ReceiptLineItemEntity>>{};
+    for (final item in lineItems) {
+      if (!transactionIds.contains(item.transactionId)) continue;
+      (itemsByTransaction[item.transactionId] ??= []).add(item);
+    }
+
+    for (final transaction in transactions) {
+      final items = itemsByTransaction[transaction.id] ?? [];
+      items.sort((a, b) => a.position.compareTo(b.position));
+      transaction
+        ..receiptLineItems = items
+        ..receiptLineItemsLoaded = true;
+    }
+    return transactions;
   }
 
   DateTime _startOfDay(DateTime date) =>

@@ -63,6 +63,37 @@ void main() {
       expect(transactions.single.merchantName, 'Maaş');
     });
 
+    test('sürüm 2 JSON yedeğindeki fiş ürünlerini çözümler', () {
+      final transactions = TransactionJsonBackup.decode('''
+{
+  "schemaVersion": 2,
+  "transactions": [
+    {
+      "transactionType": "expense",
+      "amountInMinor": 2500,
+      "category": "market",
+      "date": "2026-08-03T12:00:00Z",
+      "source": "ocrLlm",
+      "receiptItems": [
+        {
+          "name": "Süt",
+          "quantity": 2,
+          "unitPriceInMinor": 1250,
+          "totalAmountInMinor": 2500
+        }
+      ]
+    }
+  ]
+}
+''');
+
+      final transaction = transactions.single;
+      expect(transaction.receiptLineItemsLoaded, isTrue);
+      expect(transaction.receiptLineItems.single.name, 'Süt');
+      expect(transaction.receiptLineItems.single.quantity, 2);
+      expect(transaction.receiptLineItems.single.totalAmountInMinor, 2500);
+    });
+
     test('geçersiz bir kayıt varsa dosyanın tamamını reddeder', () {
       expect(
         () => TransactionJsonBackup.decode('''
@@ -99,7 +130,7 @@ void main() {
     test('desteklenmeyen yeni şema sürümünü reddeder', () {
       expect(
         () => TransactionJsonBackup.decode(
-          '{"schemaVersion": 2, "transactions": []}',
+          '{"schemaVersion": 3, "transactions": []}',
         ),
         throwsA(isA<TransactionJsonImportException>()),
       );

@@ -15,7 +15,7 @@ void main() {
       'transaction_import_repository_test_',
     );
     isar = await Isar.open(
-      [TransactionEntitySchema],
+      [TransactionEntitySchema, ReceiptLineItemEntitySchema],
       directory: tempDirectory.path,
       name: 'transaction_import_repository_test',
     );
@@ -49,9 +49,18 @@ void main() {
 
     await repository.addTransaction(transaction(merchantName: 'Mevcut'));
 
+    final imported = transaction(merchantName: 'Yeni')
+      ..receiptLineItems = [
+        ReceiptLineItemEntity()
+          ..transactionId = 0
+          ..position = 0
+          ..name = 'İçe aktarılan ürün'
+          ..priceInMinor = 1250,
+      ]
+      ..receiptLineItemsLoaded = true;
     final result = await repository.importTransactions([
       transaction(merchantName: 'Mevcut'),
-      transaction(merchantName: 'Yeni'),
+      imported,
       transaction(merchantName: 'Yeni'),
     ]);
 
@@ -63,6 +72,12 @@ void main() {
     expect(
       stored.map((item) => item.merchantName),
       containsAll(['Mevcut', 'Yeni']),
+    );
+    expect(
+      stored
+          .singleWhere((item) => item.merchantName == 'Yeni')
+          .receiptLineItems,
+      hasLength(1),
     );
   });
 }

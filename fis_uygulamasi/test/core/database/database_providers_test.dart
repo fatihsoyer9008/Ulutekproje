@@ -16,7 +16,12 @@ void main() {
       'database_providers_test_',
     );
     isar = await Isar.open(
-      [TransactionEntitySchema, OfflineTaskSchema, CategoryEntitySchema],
+      [
+        TransactionEntitySchema,
+        ReceiptLineItemEntitySchema,
+        OfflineTaskSchema,
+        CategoryEntitySchema,
+      ],
       directory: tempDirectory.path,
       name: 'database_providers_test',
     );

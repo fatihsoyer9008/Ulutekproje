@@ -23,7 +23,7 @@ class ReceiptTotalValidation {
     var calculatedTotal = 0;
     var hasItem = false;
     for (final item in items) {
-      final itemTotal = _itemTotalInMinor(item);
+      final itemTotal = calculateItemTotalInMinor(item);
       if (itemTotal == null) {
         return ReceiptTotalValidation._(
           calculatedItemsTotalInMinor: null,
@@ -39,18 +39,21 @@ class ReceiptTotalValidation {
     );
   }
 
-  static int? _itemTotalInMinor(ReceiptItem item) {
+  static int? calculateItemTotalInMinor(ReceiptItem item) {
     if (item.totalAmountInMinor != null) return item.totalAmountInMinor;
     final unitPrice = item.unitPriceInMinor ?? item.priceMinor;
     final quantity = item.quantity;
-    if (unitPrice == null || quantity == null || !quantity.isFinite) return null;
+    if (unitPrice == null || quantity == null || !quantity.isFinite) {
+      return null;
+    }
 
     // Convert the decimal quantity to a ratio, then multiply and round using
     // integer arithmetic. This keeps the monetary result in minor units.
     final ratio = _DecimalRatio.tryParse(quantity);
     if (ratio == null) return null;
     final numerator = BigInt.from(unitPrice) * ratio.numerator;
-    final rounded = (numerator * BigInt.two + ratio.denominator) ~/
+    final rounded =
+        (numerator * BigInt.two + ratio.denominator) ~/
         (ratio.denominator * BigInt.two);
     return rounded.toInt();
   }

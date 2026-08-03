@@ -12,6 +12,7 @@ class IsarService {
     final directory = await getApplicationDocumentsDirectory();
     _instance = await Isar.open([
       TransactionEntitySchema,
+      ReceiptLineItemEntitySchema,
       OfflineTaskSchema,
       CategoryEntitySchema,
     ], directory: directory.path);
