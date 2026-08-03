@@ -88,6 +88,48 @@ void main() {
     expect(result.isParseSuccessful, isTrue);
   });
 
+  test('sends the current JWT with an authenticated receipt request', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.com'));
+    dio.httpClientAdapter = _FakeAdapter((options) {
+      expect(options.path, '/api/v1/parse-receipt');
+      expect(options.headers['Authorization'], 'Bearer current-access-token');
+      expect(
+        options.headers['X-Installation-ID'],
+        'installation-test-1234567890',
+      );
+      return _jsonResponse({
+        'normalized_ocr_text': 'MIGROS\nTOPLAM 25,50 TL',
+        'merchant': 'MIGROS',
+        'total_amount_minor': 2550,
+        'date': null,
+        'category': 'Market',
+        'confidence_score': 0.92,
+        'is_parse_successful': true,
+      });
+    });
+    final apiClient = ApiClient(
+      baseUrl: 'https://example.com',
+      tokenStorage: _MemoryTokenStorage(),
+      dio: dio,
+    );
+    addTearDown(apiClient.close);
+    await apiClient.setSession(
+      const AuthTokenBundle(
+        accessToken: 'current-access-token',
+        refreshToken: 'current-refresh-token',
+        user: {},
+      ),
+    );
+    final client = ReceiptParserClient(
+      apiClient: apiClient,
+      installationIdProvider: const _FakeInstallationIdProvider(
+        'installation-test-1234567890',
+      ),
+    );
+
+    await client.parse('MIGROS TOPLAM 25,50 TL');
+  });
+
   test('rejects an empty OCR text without making a request', () async {
     final client = _clientWithResponse((_) => fail('request must not happen'));
 
