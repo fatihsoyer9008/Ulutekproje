@@ -9,6 +9,52 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('ReceiptParserErrorMapper', () {
+    const mapper = ReceiptParserErrorMapper();
+    final cases = <int, ({ReceiptParserFailureKind kind, String message})>{
+      429: (
+        kind: ReceiptParserFailureKind.rateLimited,
+        message: 'Çok fazla fiş analizi isteği',
+      ),
+      413: (
+        kind: ReceiptParserFailureKind.payloadTooLarge,
+        message: 'işlenemeyecek kadar büyük',
+      ),
+      422: (
+        kind: ReceiptParserFailureKind.validation,
+        message: 'Fiş bilgileri doğrulanamadı',
+      ),
+    };
+
+    for (final entry in cases.entries) {
+      test('HTTP ${entry.key} için güvenli Türkçe hata üretir', () {
+        final request = RequestOptions(path: '/api/v1/parse-receipt');
+        final failure = mapper.map(
+          DioException(
+            requestOptions: request,
+            response: Response<void>(
+              requestOptions: request,
+              statusCode: entry.key,
+              data: null,
+            ),
+            type: DioExceptionType.badResponse,
+          ),
+        );
+
+        expect(failure.kind, entry.value.kind);
+        expect(failure.message, contains(entry.value.message));
+        expect(failure.message, isNot(contains('Dio')));
+        expect(failure.message, isNot(contains('HTTP')));
+      });
+    }
+
+    test('yalnızca 429 hatası aynı istekle tekrar denenebilir', () {
+      expect(_mappedHttpFailure(mapper, 429).canRetry, isTrue);
+      expect(_mappedHttpFailure(mapper, 413).canRetry, isFalse);
+      expect(_mappedHttpFailure(mapper, 422).canRetry, isFalse);
+    });
+  });
+
   test('posts OCR text and maps the backend response to a draft', () async {
     final client = _clientWithResponse((options) {
       expect(options.method, 'POST');
@@ -53,6 +99,9 @@ void main() {
   });
 
   for (final entry in <int, ReceiptParserFailureKind>{
+    413: ReceiptParserFailureKind.payloadTooLarge,
+    422: ReceiptParserFailureKind.validation,
+    429: ReceiptParserFailureKind.rateLimited,
     501: ReceiptParserFailureKind.geminiUnavailable,
     502: ReceiptParserFailureKind.serviceUnavailable,
     503: ReceiptParserFailureKind.serviceConfiguration,
@@ -340,6 +389,20 @@ void main() {
     expect(result.usedLocalFallback, isTrue);
     expect(result.draft.amountInMinor, 10000);
   });
+}
+
+ReceiptParserException _mappedHttpFailure(
+  ReceiptParserErrorMapper mapper,
+  int statusCode,
+) {
+  final request = RequestOptions(path: '/api/v1/parse-receipt');
+  return mapper.map(
+    DioException(
+      requestOptions: request,
+      response: Response<void>(requestOptions: request, statusCode: statusCode),
+      type: DioExceptionType.badResponse,
+    ),
+  );
 }
 
 ReceiptParserClient _clientWithResponse(
