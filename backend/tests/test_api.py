@@ -105,6 +105,7 @@ def test_health_check() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
+
 def test_production_real_parser_requires_rate_limiting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -118,12 +119,14 @@ def test_production_real_parser_requires_rate_limiting(
     ):
         _validate_production_settings()
 
+
 def test_receipt_ignores_forwarded_for_when_proxy_trust_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     limiter = RecordingRateLimiter()
     monkeypatch.setattr(settings, "trust_proxy_headers", False)
     monkeypatch.setattr(settings, "trusted_client_ip_header", "")
+    monkeypatch.setattr(settings, "trusted_proxy_cidrs", "")
     app.dependency_overrides[get_rate_limiter] = lambda: limiter
     app.dependency_overrides[get_receipt_parser_service] = StubReceiptParser
 
@@ -135,10 +138,7 @@ def test_receipt_ignores_forwarded_for_when_proxy_trust_is_disabled(
         )
 
     assert response.status_code == 200
-    assert all(
-        identifier != "ip:198.51.100.25"
-        for _, identifier in limiter.calls
-    )
+    assert all(identifier != "ip:198.51.100.25" for _, identifier in limiter.calls)
 
 
 def test_receipt_uses_digitalocean_client_ip_header_when_trusted(
@@ -151,10 +151,18 @@ def test_receipt_uses_digitalocean_client_ip_header_when_trusted(
         "trusted_client_ip_header",
         "do-connecting-ip",
     )
+    monkeypatch.setattr(
+        settings,
+        "trusted_proxy_cidrs",
+        "10.0.0.0/8",
+    )
     app.dependency_overrides[get_rate_limiter] = lambda: limiter
     app.dependency_overrides[get_receipt_parser_service] = StubReceiptParser
 
-    with TestClient(app) as client:
+    with TestClient(
+        app,
+        client=("10.1.2.3", 50000),
+    ) as client:
         response = client.post(
             "/api/v1/parse-receipt",
             headers={"Do-Connecting-IP": "198.51.100.25"},
@@ -168,6 +176,41 @@ def test_receipt_uses_digitalocean_client_ip_header_when_trusted(
     ]
 
 
+def test_receipt_ignores_client_ip_header_from_untrusted_peer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limiter = RecordingRateLimiter()
+    monkeypatch.setattr(settings, "trust_proxy_headers", True)
+    monkeypatch.setattr(
+        settings,
+        "trusted_client_ip_header",
+        "do-connecting-ip",
+    )
+    monkeypatch.setattr(
+        settings,
+        "trusted_proxy_cidrs",
+        "10.0.0.0/8",
+    )
+    app.dependency_overrides[get_rate_limiter] = lambda: limiter
+    app.dependency_overrides[get_receipt_parser_service] = StubReceiptParser
+
+    with TestClient(
+        app,
+        client=("203.0.113.10", 50000),
+    ) as client:
+        response = client.post(
+            "/api/v1/parse-receipt",
+            headers={"Do-Connecting-IP": "198.51.100.25"},
+            json={"ocr_text": "MİGROS TOPLAM 220,50 TL"},
+        )
+
+    assert response.status_code == 200
+    assert limiter.calls[:2] == [
+        ("receipt-ip-burst", "ip:203.0.113.10"),
+        ("receipt-ip-daily", "ip:203.0.113.10"),
+    ]
+
+
 def test_receipt_rejects_invalid_trusted_ip_header_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -178,10 +221,18 @@ def test_receipt_rejects_invalid_trusted_ip_header_value(
         "trusted_client_ip_header",
         "do-connecting-ip",
     )
+    monkeypatch.setattr(
+        settings,
+        "trusted_proxy_cidrs",
+        "10.0.0.0/8",
+    )
     app.dependency_overrides[get_rate_limiter] = lambda: limiter
     app.dependency_overrides[get_receipt_parser_service] = StubReceiptParser
 
-    with TestClient(app) as client:
+    with TestClient(
+        app,
+        client=("10.1.2.3", 50000),
+    ) as client:
         response = client.post(
             "/api/v1/parse-receipt",
             headers={"Do-Connecting-IP": "not-an-ip-address"},
@@ -189,10 +240,10 @@ def test_receipt_rejects_invalid_trusted_ip_header_value(
         )
 
     assert response.status_code == 200
-    assert all(
-        identifier != "ip:not-an-ip-address"
-        for _, identifier in limiter.calls
-    )
+    assert limiter.calls[:2] == [
+        ("receipt-ip-burst", "ip:10.1.2.3"),
+        ("receipt-ip-daily", "ip:10.1.2.3"),
+    ]
 
 
 def test_parse_receipt_returns_valid_minor_unit_response() -> None:
@@ -222,10 +273,7 @@ def test_parse_receipt_returns_valid_minor_unit_response() -> None:
         "receipt-ip-burst",
         "receipt-ip-daily",
     ]
-    assert all(
-        identifier.startswith("ip:")
-        for _, identifier in limiter.calls
-    )
+    assert all(identifier.startswith("ip:") for _, identifier in limiter.calls)
 
 
 def test_parse_receipt_applies_installation_and_ip_limits() -> None:
@@ -326,9 +374,7 @@ def test_daily_quota_prevents_parser_call() -> None:
 
 def test_redis_unavailability_prevents_parser_call() -> None:
     parser = CountingReceiptParser()
-    app.dependency_overrides[get_rate_limiter] = (
-        lambda: UnavailableRateLimiter()
-    )
+    app.dependency_overrides[get_rate_limiter] = lambda: UnavailableRateLimiter()
     app.dependency_overrides[get_receipt_parser_service] = lambda: parser
 
     with TestClient(app) as client:

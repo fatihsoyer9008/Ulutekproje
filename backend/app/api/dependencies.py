@@ -43,11 +43,7 @@ async def get_rate_limiter(redis: Redis = Depends(get_redis)) -> RateLimiter:
 
 
 def request_ip(request: Request) -> str:
-    direct_ip = (
-        request.client.host
-        if request.client is not None
-        else "unknown"
-    )
+    direct_ip = request.client.host if request.client is not None else "unknown"
 
     if not settings.trust_proxy_headers:
         return direct_ip
@@ -56,11 +52,24 @@ def request_ip(request: Request) -> str:
     if not header_name:
         return direct_ip
 
+    trusted_proxy_networks = settings.trusted_proxy_networks
+    if not trusted_proxy_networks:
+        return direct_ip
+
+    try:
+        direct_address = ip_address(direct_ip)
+    except ValueError:
+        return direct_ip
+
+    if not any(direct_address in network for network in trusted_proxy_networks):
+        return direct_ip
+
     forwarded = request.headers.get(header_name)
     if not forwarded:
         return direct_ip
 
     candidate = forwarded.split(",", maxsplit=1)[0].strip()
+
     try:
         return str(ip_address(candidate))
     except ValueError:

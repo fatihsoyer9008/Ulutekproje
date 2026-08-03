@@ -40,6 +40,82 @@ class ExpenseScreen extends StatefulWidget {
   State<ExpenseScreen> createState() => _ExpenseScreenState();
 }
 
+class _ReceiptParseFailureDialog extends StatefulWidget {
+  const _ReceiptParseFailureDialog({
+    required this.error,
+    required this.onReturnToCamera,
+    required this.onManualEntry,
+    required this.onRetry,
+  });
+
+  final ReceiptParserException error;
+  final VoidCallback onReturnToCamera;
+  final VoidCallback onManualEntry;
+  final VoidCallback onRetry;
+
+  @override
+  State<_ReceiptParseFailureDialog> createState() =>
+      _ReceiptParseFailureDialogState();
+}
+
+class _ReceiptParseFailureDialogState
+    extends State<_ReceiptParseFailureDialog> {
+  static const _fallbackRetryDelay = Duration(seconds: 60);
+
+  Timer? _retryTimer;
+  late bool _retryEnabled;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final retryDelay = widget.error.kind == ReceiptParserFailureKind.rateLimited
+        ? widget.error.retryAfter ?? _fallbackRetryDelay
+        : Duration.zero;
+
+    _retryEnabled = widget.error.canRetry && retryDelay.inMilliseconds <= 0;
+
+    if (widget.error.canRetry && retryDelay.inMilliseconds > 0) {
+      _retryTimer = Timer(retryDelay, () {
+        if (!mounted) return;
+        setState(() => _retryEnabled = true);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      key: const Key('receipt_parse_error_dialog'),
+      title: const Text('Fiş bilgileri alınamadı'),
+      content: Text(widget.error.message),
+      actions: [
+        TextButton(
+          key: const Key('return_to_camera_after_parse_error_button'),
+          onPressed: widget.onReturnToCamera,
+          child: const Text('Kameraya Dön'),
+        ),
+        TextButton(
+          key: const Key('manual_entry_after_parse_error_button'),
+          onPressed: widget.onManualEntry,
+          child: const Text('Elle Girmeye Devam Et'),
+        ),
+        FilledButton(
+          key: const Key('retry_parse_button'),
+          onPressed: _retryEnabled ? widget.onRetry : null,
+          child: const Text('Tekrar Dene'),
+        ),
+      ],
+    );
+  }
+}
+
 class _ExpenseScreenState extends State<ExpenseScreen> {
   bool _initialScannerOpened = false;
   bool _isFlowActive = false;
@@ -277,38 +353,20 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        key: const Key('receipt_parse_error_dialog'),
-        title: const Text('Fiş bilgileri alınamadı'),
-        content: Text(error.message),
-        actions: [
-          TextButton(
-            key: const Key('return_to_camera_after_parse_error_button'),
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              _openReceiptScanner(context);
-            },
-            child: const Text('Kameraya Dön'),
-          ),
-          TextButton(
-            key: const Key('manual_entry_after_parse_error_button'),
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              _openManualEntry(context);
-            },
-            child: const Text('Elle Girmeye Devam Et'),
-          ),
-          FilledButton(
-            key: const Key('retry_parse_button'),
-            onPressed: error.canRetry
-                ? () {
-                    Navigator.of(dialogContext).pop();
-                    _openReceiptScanner(context, retryOcrText: rawText);
-                  }
-                : null,
-            child: const Text('Tekrar Dene'),
-          ),
-        ],
+      builder: (dialogContext) => _ReceiptParseFailureDialog(
+        error: error,
+        onReturnToCamera: () {
+          Navigator.of(dialogContext).pop();
+          _openReceiptScanner(context);
+        },
+        onManualEntry: () {
+          Navigator.of(dialogContext).pop();
+          _openManualEntry(context);
+        },
+        onRetry: () {
+          Navigator.of(dialogContext).pop();
+          _openReceiptScanner(context, retryOcrText: rawText);
+        },
       ),
     );
   }

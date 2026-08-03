@@ -52,49 +52,71 @@ void main() {
     expect(find.text('Fiş analizi beklenenden uzun sürdü.'), findsNothing);
   });
 
-  testWidgets(
-    'shows the quota message and disables immediate retry for HTTP 429',
-    (tester) async {
-      var parseCallCount = 0;
+  testWidgets('enables retry after the HTTP 429 Retry-After duration expires', (
+    tester,
+  ) async {
+    var parseCallCount = 0;
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ExpenseScreen(
-            scanReceipt: (_) async => 'MIGROS TOPLAM 25,50 TL',
-            parseReceipt: (_, {cancelToken}) async {
-              parseCallCount++;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExpenseScreen(
+          scanReceipt: (_) async => 'MIGROS TOPLAM 25,50 TL',
+          parseReceipt: (_, {cancelToken}) async {
+            parseCallCount++;
+
+            if (parseCallCount == 1) {
               throw const ReceiptParserException(
                 'Fiş analiz kotanız doldu. 42 saniye sonra tekrar deneyebilirsiniz.',
                 kind: ReceiptParserFailureKind.rateLimited,
                 retryAfter: Duration(seconds: 42),
               );
-            },
-          ),
+            }
+
+            return const ReceiptParseResult(
+              draft: TransactionDraft(
+                institutionName: 'MIGROS',
+                category: 'Market',
+                amountInMinor: 2550,
+              ),
+              normalizedOcrText: 'MIGROS TOPLAM 25,50 TL',
+              confidenceScore: 0.9,
+              isParseSuccessful: true,
+            );
+          },
         ),
-      );
+      ),
+    );
 
-      await tester.tap(find.byKey(const Key('ocr_camera_button')));
-      await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ocr_camera_button')));
+    await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const Key('receipt_parse_error_dialog')),
-        findsOneWidget,
-      );
-      expect(
-        find.text(
-          'Fiş analiz kotanız doldu. 42 saniye sonra tekrar deneyebilirsiniz.',
-        ),
-        findsOneWidget,
-      );
+    FilledButton retryButton = tester.widget<FilledButton>(
+      find.byKey(const Key('retry_parse_button')),
+    );
 
-      final retryButton = tester.widget<FilledButton>(
-        find.byKey(const Key('retry_parse_button')),
-      );
+    expect(retryButton.onPressed, isNull);
+    expect(parseCallCount, 1);
 
-      expect(retryButton.onPressed, isNull);
-      expect(parseCallCount, 1);
-    },
-  );
+    await tester.pump(const Duration(seconds: 41));
+
+    retryButton = tester.widget<FilledButton>(
+      find.byKey(const Key('retry_parse_button')),
+    );
+    expect(retryButton.onPressed, isNull);
+
+    await tester.pump(const Duration(seconds: 1));
+
+    retryButton = tester.widget<FilledButton>(
+      find.byKey(const Key('retry_parse_button')),
+    );
+    expect(retryButton.onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const Key('retry_parse_button')));
+    await tester.pumpAndSettle();
+
+    expect(parseCallCount, 2);
+    expect(find.text('İşlemi Kontrol Et'), findsOneWidget);
+  });
 
   testWidgets('opens manual entry from the parse error dialog', (tester) async {
     await tester.pumpWidget(
