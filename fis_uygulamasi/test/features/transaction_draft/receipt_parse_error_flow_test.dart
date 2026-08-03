@@ -7,6 +7,53 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  for (final testCase in <({ReceiptParserFailureKind kind, String message, bool canRetry})>[
+    (
+      kind: ReceiptParserFailureKind.rateLimited,
+      message:
+          'Çok fazla fiş analizi isteği gönderdiniz. Lütfen biraz bekleyip tekrar deneyin.',
+      canRetry: true,
+    ),
+    (
+      kind: ReceiptParserFailureKind.payloadTooLarge,
+      message:
+          'Fiş verisi işlenemeyecek kadar büyük. Lütfen fişi yeniden çekin veya bilgileri elle girin.',
+      canRetry: false,
+    ),
+    (
+      kind: ReceiptParserFailureKind.validation,
+      message:
+          'Fiş bilgileri doğrulanamadı. Lütfen fişi yeniden çekin veya bilgileri elle girin.',
+      canRetry: false,
+    ),
+  ]) {
+    testWidgets('${testCase.kind.name} mesajını hata diyaloğunda gösterir', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ExpenseScreen(
+            scanReceipt: (_) async => 'OCR',
+            parseReceipt: (_, {cancelToken}) async =>
+                throw ReceiptParserException(
+                  testCase.message,
+                  kind: testCase.kind,
+                ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('ocr_camera_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(testCase.message), findsOneWidget);
+      final retryButton = tester.widget<FilledButton>(
+        find.byKey(const Key('retry_parse_button')),
+      );
+      expect(retryButton.onPressed, testCase.canRetry ? isNotNull : isNull);
+    });
+  }
+
   testWidgets('retries the same OCR text from the user-safe error dialog', (
     tester,
   ) async {
