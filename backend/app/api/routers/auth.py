@@ -133,13 +133,11 @@ async def register(
             display_name=payload.display_name,
         )
     except EmailAlreadyRegistered:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "email_already_registered",
-                "message": "Bu e-posta adresiyle zaten bir hesap bulunuyor.",
-            },
-        ) from None
+        # Registration must not disclose whether an account exists. Keep the
+        # public status and response identical to a new registration while the
+        # service avoids sending another verification email or changing the
+        # existing account.
+        pass
     return MessageResponse(message=GENERIC_REGISTER_MESSAGE)
 
 

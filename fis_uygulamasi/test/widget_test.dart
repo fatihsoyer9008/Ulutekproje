@@ -182,7 +182,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final loginButton = find.byKey(const Key('guest_login_button'));
+    await tester.pump();
     await tester.ensureVisible(loginButton);
+    await tester.pumpAndSettle();
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 

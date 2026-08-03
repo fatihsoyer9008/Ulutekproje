@@ -181,6 +181,14 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
           await (launcher ?? widget.scanReceipt ?? _launchReceiptScanner)(
             context,
           );
+    } on ReceiptImageValidationException catch (error) {
+      if (!context.mounted) return;
+      _removeRouteIfMounted(rootNavigator, analysisRoute);
+      _setFlowActive(false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error.message)));
+      return;
     } on Exception catch (error, stackTrace) {
       debugPrint('Fiş tarama hatası: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -326,7 +334,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
   Future<String?> _pickReceiptFromGallery(BuildContext context) async {
     const imageTypes = XTypeGroup(
       label: 'Görseller',
-      extensions: <String>['jpg', 'jpeg', 'png', 'heic', 'webp'],
+      extensions: supportedReceiptImageExtensions,
     );
     final image = await openFile(
       acceptedTypeGroups: const <XTypeGroup>[imageTypes],
