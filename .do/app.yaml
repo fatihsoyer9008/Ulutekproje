@@ -20,3 +20,12 @@ services:
       - key: USE_DUMMY_PARSER
         value: "true"
         scope: RUN_TIME
+      - key: TRUST_PROXY_HEADERS
+        value: "true"
+        scope: RUN_TIME
+      - key: TRUSTED_CLIENT_IP_HEADER
+        value: do-connecting-ip
+        scope: RUN_TIME
+      - key: TRUSTED_PROXY_CIDRS
+        value: 10.0.0.0/8
+        scope: RUN_TIME

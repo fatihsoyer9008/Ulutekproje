@@ -16,6 +16,16 @@ def _validate_production_settings() -> None:
             "RATE_LIMIT_ENABLED must be true when Gemini parsing is enabled"
         )
 
+    if (
+        not settings.trust_proxy_headers
+        or not settings.trusted_client_ip_header.strip()
+        or not settings.trusted_proxy_networks
+    ):
+        raise RuntimeError(
+            "TRUST_PROXY_HEADERS=true, TRUSTED_CLIENT_IP_HEADER and "
+            "TRUSTED_PROXY_CIDRS are required in production"
+        )
+
     weak_values = {
         "development-only-change-this-secret-before-production",
         "development-only-rate-limit-hmac-secret",

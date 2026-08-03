@@ -120,6 +120,50 @@ def test_production_real_parser_requires_rate_limiting(
         _validate_production_settings()
 
 
+@pytest.mark.parametrize(
+    (
+        "trust_proxy_headers",
+        "trusted_client_ip_header",
+        "trusted_proxy_cidrs",
+    ),
+    [
+        (False, "", ""),
+        (True, "", "10.0.0.0/8"),
+        (True, "do-connecting-ip", ""),
+    ],
+)
+def test_production_rejects_incomplete_proxy_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    trust_proxy_headers: bool,
+    trusted_client_ip_header: str,
+    trusted_proxy_cidrs: str,
+) -> None:
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "use_dummy_parser", True)
+    monkeypatch.setattr(settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(
+        settings,
+        "trust_proxy_headers",
+        trust_proxy_headers,
+    )
+    monkeypatch.setattr(
+        settings,
+        "trusted_client_ip_header",
+        trusted_client_ip_header,
+    )
+    monkeypatch.setattr(
+        settings,
+        "trusted_proxy_cidrs",
+        trusted_proxy_cidrs,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="TRUST_PROXY_HEADERS=true",
+    ):
+        _validate_production_settings()
+
+
 def test_receipt_ignores_forwarded_for_when_proxy_trust_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
