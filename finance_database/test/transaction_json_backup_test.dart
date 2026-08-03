@@ -49,6 +49,7 @@ void main() {
     "transaction_type": "income",
     "amount_in_minor": 500000,
     "category": "diger",
+    "category_name": "Serbest Meslek",
     "date": "2026-07-30T09:00:00",
     "merchant_name": "Maaş",
     "source": "manual",
@@ -61,6 +62,7 @@ void main() {
       expect(transactions.single.transactionType, TransactionType.income);
       expect(transactions.single.amountInMinor, 500000);
       expect(transactions.single.merchantName, 'Maaş');
+      expect(transactions.single.categoryName, 'Serbest Meslek');
     });
 
     test('sürüm 2 JSON yedeğindeki fiş ürünlerini çözümler', () {

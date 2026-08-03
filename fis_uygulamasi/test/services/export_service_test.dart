@@ -37,6 +37,7 @@ void main() {
     int amountInMinor = 1250,
     TransactionType transactionType = TransactionType.expense,
     TransactionCategory category = TransactionCategory.market,
+    String? categoryName,
     TransactionSource source = TransactionSource.manual,
     String? merchantName,
     String? rawOcrText,
@@ -46,6 +47,7 @@ void main() {
       ..amountInMinor = amountInMinor
       ..transactionType = transactionType
       ..category = category
+      ..categoryName = categoryName
       ..date = DateTime.utc(2026, 7, 30, 10)
       ..merchantName = merchantName
       ..source = source
@@ -147,6 +149,24 @@ void main() {
     expect(receiptItems, hasLength(1));
     expect(receiptItems.single['name'], 'Süt');
     expect(receiptItems.single['totalAmountInMinor'], 2500);
+  });
+
+  test('özel kategori adını JSON export ve import boyunca korur', () async {
+    await isar.writeTxn(
+      () => isar.transactionEntitys.put(
+        transaction(
+          category: TransactionCategory.diger,
+          categoryName: 'Evcil Hayvan',
+          merchantName: 'Veteriner',
+        ),
+      ),
+    );
+
+    final exported = await databaseExporter.exportJsonString();
+    final imported = TransactionJsonBackup.decode(exported).single;
+
+    expect(imported.category, TransactionCategory.diger);
+    expect(imported.categoryName, 'Evcil Hayvan');
   });
 
   test('Türkçe karakterleri UTF-8 JSON içinde bozulmadan korur', () async {

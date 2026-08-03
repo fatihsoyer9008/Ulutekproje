@@ -63,6 +63,7 @@ class TransactionEntity {
       'transactionType': transactionType.name,
       'amountInMinor': amountInMinor,
       'category': category.name,
+      'categoryName': categoryName,
       'date': date.toIso8601String(),
       'merchantName': merchantName,
       'source': source.name,

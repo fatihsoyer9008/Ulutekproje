@@ -123,6 +123,10 @@ abstract final class TransactionJsonBackup {
       ..transactionType = transactionType
       ..amountInMinor = amountInMinor
       ..category = category
+      ..categoryName = _readOptionalString(raw, const [
+        'categoryName',
+        'category_name',
+      ], index)
       ..date = date
       ..merchantName = _readOptionalString(raw, const [
         'merchantName',
