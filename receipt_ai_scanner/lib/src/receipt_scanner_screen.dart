@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'camera_failure.dart';
+import 'captured_receipt_photo.dart';
 import 'receipt_image_recognizer.dart';
 
 /// Opens the back camera, captures a receipt and extracts its raw text on-device.
@@ -146,7 +147,10 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
   }
 
   Future<String> _recognizeReceiptText(XFile photo) =>
-      recognizeReceiptImage(photo.path);
+      recognizeAndDeleteCapturedReceiptPhoto(
+        photo,
+        recognize: recognizeReceiptImage,
+      );
 
   Future<bool> _showRecognizedText(String text) async {
     final hasReadableText = text.trim().isNotEmpty;
