@@ -36,6 +36,17 @@ class ObservableReceiptParser:
         )
 
 
+class UnexpectedReceiptParser:
+    model_name = "test-model"
+
+    async def parse(
+        self,
+        request: ReceiptParserRequest,
+    ) -> ReceiptParserResponse:
+        del request
+        raise RuntimeError("unexpected parser failure")
+
+
 @pytest.fixture(autouse=True)
 def reset_dependency_overrides():
     app.dependency_overrides.clear()
@@ -100,6 +111,48 @@ def test_receipt_log_contains_request_id_duration_and_model(caplog) -> None:
         and "outcome=success" in message
         for message in messages
     )
+
+
+def test_unexpected_parser_exception_is_not_logged_as_success(caplog) -> None:
+    request_id = "unexpected-parser-1234"
+    app.dependency_overrides[get_receipt_parser_service] = lambda: (
+        UnexpectedReceiptParser()
+    )
+    caplog.set_level(logging.INFO, logger="app.receipts")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/parse-receipt",
+            headers={REQUEST_ID_HEADER: request_id},
+            json={"ocr_text": "TEST MARKET TOPLAM 10,00 TL"},
+        )
+
+    assert response.status_code == 500
+    messages = [record.getMessage() for record in caplog.records]
+    receipt_messages = [
+        message for message in messages if "receipt_parse_completed" in message
+    ]
+    assert any("outcome=unexpected_error" in message for message in receipt_messages)
+    assert all("outcome=success" not in message for message in receipt_messages)
+
+
+def test_unhandled_exception_response_preserves_observability_headers() -> None:
+    request_id = "unhandled-request-1234"
+    app.dependency_overrides[get_receipt_parser_service] = lambda: (
+        UnexpectedReceiptParser()
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/parse-receipt",
+            headers={REQUEST_ID_HEADER: request_id},
+            json={"ocr_text": "TEST MARKET TOPLAM 10,00 TL"},
+        )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error."}
+    assert response.headers[REQUEST_ID_HEADER] == request_id
+    assert float(response.headers[PROCESS_TIME_HEADER]) >= 0
 
 
 def test_personal_email_is_redacted_from_log_record() -> None:

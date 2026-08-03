@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from time import perf_counter
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 
 from app.api.routers.auth import router as auth_router
 from app.api.routers.receipts import router as receipt_router
@@ -104,11 +105,13 @@ async def log_request(
     request.state.request_id = request_id
     started_at = perf_counter()
     status_code = 500
+    exception_logged = False
 
     try:
         response = await call_next(request)
         status_code = response.status_code
     except Exception:
+        exception_logged = True
         duration_ms = (perf_counter() - started_at) * 1000
         request_logger.exception(
             "request_failed request_id=%s method=%s path=%s "
@@ -119,20 +122,24 @@ async def log_request(
             status_code,
             duration_ms,
         )
-        raise
+        response = JSONResponse(
+            status_code=status_code,
+            content={"detail": "Internal server error."},
+        )
 
     duration_ms = (perf_counter() - started_at) * 1000
     response.headers[REQUEST_ID_HEADER] = request_id
     response.headers[PROCESS_TIME_HEADER] = f"{duration_ms:.2f}"
-    request_logger.info(
-        "request_completed request_id=%s method=%s path=%s "
-        "status_code=%s duration_ms=%.2f",
-        request_id,
-        request.method,
-        redact_personal_data(request.url.path),
-        status_code,
-        duration_ms,
-    )
+    if not exception_logged:
+        request_logger.info(
+            "request_completed request_id=%s method=%s path=%s "
+            "status_code=%s duration_ms=%.2f",
+            request_id,
+            request.method,
+            redact_personal_data(request.url.path),
+            status_code,
+            duration_ms,
+        )
     return response
 
 

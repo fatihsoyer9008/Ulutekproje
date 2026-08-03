@@ -124,6 +124,9 @@ async def parse_receipt(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=("Fiş metni yapay zekâ servisi tarafından ayrıştırılamadı"),
         ) from exc
+    except Exception:
+        outcome = "unexpected_error"
+        raise
     finally:
         duration_ms = (perf_counter() - started_at) * 1000
         logger.info(
