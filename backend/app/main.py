@@ -1,21 +1,21 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import FastAPI, Request, Response
 
 from app.api.routers.auth import router as auth_router
+from app.api.routers.receipts import router as receipt_router
 from app.core.config import settings
-from app.schemas import ReceiptParserRequest, ReceiptParserResponse
-from app.services.receipt_parser import (
-    DummyReceiptParserService,
-    GeminiReceiptParserService,
-    ReceiptParserError,
-    ReceiptParserService,
-)
 
 
 def _validate_production_settings() -> None:
     if settings.app_env != "production":
         return
+
+    if not settings.use_dummy_parser and not settings.rate_limit_enabled:
+        raise RuntimeError(
+            "RATE_LIMIT_ENABLED must be true when Gemini parsing is enabled"
+        )
+
     weak_values = {
         "development-only-change-this-secret-before-production",
         "development-only-rate-limit-hmac-secret",
@@ -43,9 +43,7 @@ def _validate_production_settings() -> None:
             "EMAIL_FROM, SMTP_HOST, SMTP_USER and SMTP_PASSWORD are required "
             "in production"
         )
-    if not settings.email_action_base_url.strip().lower().startswith(
-        "https://"
-    ):
+    if not settings.email_action_base_url.strip().lower().startswith("https://"):
         raise RuntimeError(
             "EMAIL_ACTION_BASE_URL must use HTTPS in production"
         )
@@ -74,6 +72,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(auth_router)
+app.include_router(receipt_router)
 
 
 @app.middleware("http")
@@ -87,36 +86,8 @@ async def prevent_auth_response_caching(
         response.headers["Pragma"] = "no-cache"
     return response
 
+
 @app.get("/health", tags=["health"])
 def health_check() -> dict[str, str]:
     """Minimal endpoint used to verify the local server is running."""
     return {"status": "ok", "environment": settings.app_env}
-
-def get_receipt_parser_service() -> ReceiptParserService:
-    if settings.use_dummy_parser:
-        return DummyReceiptParserService()
-
-    if settings.gemini_api_key is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="GEMINI_API_KEY yapılandırılmamış",
-        )
-
-    return GeminiReceiptParserService(
-        api_key=settings.gemini_api_key.get_secret_value(),
-        model=settings.gemini_model,
-    )
-
-
-@app.post("/api/v1/parse-receipt", response_model=ReceiptParserResponse)
-async def parse_receipt(
-    request: ReceiptParserRequest,
-    parser: ReceiptParserService = Depends(get_receipt_parser_service),
-) -> ReceiptParserResponse:
-    try:
-        return await parser.parse(request)
-    except ReceiptParserError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Fiş metni yapay zekâ servisi tarafından ayrıştırılamadı",
-        ) from exc

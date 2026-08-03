@@ -49,6 +49,7 @@ enum ReceiptParserFailureKind {
   noInternet,
   dns,
   timeout,
+  rateLimited,
   geminiUnavailable,
   serviceConfiguration,
   serviceUnavailable,
@@ -61,15 +62,19 @@ class ReceiptParserException implements Exception {
   const ReceiptParserException(
     this.message, {
     this.kind = ReceiptParserFailureKind.unknown,
+    this.retryAfter,
   });
 
   final String message;
   final ReceiptParserFailureKind kind;
+  final Duration? retryAfter;
 
   bool get isCancelled => kind == ReceiptParserFailureKind.cancelled;
 
   bool get canRetry =>
-      kind != ReceiptParserFailureKind.emptyOcr && !isCancelled;
+      kind != ReceiptParserFailureKind.emptyOcr &&
+      kind != ReceiptParserFailureKind.rateLimited &&
+      !isCancelled;
 
   @override
   String toString() => message;
@@ -151,6 +156,25 @@ class ReceiptParserClient {
     }
 
     final statusCode = error.response?.statusCode;
+    if (statusCode == 429) {
+      final retryAfterValue = error.response?.headers
+          .value('retry-after')
+          ?.trim();
+      final retryAfterSeconds = int.tryParse(retryAfterValue ?? '');
+      final retryAfter = retryAfterSeconds != null && retryAfterSeconds > 0
+          ? Duration(seconds: retryAfterSeconds)
+          : null;
+
+      final message = retryAfterSeconds != null && retryAfterSeconds > 0
+          ? 'Fiş analiz kotanız doldu. $retryAfterSeconds saniye sonra tekrar deneyebilirsiniz.'
+          : 'Fiş analiz kotanız doldu. Lütfen daha sonra tekrar deneyin.';
+
+      return ReceiptParserException(
+        message,
+        kind: ReceiptParserFailureKind.rateLimited,
+        retryAfter: retryAfter,
+      );
+    }
     if (statusCode == 501) {
       return const ReceiptParserException(
         'Fiş analiz servisi şu anda yanıt veremiyor. Lütfen biraz sonra tekrar deneyin.',

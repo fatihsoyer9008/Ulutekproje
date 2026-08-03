@@ -46,6 +46,19 @@ class Settings(BaseSettings):
 
     rate_limit_enabled: bool = True
     trust_proxy_headers: bool = False
+    trusted_client_ip_header: str = "" 
+    receipt_ip_burst_limit: int = Field(default=10, ge=1, le=10_000)
+    receipt_ip_daily_limit: int = Field(default=50, ge=1, le=1_000_000)
+    receipt_installation_burst_limit: int = Field(
+        default=5,
+        ge=1,
+        le=10_000,
+    )
+    receipt_installation_daily_limit: int = Field(
+        default=25,
+        ge=1,
+        le=1_000_000,
+    )
 
     google_oauth_client_ids: str = ""
     # Backwards-compatible name used by the existing local environment.
@@ -92,4 +105,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

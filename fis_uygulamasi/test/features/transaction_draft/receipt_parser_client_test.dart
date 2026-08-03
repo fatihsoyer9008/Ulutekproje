@@ -52,6 +52,44 @@ void main() {
     );
   });
 
+  test(
+    'maps HTTP 429 and Retry-After to a non-retryable quota failure',
+    () async {
+      final client = _clientWithResponse(
+        (_) => ResponseBody.fromString(
+          'rate limited',
+          429,
+          headers: {
+            'retry-after': ['42'],
+          },
+        ),
+      );
+
+      expect(
+        () => client.parse('MIGROS\nTOPLAM 25,50 TL'),
+        throwsA(
+          isA<ReceiptParserException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                ReceiptParserFailureKind.rateLimited,
+              )
+              .having(
+                (error) => error.retryAfter,
+                'retryAfter',
+                const Duration(seconds: 42),
+              )
+              .having((error) => error.canRetry, 'canRetry', isFalse)
+              .having(
+                (error) => error.message,
+                'message',
+                contains('42 saniye'),
+              ),
+        ),
+      );
+    },
+  );
+
   for (final entry in <int, ReceiptParserFailureKind>{
     501: ReceiptParserFailureKind.geminiUnavailable,
     502: ReceiptParserFailureKind.serviceUnavailable,

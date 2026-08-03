@@ -176,6 +176,7 @@ void main() {
 
     final loginButton = find.text('Hesaba Giriş Yap');
     await tester.ensureVisible(loginButton);
+    await tester.pumpAndSettle();
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 
