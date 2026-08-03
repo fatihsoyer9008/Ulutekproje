@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:app_main/core/network/api_client.dart';
+import 'package:app_main/core/storage/installation_id_provider.dart';
 import 'package:app_main/core/storage/secure_token_storage.dart';
 import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
 import 'package:dio/dio.dart';
@@ -59,6 +60,10 @@ void main() {
     final client = _clientWithResponse((options) {
       expect(options.method, 'POST');
       expect(options.path, '/api/v1/parse-receipt');
+      expect(
+        options.headers['X-Installation-ID'],
+        'installation-test-1234567890',
+      );
       expect(options.data, {'ocr_text': 'MIGROS TOPLAM 25,50 TL'});
       return _jsonResponse({
         'normalized_ocr_text': 'MIGROS\nTOPLAM 25,50 TL',
@@ -416,6 +421,9 @@ ReceiptParserClient _clientWithResponse(
       tokenStorage: _MemoryTokenStorage(),
       dio: dio,
     ),
+    installationIdProvider: const _FakeInstallationIdProvider(
+      'installation-test-1234567890',
+    ),
   );
 }
 
@@ -455,4 +463,13 @@ class _MemoryTokenStorage implements TokenStorage {
 
   @override
   Future<void> writeRefreshToken(String token) async => this.token = token;
+}
+
+class _FakeInstallationIdProvider implements InstallationIdProvider {
+  const _FakeInstallationIdProvider(this.installationId);
+
+  final String installationId;
+
+  @override
+  Future<String> getInstallationId() async => installationId;
 }

@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/network/api_client.dart';
+import '../../../core/storage/installation_id_provider.dart';
 import '../model/transaction_draft.dart';
 
 class ReceiptParseResult {
@@ -82,12 +83,19 @@ class ReceiptParserException implements Exception {
 }
 
 class ReceiptParserClient {
-  // The public constructor name is kept for dependency injection readability.
-  // ignore: prefer_initializing_formals
-  ReceiptParserClient({required ApiClient apiClient}) : _apiClient = apiClient;
+  ReceiptParserClient({
+    required ApiClient apiClient,
+    InstallationIdProvider? installationIdProvider,
+  }) : this._(
+         apiClient,
+         installationIdProvider ?? PersistentInstallationIdProvider(),
+       );
+
+  ReceiptParserClient._(this._apiClient, this._installationIdProvider);
 
   static const _endpoint = '/api/v1/parse-receipt';
   final ApiClient _apiClient;
+  final InstallationIdProvider _installationIdProvider;
   static const _errorMapper = ReceiptParserErrorMapper();
 
   Future<ReceiptParseResult> parse(
@@ -102,10 +110,13 @@ class ReceiptParserClient {
     }
 
     try {
+      final installationId = await _installationIdProvider.getInstallationId();
+
       debugPrint('Receipt API POST: $_endpoint');
       final response = await _apiClient.dio.post<Map<String, dynamic>>(
         _endpoint,
         data: {'ocr_text': ocrText},
+        options: Options(headers: {'X-Installation-ID': installationId}),
         cancelToken: cancelToken,
       );
       final body = response.data;
