@@ -145,6 +145,44 @@ void main() {
     );
   });
 
+  test(
+    'maps HTTP 429 and Retry-After to a delayed retry quota failure',
+    () async {
+      final client = _clientWithResponse(
+        (_) => ResponseBody.fromString(
+          'rate limited',
+          429,
+          headers: {
+            'retry-after': ['42'],
+          },
+        ),
+      );
+
+      expect(
+        () => client.parse('MIGROS\nTOPLAM 25,50 TL'),
+        throwsA(
+          isA<ReceiptParserException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                ReceiptParserFailureKind.rateLimited,
+              )
+              .having(
+                (error) => error.retryAfter,
+                'retryAfter',
+                const Duration(seconds: 42),
+              )
+              .having((error) => error.canRetry, 'canRetry', isTrue)
+              .having(
+                (error) => error.message,
+                'message',
+                contains('42 saniye'),
+              ),
+        ),
+      );
+    },
+  );
+
   for (final entry in <int, ReceiptParserFailureKind>{
     413: ReceiptParserFailureKind.payloadTooLarge,
     422: ReceiptParserFailureKind.validation,

@@ -1,3 +1,5 @@
+from ipaddress import IPv4Network, IPv6Network, ip_network
+
 from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -46,6 +48,20 @@ class Settings(BaseSettings):
 
     rate_limit_enabled: bool = True
     trust_proxy_headers: bool = False
+    trusted_client_ip_header: str = ""
+    trusted_proxy_cidrs: str = ""
+    receipt_ip_burst_limit: int = Field(default=10, ge=1, le=10_000)
+    receipt_ip_daily_limit: int = Field(default=50, ge=1, le=1_000_000)
+    receipt_installation_burst_limit: int = Field(
+        default=5,
+        ge=1,
+        le=10_000,
+    )
+    receipt_installation_daily_limit: int = Field(
+        default=25,
+        ge=1,
+        le=1_000_000,
+    )
 
     google_oauth_client_ids: str = ""
     # Backwards-compatible name used by the existing local environment.
@@ -63,6 +79,35 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-3.5-flash-lite"
     use_dummy_parser: bool = True
+
+    @field_validator("trusted_proxy_cidrs")
+    @classmethod
+    def validate_trusted_proxy_cidrs(cls, value: str) -> str:
+        configured_cidrs = [
+            item.strip()
+            for item in value.split(",")
+            if item.strip()
+        ]
+
+        try:
+            for cidr in configured_cidrs:
+                ip_network(cidr, strict=False)
+        except ValueError as exc:
+            raise ValueError(
+                "TRUSTED_PROXY_CIDRS must contain valid IPv4 or IPv6 networks"
+            ) from exc
+
+        return ",".join(configured_cidrs)
+
+    @property
+    def trusted_proxy_networks(
+        self,
+    ) -> tuple[IPv4Network | IPv6Network, ...]:
+        return tuple(
+            ip_network(cidr, strict=False)
+            for cidr in self.trusted_proxy_cidrs.split(",")
+            if cidr
+        )
 
     @field_validator("email_delivery_mode")
     @classmethod
@@ -92,4 +137,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

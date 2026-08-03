@@ -25,7 +25,6 @@ void main() {
     expect(cachedId, firstId);
     expect(persistedId, firstId);
   });
-
   test('replaces an invalid persisted installation ID', () async {
     SharedPreferences.setMockInitialValues({
       'receipt_installation_id': 'invalid id',

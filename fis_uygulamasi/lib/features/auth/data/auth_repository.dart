@@ -50,6 +50,8 @@ class AuthRepository implements AuthRepositoryBase {
 
   final ApiClient _apiClient;
   final GoogleSignIn _googleSignIn;
+  Future<void>? _googleInitialization;
+  String? _googleNonce;
 
   @override
   Future<AuthUser> login({
@@ -145,12 +147,8 @@ class AuthRepository implements AuthRepositoryBase {
       );
     }
 
-    final nonce = _createNonce();
     try {
-      await _googleSignIn.initialize(
-        serverClientId: ApiConfig.googleServerClientId,
-        nonce: nonce,
-      );
+      await _ensureGoogleInitialized();
       final account = await _googleSignIn.authenticate();
       final idToken = account.authentication.idToken;
       if (idToken == null || idToken.isEmpty) {
@@ -163,14 +161,35 @@ class AuthRepository implements AuthRepositoryBase {
 
       final response = await _apiClient.dio.post<Map<String, dynamic>>(
         '/api/v1/auth/google',
-        data: {'id_token': idToken, 'nonce': nonce},
+        data: {'id_token': idToken, 'nonce': _googleNonce},
         options: Options(extra: const {'skipAuth': true}),
       );
       return _saveTokenResponse(response.data);
     } on GoogleSignInException catch (error) {
-      throw AuthException('Google girişi tamamlanamadı: ${error.code.name}');
+      throw AuthException(googleSignInErrorMessage(error.code));
     } on DioException catch (error) {
       throw _exceptionFrom(error, 'Google girişi yapılamadı.');
+    }
+  }
+
+  Future<void> _ensureGoogleInitialized() async {
+    final existing = _googleInitialization;
+    if (existing != null) {
+      return existing;
+    }
+
+    _googleNonce = _createNonce();
+    final initialization = _googleSignIn.initialize(
+      serverClientId: ApiConfig.googleServerClientId,
+      nonce: _googleNonce,
+    );
+    _googleInitialization = initialization;
+    try {
+      await initialization;
+    } on Object {
+      _googleInitialization = null;
+      _googleNonce = null;
+      rethrow;
     }
   }
 
@@ -270,6 +289,25 @@ class AuthRepository implements AuthRepositoryBase {
     final random = Random.secure();
     final bytes = List<int>.generate(32, (_) => random.nextInt(256));
     return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+}
+
+String googleSignInErrorMessage(GoogleSignInExceptionCode code) {
+  switch (code) {
+    case GoogleSignInExceptionCode.canceled:
+      return 'Google oturumu tamamlanamadı. İşlemi siz iptal etmediyseniz '
+          'Android OAuth istemcisindeki paket adı ile SHA-1/SHA-256 '
+          'değerlerini kontrol edin.';
+    case GoogleSignInExceptionCode.clientConfigurationError:
+    case GoogleSignInExceptionCode.providerConfigurationError:
+      return 'Google giriş yapılandırması geçersiz. Android OAuth istemcisi, '
+          'paket adı ve GOOGLE_SERVER_CLIENT_ID değerlerini kontrol edin.';
+    case GoogleSignInExceptionCode.interrupted:
+      return 'Google giriş işlemi yarıda kesildi. Lütfen tekrar deneyin.';
+    case GoogleSignInExceptionCode.uiUnavailable:
+      return 'Google hesap seçme ekranı şu anda açılamıyor.';
+    default:
+      return 'Google girişi tamamlanamadı. Lütfen tekrar deneyin.';
   }
 }
 

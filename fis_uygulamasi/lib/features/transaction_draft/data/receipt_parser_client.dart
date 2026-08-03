@@ -65,10 +65,12 @@ class ReceiptParserException implements Exception {
   const ReceiptParserException(
     this.message, {
     this.kind = ReceiptParserFailureKind.unknown,
+    this.retryAfter,
   });
 
   final String message;
   final ReceiptParserFailureKind kind;
+  final Duration? retryAfter;
 
   bool get isCancelled => kind == ReceiptParserFailureKind.cancelled;
 
@@ -94,9 +96,10 @@ class ReceiptParserClient {
   ReceiptParserClient._(this._apiClient, this._installationIdProvider);
 
   static const _endpoint = '/api/v1/parse-receipt';
+  static const _errorMapper = ReceiptParserErrorMapper();
+
   final ApiClient _apiClient;
   final InstallationIdProvider _installationIdProvider;
-  static const _errorMapper = ReceiptParserErrorMapper();
 
   Future<ReceiptParseResult> parse(
     String ocrText, {
@@ -256,9 +259,22 @@ class ReceiptParserErrorMapper {
 
     final statusCode = error.response?.statusCode;
     if (statusCode == 429) {
-      return const ReceiptParserException(
-        'Çok fazla fiş analizi isteği gönderdiniz. Lütfen biraz bekleyip tekrar deneyin.',
+      final retryAfterValue = error.response?.headers
+          .value('retry-after')
+          ?.trim();
+      final retryAfterSeconds = int.tryParse(retryAfterValue ?? '');
+      final retryAfter = retryAfterSeconds != null && retryAfterSeconds > 0
+          ? Duration(seconds: retryAfterSeconds)
+          : null;
+
+      final message = retryAfterSeconds != null && retryAfterSeconds > 0
+          ? 'Fiş analiz kotanız doldu. $retryAfterSeconds saniye sonra tekrar deneyebilirsiniz.'
+          : 'Çok fazla fiş analizi isteği gönderdiniz. Lütfen biraz bekleyip tekrar deneyin.';
+
+      return ReceiptParserException(
+        message,
         kind: ReceiptParserFailureKind.rateLimited,
+        retryAfter: retryAfter,
       );
     }
     if (statusCode == 413) {
