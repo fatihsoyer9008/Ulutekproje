@@ -1,7 +1,6 @@
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/theme/theme_mode_provider.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
@@ -101,39 +100,10 @@ class AppDrawer extends ConsumerWidget {
               },
             ),
             const Spacer(),
-            const Divider(height: 1),
-            ListTile(
-              key: const Key('drawer_logout_tile'),
-              leading: const Icon(
-                Icons.logout_rounded,
-                color: AppColors.expense,
-              ),
-              title: const Text(
-                'Çıkış Yap',
-                style: TextStyle(color: AppColors.expense),
-              ),
-              enabled: !auth.isLoading,
-              onTap: () => _logout(context, ref, isGuest),
-            ),
             const SizedBox(height: 12),
           ],
         ),
       ),
     );
-  }
-
-  Future<void> _logout(
-    BuildContext context,
-    WidgetRef ref,
-    bool isGuest,
-  ) async {
-    Navigator.of(context).pop();
-    final controller = ref.read(authSessionControllerProvider.notifier);
-    if (isGuest) {
-      controller.leaveEmailVerification();
-    } else {
-      await controller.logout();
-    }
-    if (context.mounted) context.go('/welcome');
   }
 }
