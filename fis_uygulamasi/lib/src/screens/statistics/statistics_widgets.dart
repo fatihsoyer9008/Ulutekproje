@@ -43,14 +43,17 @@ class StatisticsContent extends StatelessWidget {
                     const Text(
                       'Genel İstatistik',
                       style: TextStyle(
-                        fontSize: 26,
+                        fontSize: 22,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Finansal hareketlerini yakından incele',
-                      style: TextStyle(color: scheme.onSurfaceVariant),
+                      '${period.subtitle} harcama eğilimi',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
@@ -63,11 +66,35 @@ class StatisticsContent extends StatelessWidget {
                   for (final value in StatisticsPeriod.values)
                     PopupMenuItem(value: value, child: Text(value.label)),
                 ],
-                child: Chip(
-                  avatar: const Icon(Icons.calendar_month_outlined, size: 18),
-                  label: Text(period.label),
-                  backgroundColor: AppColors.mint,
-                  side: BorderSide.none,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: .72),
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        period.label,
+                        style: TextStyle(
+                          color: scheme.onPrimaryContainer,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 17,
+                        color: scheme.onPrimaryContainer,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -75,12 +102,9 @@ class StatisticsContent extends StatelessWidget {
           const SizedBox(height: 20),
           LayoutBuilder(
             builder: (context, constraints) {
-              final tileWidth = constraints.maxWidth >= 680
-                  ? (constraints.maxWidth - 24) / 3
-                  : constraints.maxWidth;
-              return Wrap(
-                spacing: 12,
-                runSpacing: 12,
+              final tileWidth = (constraints.maxWidth - 16) / 3;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SummaryTile(
                     width: tileWidth,
@@ -89,6 +113,7 @@ class StatisticsContent extends StatelessWidget {
                     icon: Icons.south_west_rounded,
                     color: AppColors.income,
                   ),
+                  const SizedBox(width: 8),
                   SummaryTile(
                     width: tileWidth,
                     label: 'Gider',
@@ -96,9 +121,10 @@ class StatisticsContent extends StatelessWidget {
                     icon: Icons.north_east_rounded,
                     color: AppColors.expense,
                   ),
+                  const SizedBox(width: 8),
                   SummaryTile(
                     width: tileWidth,
-                    label: 'Net Bakiye',
+                    label: 'Net Durum',
                     amountInMinor: net,
                     icon: Icons.account_balance_wallet_outlined,
                     color: net >= 0 ? AppColors.primary : AppColors.expense,
@@ -107,28 +133,64 @@ class StatisticsContent extends StatelessWidget {
               );
             },
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           StatisticsCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  period.subtitle,
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Dönem Harcaması',
+                            style: TextStyle(
+                              color: scheme.onSurfaceVariant,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          AnimatedAmountText(
+                            amountInMinor: totalExpenseInMinor,
+                            color: AppColors.primary,
+                            fontSize: 23,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer.withValues(alpha: .65),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        period.label,
+                        style: TextStyle(
+                          color: scheme.onPrimaryContainer,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 SizedBox(
-                  height: 230,
+                  height: 205,
                   child: StatisticsChart(spending: spending),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 22),
           Text(
             'Kategoriler',
             style: TextStyle(
@@ -210,28 +272,49 @@ class SummaryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     width: width,
-    child: StatisticsCard(
-      child: Row(
+    child: Container(
+      constraints: const BoxConstraints(minHeight: 92),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircleAvatar(
-            backgroundColor: color.withValues(alpha: .12),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
+          Row(
+            children: [
+              Container(
+                width: 25,
+                height: 25,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color, size: 14),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
                   label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 4),
-                AnimatedAmountText(amountInMinor: amountInMinor, color: color),
-              ],
-            ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          AnimatedAmountText(
+            amountInMinor: amountInMinor,
+            color: color,
+            fontSize: 14,
           ),
         ],
       ),
@@ -243,11 +326,13 @@ class AnimatedAmountText extends StatelessWidget {
   const AnimatedAmountText({
     required this.amountInMinor,
     required this.color,
+    this.fontSize = 17,
     super.key,
   });
 
   final int amountInMinor;
   final Color color;
+  final double fontSize;
 
   @override
   Widget build(BuildContext context) => TweenAnimationBuilder<double>(
@@ -258,7 +343,11 @@ class AnimatedAmountText extends StatelessWidget {
       formatTry(value.round()),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(color: color, fontSize: 17, fontWeight: FontWeight.w900),
+      style: TextStyle(
+        color: color,
+        fontSize: fontSize,
+        fontWeight: FontWeight.w900,
+      ),
     ),
   );
 }

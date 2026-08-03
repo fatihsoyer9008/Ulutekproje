@@ -66,6 +66,7 @@ void main() {
         child: MaterialApp(
           home: FinanceHome(
             transactions: const [],
+            greetingName: 'Ayşe',
             enableAccountMenu: true,
             pendingOfflineTaskCount: 2,
             onProfilePressed: () => profilePageOpened = true,
@@ -75,11 +76,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Günaydın, Ayşe'), findsOneWidget);
+
     await tester.tap(find.byKey(const Key('app_menu_button')));
     await tester.pumpAndSettle();
     expect(find.text('user@example.com'), findsWidgets);
     expect(find.text('Tema Değiştir'), findsOneWidget);
-    expect(find.text('Çıkış Yap'), findsOneWidget);
+    expect(find.text('Çıkış Yap'), findsNothing);
 
     await tester.tap(find.byKey(const Key('drawer_profile_tile')));
     await tester.pumpAndSettle();
@@ -142,6 +145,41 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(streamCreationCount, 2);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('guest can open the login page from profile settings', (
+    tester,
+  ) async {
+    final authController = AuthSessionController(
+      _AlwaysAuthenticatedRepository(),
+    );
+    authController.continueAsGuest();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authSessionControllerProvider.overrideWith((ref) => authController),
+        ],
+        child: FinanceApp(
+          enableAuth: true,
+          transactionStream: Stream.value(const <TransactionEntity>[]),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('app_menu_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('drawer_profile_tile')));
+    await tester.pumpAndSettle();
+
+    final loginButton = find.text('Hesaba Giriş Yap');
+    await tester.ensureVisible(loginButton);
+    await tester.tap(loginButton);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('login_submit_button')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -364,7 +402,6 @@ TransactionEntity _transaction({
     ..source = TransactionSource.manual
     ..createdAt = effectiveDate
     ..updatedAt = effectiveDate;
-
 }
 
 class _AlwaysAuthenticatedRepository implements AuthRepositoryBase {
