@@ -46,6 +46,28 @@ void main() {
       expect(entity.rawOcrText, 'MIGROS\nTOPLAM 25,50 TL');
     });
 
+    test('fiş ürünlerini Isar satır modellerine dönüştürür', () {
+      final entity = const TransactionDraft(
+        institutionName: 'Migros',
+        category: 'Market',
+        amountInMinor: 2500,
+        receiptItems: [
+          ReceiptItem(
+            name: ' Süt ',
+            category: 'Gıda',
+            quantity: 2,
+            unitPriceInMinor: 1250,
+            totalAmountInMinor: 2500,
+          ),
+        ],
+      ).toTransactionEntity();
+
+      expect(entity.receiptLineItems, hasLength(1));
+      expect(entity.receiptLineItems.single.name, 'Süt');
+      expect(entity.receiptLineItems.single.position, 0);
+      expect(entity.toTransactionDraft().receiptItems.single.quantity, 2);
+    });
+
     test('uses safe defaults for an incomplete draft', () {
       final entity = const TransactionDraft.empty().toTransactionEntity(
         date: DateTime(2026, 7, 28),

@@ -20,7 +20,7 @@ void main() {
 
     // Isar, IsarService'e bağımlı olmadan doğrudan geçici klasörde açılır
     isar = await Isar.open(
-      [TransactionEntitySchema],
+      [TransactionEntitySchema, ReceiptLineItemEntitySchema],
       directory: tempDir.path,
       name: 'transaction_repository_test',
     );
@@ -98,7 +98,14 @@ void main() {
         ..amountInMinor = 1250
         ..category = TransactionCategory.market
         ..date = DateTime.now()
-        ..source = TransactionSource.manual;
+        ..source = TransactionSource.manual
+        ..receiptLineItems = [
+          ReceiptLineItemEntity()
+            ..transactionId = 0
+            ..position = 0
+            ..name = 'Maaş kalemi',
+        ]
+        ..receiptLineItemsLoaded = true;
 
       await repository.addTransaction(transaction);
 
@@ -109,6 +116,7 @@ void main() {
         transactions.current.single.transactionType,
         TransactionType.income,
       );
+      expect(transactions.current.single.receiptLineItems, hasLength(1));
 
       await transactions.cancel();
     });
@@ -151,6 +159,60 @@ void main() {
 
       final fetched = await repository.getTransactionById(id);
       expect(fetched, isNull);
+    });
+
+    test(
+      'ürünleri yüklenmemiş entity güncellenince mevcut ürünleri korur',
+      () async {
+        final transaction = TransactionDraft(
+          institutionName: 'Migros',
+          category: 'Market',
+          amountInMinor: 2500,
+          receiptItems: const [ReceiptItem(name: 'Süt', priceMinor: 2500)],
+        ).toTransactionEntity();
+        final id = await repository.addTransaction(transaction);
+
+        final unloaded = await isar.transactionEntitys.get(id);
+        expect(unloaded?.receiptLineItemsLoaded, isFalse);
+        unloaded!.merchantName = 'Migros Jet';
+        await repository.updateTransaction(unloaded);
+
+        final updated = await repository.getTransactionById(id);
+        expect(updated?.merchantName, 'Migros Jet');
+        expect(updated?.receiptLineItems.single.name, 'Süt');
+      },
+    );
+
+    test('fiş ürünlerini işlemle birlikte kaydeder ve siler', () async {
+      final transaction = TransactionDraft(
+        institutionName: 'Migros',
+        category: 'Market',
+        amountInMinor: 4500,
+        receiptItems: const [
+          ReceiptItem(
+            name: 'Süt',
+            quantity: 2,
+            unitPriceInMinor: 1500,
+            totalAmountInMinor: 3000,
+          ),
+          ReceiptItem(name: 'Ekmek', priceMinor: 1500),
+        ],
+      ).toTransactionEntity();
+
+      final id = await repository.addTransaction(transaction);
+      final items = await repository.getReceiptLineItems(id);
+
+      expect(items.map((item) => item.name), ['Süt', 'Ekmek']);
+      expect(items.first.transactionId, id);
+      expect(items.first.quantity, 2);
+      expect(items.first.unitPriceInMinor, 1500);
+      expect(
+        (await repository.getTransactionById(id))?.receiptLineItems,
+        hasLength(2),
+      );
+
+      await repository.deleteTransaction(id);
+      expect(await repository.getReceiptLineItems(id), isEmpty);
     });
   });
   group('TransactionRepository analiz sorguları', () {

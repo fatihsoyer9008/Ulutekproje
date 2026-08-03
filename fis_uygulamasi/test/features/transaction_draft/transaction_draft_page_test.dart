@@ -188,6 +188,97 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Evcil Hayvan'), findsWidgets);
   });
+
+  testWidgets('fiş ürünleri düzenlenebilir, eklenebilir ve silinebilir', (
+    tester,
+  ) async {
+    TransactionDraft? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => FilledButton(
+            onPressed: () async {
+              result = await Navigator.of(context).push<TransactionDraft>(
+                MaterialPageRoute(
+                  builder: (_) => TransactionDraftPage(
+                    initialDraft: TransactionDraft(
+                      institutionName: 'Migros',
+                      category: 'Market',
+                      amountInMinor: 3500,
+                      transactionDate: DateTime(2026, 8, 3),
+                      receiptItems: const [
+                        ReceiptItem(name: 'Süt', priceMinor: 2000),
+                        ReceiptItem(name: 'Ekmek', priceMinor: 1500),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+            child: const Text('Aç'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Aç'));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('edit_receipt_item_0')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('edit_receipt_item_0')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('receipt_item_name_field')),
+      'Laktozsuz Süt',
+    );
+    await tester.enterText(
+      find.byKey(const Key('receipt_item_quantity_field')),
+      '2',
+    );
+    await tester.enterText(
+      find.byKey(const Key('receipt_item_unit_price_field')),
+      '11,25',
+    );
+    final calculatedTotal = tester.widget<TextFormField>(
+      find.byKey(const Key('receipt_item_total_field')),
+    );
+    expect(calculatedTotal.controller?.text, '22,50');
+    await tester.tap(find.byKey(const Key('save_receipt_item_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Laktozsuz Süt'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('delete_receipt_item_1')));
+    await tester.pump();
+    expect(find.text('Ekmek'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('add_receipt_item_button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('receipt_item_name_field')),
+      'Yoğurt',
+    );
+    await tester.enterText(
+      find.byKey(const Key('receipt_item_total_field')),
+      '12,50',
+    );
+    await tester.tap(find.byKey(const Key('save_receipt_item_button')));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('confirm_draft_button')));
+    await tester.tap(find.byKey(const Key('confirm_draft_button')));
+    await tester.pumpAndSettle();
+
+    expect(result?.receiptItems.map((item) => item.name), [
+      'Laktozsuz Süt',
+      'Yoğurt',
+    ]);
+    expect(result?.receiptItems.first.totalAmountInMinor, 2250);
+    expect(result?.receiptItems.last.totalAmountInMinor, 1250);
+  });
 }
 
 CategoryEntity _category(String name) => CategoryEntity()

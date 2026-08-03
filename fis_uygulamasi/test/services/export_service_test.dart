@@ -17,7 +17,7 @@ void main() {
       'export_service_test_',
     );
     isar = await Isar.open(
-      [TransactionEntitySchema],
+      [TransactionEntitySchema, ReceiptLineItemEntitySchema],
       directory: tempDirectory.path,
       name: 'export_service_test',
     );
@@ -37,6 +37,7 @@ void main() {
     int amountInMinor = 1250,
     TransactionType transactionType = TransactionType.expense,
     TransactionCategory category = TransactionCategory.market,
+    String? categoryName,
     TransactionSource source = TransactionSource.manual,
     String? merchantName,
     String? rawOcrText,
@@ -46,6 +47,7 @@ void main() {
       ..amountInMinor = amountInMinor
       ..transactionType = transactionType
       ..category = category
+      ..categoryName = categoryName
       ..date = DateTime.utc(2026, 7, 30, 10)
       ..merchantName = merchantName
       ..source = source
@@ -55,10 +57,17 @@ void main() {
       ..updatedAt = DateTime.utc(2026, 7, 30, 10);
   }
 
+  Future<List<dynamic>> exportedTransactions() async {
+    final json = jsonDecode(await databaseExporter.exportJsonString()) as Map;
+    expect(json['schemaVersion'], 2);
+    expect(DateTime.tryParse(json['exportedAt'] as String), isNotNull);
+    return json['transactions'] as List<dynamic>;
+  }
+
   test('kuruş değerini kayıpsız tam sayı olarak dışa aktarır', () async {
     await isar.writeTxn(() => isar.transactionEntitys.put(transaction()));
 
-    final json = jsonDecode(await databaseExporter.exportJsonString()) as List;
+    final json = await exportedTransactions();
 
     expect(json.single['amountInMinor'], 1250);
     expect(json.single['amountInMinor'], isA<int>());
@@ -85,7 +94,7 @@ void main() {
       ]);
     });
 
-    final json = jsonDecode(await databaseExporter.exportJsonString()) as List;
+    final json = await exportedTransactions();
 
     expect(json, hasLength(2));
     expect(
@@ -113,11 +122,51 @@ void main() {
   test('nullable alanları JSON null olarak korur', () async {
     await isar.writeTxn(() => isar.transactionEntitys.put(transaction()));
 
-    final json = jsonDecode(await databaseExporter.exportJsonString()) as List;
+    final json = await exportedTransactions();
 
     expect(json.single['merchantName'], isNull);
     expect(json.single['rawOcrText'], isNull);
     expect(json.single['note'], isNull);
+  });
+
+  test('fiş ürünlerini JSON yedeğine dahil eder', () async {
+    final entity = transaction(merchantName: 'Migros')
+      ..receiptLineItems = [
+        ReceiptLineItemEntity()
+          ..transactionId = 0
+          ..position = 0
+          ..name = 'Süt'
+          ..quantity = 2
+          ..unitPriceInMinor = 1250
+          ..totalAmountInMinor = 2500,
+      ]
+      ..receiptLineItemsLoaded = true;
+    await TransactionRepository(isar).addTransaction(entity);
+
+    final json = await exportedTransactions();
+    final receiptItems = json.single['receiptItems'] as List;
+
+    expect(receiptItems, hasLength(1));
+    expect(receiptItems.single['name'], 'Süt');
+    expect(receiptItems.single['totalAmountInMinor'], 2500);
+  });
+
+  test('özel kategori adını JSON export ve import boyunca korur', () async {
+    await isar.writeTxn(
+      () => isar.transactionEntitys.put(
+        transaction(
+          category: TransactionCategory.diger,
+          categoryName: 'Evcil Hayvan',
+          merchantName: 'Veteriner',
+        ),
+      ),
+    );
+
+    final exported = await databaseExporter.exportJsonString();
+    final imported = TransactionJsonBackup.decode(exported).single;
+
+    expect(imported.category, TransactionCategory.diger);
+    expect(imported.categoryName, 'Evcil Hayvan');
   });
 
   test('Türkçe karakterleri UTF-8 JSON içinde bozulmadan korur', () async {
@@ -128,14 +177,14 @@ void main() {
       ),
     );
 
-    final json = jsonDecode(await databaseExporter.exportJsonString()) as List;
+    final json = await exportedTransactions();
 
     expect(json.single['merchantName'], text);
     expect(json.single['note'], text);
   });
 
   test('boş veritabanında geçerli boş JSON dizisi üretir', () async {
-    expect(await databaseExporter.exportJsonString(), '[]');
+    expect(await exportedTransactions(), isEmpty);
   });
 
   test(

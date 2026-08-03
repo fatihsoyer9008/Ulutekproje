@@ -2,7 +2,8 @@ import 'dart:convert';
 
 import 'package:isar/isar.dart';
 
-import '../models/transaction_entity.dart';
+import '../backup/transaction_json_backup.dart';
+import '../repository/transaction_repository.dart';
 
 class TransactionExportService {
   final Isar _isar;
@@ -15,7 +16,11 @@ class TransactionExportService {
   Future<String> exportJsonString() async {
     final jsonList = await _transactionMaps();
 
-    return const JsonEncoder.withIndent('  ').convert(jsonList);
+    return const JsonEncoder.withIndent('  ').convert({
+      'schemaVersion': TransactionJsonBackup.supportedSchemaVersion,
+      'exportedAt': DateTime.now().toUtc().toIso8601String(),
+      'transactions': jsonList,
+    });
   }
 
   /// Excel tarafından UTF-8 olarak açılabilen CSV çıktısı üretir.
@@ -37,7 +42,9 @@ class TransactionExportService {
   }
 
   Future<List<Map<String, dynamic>>> _transactionMaps() async {
-    final transactions = await _isar.transactionEntitys.where().findAll();
+    final transactions = await TransactionRepository(
+      _isar,
+    ).getAllTransactions();
     return transactions.map((transaction) => transaction.toJson()).toList();
   }
 

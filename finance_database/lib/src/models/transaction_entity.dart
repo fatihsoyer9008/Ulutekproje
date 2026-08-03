@@ -1,5 +1,7 @@
 import 'package:isar/isar.dart';
 
+import 'receipt_line_item_entity.dart';
+
 part 'transaction_entity.g.dart';
 
 enum TransactionSource { ocrRegex, ocrLlm, manual }
@@ -47,12 +49,21 @@ class TransactionEntity {
   late DateTime createdAt;
   late DateTime updatedAt;
 
+  /// Repository tarafından ayrı Isar koleksiyonuna yazılan fiş satırları.
+  @ignore
+  List<ReceiptLineItemEntity> receiptLineItems = [];
+
+  /// Boş listenin gerçekten boş mu, yoksa henüz yüklenmemiş mi olduğunu ayırır.
+  @ignore
+  bool receiptLineItemsLoaded = false;
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'transactionType': transactionType.name,
       'amountInMinor': amountInMinor,
       'category': category.name,
+      'categoryName': categoryName,
       'date': date.toIso8601String(),
       'merchantName': merchantName,
       'source': source.name,
@@ -60,6 +71,8 @@ class TransactionEntity {
       'note': note,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
+      if (receiptLineItemsLoaded)
+        'receiptItems': receiptLineItems.map((item) => item.toJson()).toList(),
     };
   }
 }

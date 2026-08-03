@@ -1,5 +1,6 @@
 import '../models/transaction_draft.dart';
 import '../models/transaction_entity.dart';
+import '../models/receipt_line_item_entity.dart';
 
 /// UI/OCR taslaklarını Isar varlıklarına ve Isar varlıklarını taslaklara
 /// dönüştürür.
@@ -19,7 +20,7 @@ class TransactionDraftMapper {
     final now = DateTime.now();
     final effectiveCreatedAt = createdAt ?? now;
 
-    return TransactionEntity()
+    final entity = TransactionEntity()
       ..transactionType = transactionType
       ..amountInMinor = _safeAmountInMinor(draft.amountInMinor)
       ..category = _categoryFromDraft(draft.category)
@@ -31,6 +32,13 @@ class TransactionDraftMapper {
       ..note = _nullIfBlank(note)
       ..createdAt = effectiveCreatedAt
       ..updatedAt = updatedAt ?? effectiveCreatedAt;
+
+    entity.receiptLineItems = [
+      for (var index = 0; index < draft.receiptItems.length; index++)
+        _toLineItemEntity(draft.receiptItems[index], index),
+    ];
+    entity.receiptLineItemsLoaded = true;
+    return entity;
   }
 
   static TransactionDraft toDraft(TransactionEntity entity) {
@@ -42,9 +50,35 @@ class TransactionDraftMapper {
       amountInMinor: _safeAmountInMinor(entity.amountInMinor),
       transactionDate: entity.date,
       rawOcrText: entity.rawOcrText,
+      receiptItems: entity.receiptLineItems.map(_toReceiptItem).toList(),
     );
   }
 }
+
+ReceiptLineItemEntity _toLineItemEntity(ReceiptItem item, int position) {
+  return ReceiptLineItemEntity()
+    ..transactionId = 0
+    ..position = position
+    ..name = item.name.trim()
+    ..category = _nullIfBlank(item.category)
+    ..priceInMinor = item.priceMinor
+    ..totalAmountInMinor = item.totalAmountInMinor
+    ..quantity = item.quantity
+    ..unitPriceInMinor = item.unitPriceInMinor
+    ..taxRate = item.taxRate
+    ..taxAmountInMinor = item.taxAmountInMinor;
+}
+
+ReceiptItem _toReceiptItem(ReceiptLineItemEntity item) => ReceiptItem(
+  name: item.name,
+  category: item.category,
+  priceMinor: item.priceInMinor,
+  totalAmountInMinor: item.totalAmountInMinor,
+  quantity: item.quantity,
+  unitPriceInMinor: item.unitPriceInMinor,
+  taxRate: item.taxRate,
+  taxAmountInMinor: item.taxAmountInMinor,
+);
 
 extension TransactionDraftEntityMapper on TransactionDraft {
   TransactionEntity toTransactionEntity({
