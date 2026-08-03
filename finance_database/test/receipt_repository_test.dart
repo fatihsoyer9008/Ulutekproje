@@ -14,7 +14,11 @@ void main() {
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('receipt_repository_');
     isar = await Isar.open(
-      [ReceiptEntitySchema, ReceiptLineItemEntitySchema],
+      [
+        TransactionEntitySchema,
+        ReceiptEntitySchema,
+        ReceiptLineItemEntitySchema,
+      ],
       directory: directory.path,
       name: 'receipt_repository_test',
     );
@@ -24,6 +28,56 @@ void main() {
   tearDown(() async {
     await isar.close(deleteFromDisk: true);
     if (await directory.exists()) await directory.delete(recursive: true);
+  });
+
+  test('işlem, fiş ve ürünleri atomik kaydeder ve kimlikleri bağlar', () async {
+    final transactionId = await repository.saveDraftTransaction(
+      TransactionEntity()
+        ..transactionType = TransactionType.expense
+        ..amountInMinor = 2550
+        ..category = TransactionCategory.market
+        ..date = DateTime(2026, 8, 3)
+        ..source = TransactionSource.ocrLlm,
+      TransactionDraft(
+        institutionName: 'Migros',
+        category: 'Market',
+        amountInMinor: 2550,
+        lineItems: const [
+          ReceiptLineItemDraft(name: 'Süt 1L', totalAmountInMinor: 2550),
+        ],
+      ),
+    );
+
+    final transaction = await isar.transactionEntitys.get(transactionId);
+    final receipt = await isar.receiptEntitys.where().findFirst();
+    final items = await isar.receiptLineItemEntitys.where().findAll();
+
+    expect(transaction, isNotNull);
+    expect(receipt?.transactionId, transactionId);
+    expect(items, hasLength(1));
+    expect(items.single.receiptId, receipt?.id);
+  });
+
+  test('ürün kaydı hata verirse bütün atomik kayıtları geri alır', () async {
+    final invalidItem = ReceiptLineItemEntity()..totalAmountInMinor = 1000;
+
+    await expectLater(
+      repository.saveReceiptTransaction(
+        transaction: TransactionEntity()
+          ..transactionType = TransactionType.expense
+          ..amountInMinor = 1000
+          ..category = TransactionCategory.market
+          ..date = DateTime(2026, 8, 3)
+          ..source = TransactionSource.ocrLlm,
+        receipt: ReceiptEntity()..totalAmountInMinor = 1000,
+        lineItems: [invalidItem],
+      ),
+      throwsA(anything),
+    );
+
+    expect(await isar.transactionEntitys.count(), 0);
+    expect(await isar.receiptEntitys.count(), 0);
+    expect(await isar.receiptLineItemEntitys.count(), 0);
   });
 
   test('fişi ve ürün kalemlerini tek kayıt akışında saklar', () async {

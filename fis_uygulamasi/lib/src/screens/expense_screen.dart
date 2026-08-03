@@ -395,15 +395,18 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
 
     _isSaving = true;
     try {
-      await save(
-        draft.toTransactionEntity(
-          source: source,
-          transactionType: TransactionType.expense,
-        ),
+      final transaction = draft.toTransactionEntity(
+        source: source,
+        transactionType: TransactionType.expense,
       );
-      if (!context.mounted) return;
-      if (source != TransactionSource.manual) {
-        await _saveReceiptIfAvailable(context, draft);
+      final receiptRepository = source == TransactionSource.manual
+          ? null
+          : _receiptRepositoryIfAvailable(context);
+
+      if (receiptRepository == null) {
+        await save(transaction);
+      } else {
+        await receiptRepository.saveDraftTransaction(transaction, draft);
       }
       if (!context.mounted) return;
 
@@ -423,15 +426,13 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     }
   }
 
-  Future<void> _saveReceiptIfAvailable(
-    BuildContext context,
-    TransactionDraft draft,
-  ) async {
+  ReceiptRepository? _receiptRepositoryIfAvailable(BuildContext context) {
     try {
       final container = ProviderScope.containerOf(context, listen: false);
-      await container.read(receiptRepositoryProvider).addDraft(draft);
+      return container.read(receiptRepositoryProvider);
     } on StateError {
       // Bağımsız widget testlerinde Isar provider'ı bulunmayabilir.
+      return null;
     }
   }
 
