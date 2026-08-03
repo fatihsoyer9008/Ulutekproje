@@ -19,6 +19,13 @@ class ReceiptItem(BaseModel):
     name: str = Field(min_length=1)
     price_minor: int = Field(ge=0, description="Kuruş cinsinden ürün fiyatı")
     category: str = Field(min_length=1)
+    # These fields are deliberately optional: older parsers only supplied
+    # ``price_minor`` and clients must continue to accept those responses.
+    total_amount_minor: Optional[int] = Field(default=None, ge=0)
+    quantity: Optional[float] = Field(default=None, ge=0)
+    unit_price_in_minor: Optional[int] = Field(default=None, ge=0)
+    tax_rate: Optional[float] = Field(default=None, ge=0)
+    tax_amount_in_minor: Optional[int] = Field(default=None, ge=0)
 
 class ReceiptParserResponse(BaseModel):
     normalized_ocr_text: str = Field(

@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
+import '../model/receipt_total_validation.dart';
 import '../model/turkish_money.dart';
+import 'widgets/receipt_total_mismatch_warning.dart';
 
 enum TransactionDraftPageMode { manual, ocrReview, income }
 
@@ -65,6 +67,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
           ? ''
           : formatMinorAsTurkishLira(initialAmount),
     );
+    _amountController.addListener(_onAmountChanged);
 
     _transactionDate = widget.initialDraft.transactionDate;
     _dateController = TextEditingController(
@@ -74,10 +77,15 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
 
   @override
   void dispose() {
+    _amountController.removeListener(_onAmountChanged);
     _institutionController.dispose();
     _amountController.dispose();
     _dateController.dispose();
     super.dispose();
+  }
+
+  void _onAmountChanged() {
+    if (mounted) setState(() {});
   }
 
   String _formatTransactionDate(DateTime? date) {
@@ -137,12 +145,19 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
         amountInMinor: parseTurkishLiraToMinor(_amountController.text)!,
         transactionDate: _transactionDate,
         rawOcrText: widget.initialDraft.rawOcrText,
+        receiptItems: widget.initialDraft.receiptItems,
       ),
     );
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    final receiptTotalValidation = ReceiptTotalValidation.evaluate(
+      items: widget.initialDraft.receiptItems,
+      mainReceiptTotalInMinor: parseTurkishLiraToMinor(_amountController.text),
+    );
+
+    return Scaffold(
     appBar: AppBar(
       title: Text(
         widget.mode == TransactionDraftPageMode.manual
@@ -176,6 +191,16 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                 ),
                 const SizedBox(height: 16),
               ],
+            ],
+            if (widget.mode == TransactionDraftPageMode.ocrReview &&
+                receiptTotalValidation.hasMismatch) ...[
+              const SizedBox(height: 16),
+              ReceiptTotalMismatchWarning(
+                itemsTotalInMinor:
+                    receiptTotalValidation.calculatedItemsTotalInMinor!,
+                receiptTotalInMinor:
+                    receiptTotalValidation.mainReceiptTotalInMinor!,
+              ),
             ],
             AppCard(
               child: Column(
@@ -342,6 +367,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
       ),
     ),
   );
+  }
 }
 
 List<CategoryEntity> _buildCategories(
