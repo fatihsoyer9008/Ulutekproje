@@ -58,9 +58,12 @@ GoRouter createAppRouter({
       if (auth.status == AuthStatus.unauthenticated && isProtectedPage) {
         return '/welcome';
       }
-      if ((auth.status == AuthStatus.authenticated ||
-              auth.status == AuthStatus.guest) &&
+      if (auth.status == AuthStatus.authenticated &&
           (isAuthPage || location == '/startup')) {
+        return '/home';
+      }
+      if (auth.status == AuthStatus.guest &&
+          (location == '/welcome' || location == '/startup')) {
         return '/home';
       }
       return null;
