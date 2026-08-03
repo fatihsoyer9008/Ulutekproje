@@ -93,10 +93,7 @@ class ReceiptParserClient {
          installationIdProvider ?? PersistentInstallationIdProvider(),
        );
 
-  ReceiptParserClient._(
-    this._apiClient,
-    this._installationIdProvider,
-  );
+  ReceiptParserClient._(this._apiClient, this._installationIdProvider);
 
   static const _endpoint = '/api/v1/parse-receipt';
   static const _errorMapper = ReceiptParserErrorMapper();
