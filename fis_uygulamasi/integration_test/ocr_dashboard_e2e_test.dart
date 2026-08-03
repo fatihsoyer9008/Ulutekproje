@@ -19,9 +19,7 @@ void main() {
   late TransactionRepository repository;
 
   const rawOcrText = 'MIGROS\nTOPLAM 25,50 TL';
-  final receiptDate = DateTime(2026, 8, 1);
   final updatedDate = DateTime(2026, 8, 2);
-
   setUpAll(() async {
     await initializeDateFormatting('tr_TR');
 
