@@ -2,7 +2,16 @@ import html
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +50,7 @@ from app.services.apple_oauth import AppleOAuthProvider
 from app.services.auth_service import (
     AccountDeletionFailed,
     AuthService,
+    EmailAlreadyRegistered,
     EmailNotVerified,
     InvalidCredentials,
     InvalidOneTimeToken,
@@ -106,6 +116,20 @@ async def _email_limits(
     )
 
 
+async def _send_verification_safely(
+    email_sender: EmailSender,
+    *,
+    email: str,
+    token: str,
+) -> None:
+    try:
+        await email_sender.send_verification(email=email, token=token)
+    except Exception:
+        # Do not expose SMTP failures through the registration response and do
+        # not include the recipient or token in logs.
+        logger.exception("Verification email background delivery failed")
+
+
 @router.post(
     "/register",
     response_model=MessageResponse,
@@ -114,6 +138,7 @@ async def _email_limits(
 async def register(
     payload: RegisterRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db_session),
     email_sender: EmailSender = Depends(get_email_sender),
     limiter: RateLimiter = Depends(get_rate_limiter),
@@ -125,11 +150,25 @@ async def register(
         ip_rule=REGISTER_IP,
         email_rule=REGISTER_EMAIL,
     )
-    await AuthService(db, email_sender).register(
-        email=str(payload.email),
-        password=payload.password,
-        display_name=payload.display_name,
-    )
+    try:
+        pending_email = await AuthService(db, email_sender).register(
+            email=str(payload.email),
+            password=payload.password,
+            display_name=payload.display_name,
+        )
+    except EmailAlreadyRegistered:
+        # Registration must not disclose whether an account exists. Keep the
+        # public status and response identical to a new registration while the
+        # service avoids sending another verification email or changing the
+        # existing account.
+        pass
+    else:
+        background_tasks.add_task(
+            _send_verification_safely,
+            email_sender,
+            email=pending_email.email,
+            token=pending_email.token,
+        )
     return MessageResponse(message=GENERIC_REGISTER_MESSAGE)
 
 
@@ -200,10 +239,16 @@ async def google_login(
                 device_name=payload.device_name,
             ),
         )
-    except AccountLinkingRequired as exc:
+    except AccountLinkingRequired:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
+            detail={
+                "code": "google_account_already_exists",
+                "message": (
+                    "Bu e-posta adresiyle mevcut bir hesap var. Güvenlik için "
+                    "önce e-posta ve şifrenizle giriş yapın."
+                ),
+            },
         ) from None
     except (OAuthConfigurationError, OAuthTokenEncryptionError) as exc:
         logger.error("Google OAuth configuration error: %s", exc)

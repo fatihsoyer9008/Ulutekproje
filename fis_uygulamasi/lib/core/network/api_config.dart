@@ -13,6 +13,6 @@ abstract final class ApiConfig {
     // Web client from android/app/google-services.json and may be overridden
     // per environment with --dart-define.
     defaultValue:
-        '356175797700-gn19b1hl0kv3hktgom0qbk1558okjvar.apps.googleusercontent.com',
+        '356175797700-cvih7hepb72j56deugtirr38sqf3h1sd.apps.googleusercontent.com',
   );
 }

@@ -169,6 +169,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           const SizedBox(height: 20),
           if (isGuest)
             FilledButton(
+              key: const Key('guest_login_button'),
               onPressed: () => context.go('/login'),
               child: const Text('Hesaba Giriş Yap'),
             )
