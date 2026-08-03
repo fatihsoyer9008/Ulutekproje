@@ -12,7 +12,7 @@ void main() {
       kind: ReceiptParserFailureKind.rateLimited,
       message:
           'Çok fazla fiş analizi isteği gönderdiniz. Lütfen biraz bekleyip tekrar deneyin.',
-      canRetry: true,
+      canRetry: false,
     ),
     (
       kind: ReceiptParserFailureKind.payloadTooLarge,
