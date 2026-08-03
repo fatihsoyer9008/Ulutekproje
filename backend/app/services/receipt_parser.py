@@ -10,11 +10,15 @@ from app.schemas import ReceiptItem, ReceiptParserRequest, ReceiptParserResponse
 class ReceiptParserError(RuntimeError):
     pass
 
+
 class ReceiptParserService(Protocol):
     async def parse(self, request: ReceiptParserRequest) -> ReceiptParserResponse:
         pass
 
+
 class DummyReceiptParserService:
+    model_name = "dummy"
+
     async def parse(self, request: ReceiptParserRequest) -> ReceiptParserResponse:
         return ReceiptParserResponse(
             normalized_ocr_text=request.ocr_text,
@@ -45,10 +49,15 @@ class DummyReceiptParserService:
             ],
         )
 
+
 class GeminiReceiptParserService:
     def __init__(self, *, api_key: str, model: str) -> None:
         self._api_key = api_key
         self._model = model
+
+    @property
+    def model_name(self) -> str:
+        return self._model
 
     async def parse(self, request: ReceiptParserRequest) -> ReceiptParserResponse:
         client = genai.Client(api_key=self._api_key)

@@ -1,10 +1,21 @@
+import logging
 from contextlib import asynccontextmanager
+from time import perf_counter
 
 from fastapi import FastAPI, Request, Response
 
 from app.api.routers.auth import router as auth_router
 from app.api.routers.receipts import router as receipt_router
 from app.core.config import settings
+from app.core.observability import (
+    PROCESS_TIME_HEADER,
+    REQUEST_ID_HEADER,
+    configure_personal_data_redaction,
+    redact_personal_data,
+    resolve_request_id,
+)
+
+request_logger = logging.getLogger("app.request")
 
 
 def _validate_production_settings() -> None:
@@ -54,9 +65,7 @@ def _validate_production_settings() -> None:
             "in production"
         )
     if not settings.email_action_base_url.strip().lower().startswith("https://"):
-        raise RuntimeError(
-            "EMAIL_ACTION_BASE_URL must use HTTPS in production"
-        )
+        raise RuntimeError("EMAIL_ACTION_BASE_URL must use HTTPS in production")
     apple_values = (
         settings.apple_client_id,
         settings.apple_team_id,
@@ -73,6 +82,7 @@ def _validate_production_settings() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     _validate_production_settings()
+    configure_personal_data_redaction()
     yield
 
 
@@ -83,6 +93,47 @@ app = FastAPI(
 )
 app.include_router(auth_router)
 app.include_router(receipt_router)
+
+
+@app.middleware("http")
+async def log_request(
+    request: Request,
+    call_next,
+) -> Response:
+    request_id = resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
+    request.state.request_id = request_id
+    started_at = perf_counter()
+    status_code = 500
+
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+    except Exception:
+        duration_ms = (perf_counter() - started_at) * 1000
+        request_logger.exception(
+            "request_failed request_id=%s method=%s path=%s "
+            "status_code=%s duration_ms=%.2f",
+            request_id,
+            request.method,
+            redact_personal_data(request.url.path),
+            status_code,
+            duration_ms,
+        )
+        raise
+
+    duration_ms = (perf_counter() - started_at) * 1000
+    response.headers[REQUEST_ID_HEADER] = request_id
+    response.headers[PROCESS_TIME_HEADER] = f"{duration_ms:.2f}"
+    request_logger.info(
+        "request_completed request_id=%s method=%s path=%s "
+        "status_code=%s duration_ms=%.2f",
+        request_id,
+        request.method,
+        redact_personal_data(request.url.path),
+        status_code,
+        duration_ms,
+    )
+    return response
 
 
 @app.middleware("http")
