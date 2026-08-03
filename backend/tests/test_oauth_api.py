@@ -188,7 +188,13 @@ async def test_oauth_never_silently_links_existing_email(oauth_context) -> None:
         json={"id_token": "g" * 32, "nonce": "n" * 16},
     )
     assert response.status_code == 409
-    assert "linking" in response.json()["detail"].lower()
+    assert response.json()["detail"] == {
+        "code": "google_account_already_exists",
+        "message": (
+            "Bu e-posta adresiyle mevcut bir hesap var. Güvenlik için "
+            "önce e-posta ve şifrenizle giriş yapın."
+        ),
+    }
 
 
 @pytest.mark.asyncio

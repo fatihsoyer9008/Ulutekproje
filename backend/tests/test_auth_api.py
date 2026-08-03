@@ -289,7 +289,7 @@ async def test_password_reset_revokes_sessions(auth_context) -> None:
 
 
 @pytest.mark.asyncio
-async def test_auth_responses_do_not_enumerate_accounts(auth_context) -> None:
+async def test_duplicate_registration_returns_clear_conflict(auth_context) -> None:
     client, sender, _ = auth_context
     password = "A-strong-test-password-123"
     await _register_and_verify(client, sender, password=password)
@@ -298,15 +298,18 @@ async def test_auth_responses_do_not_enumerate_accounts(auth_context) -> None:
         "/api/v1/auth/register",
         json={"email": "user@example.com", "password": password},
     )
-    unknown = await client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "another@example.com",
-            "password": "Another-strong-password-123",
-        },
-    )
-    assert duplicate.status_code == unknown.status_code == 202
-    assert duplicate.json() == unknown.json()
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"] == {
+        "code": "email_already_registered",
+        "message": "Bu e-posta adresiyle zaten bir hesap bulunuyor.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_login_responses_do_not_enumerate_accounts(auth_context) -> None:
+    client, sender, _ = auth_context
+    password = "A-strong-test-password-123"
+    await _register_and_verify(client, sender, password=password)
 
     wrong_password = await client.post(
         "/api/v1/auth/login",

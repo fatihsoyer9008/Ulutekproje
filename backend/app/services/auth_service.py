@@ -40,6 +40,10 @@ class EmailNotVerified(ValueError):
     pass
 
 
+class EmailAlreadyRegistered(ValueError):
+    pass
+
+
 class ReauthenticationRequired(ValueError):
     pass
 
@@ -69,7 +73,7 @@ class AuthService:
         if existing is not None:
             # Keep the expensive path similar without modifying the account.
             hash_password(password)
-            return
+            raise EmailAlreadyRegistered("Email address is already registered")
 
         user = User(
             id=uuid.uuid4(),
@@ -90,7 +94,9 @@ class AuthService:
             await self.db.commit()
         except IntegrityError:
             await self.db.rollback()
-            return
+            raise EmailAlreadyRegistered(
+                "Email address is already registered"
+            ) from None
 
         await self.email_sender.send_verification(
             email=user.email,

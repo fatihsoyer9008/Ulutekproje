@@ -41,6 +41,7 @@ from app.services.apple_oauth import AppleOAuthProvider
 from app.services.auth_service import (
     AccountDeletionFailed,
     AuthService,
+    EmailAlreadyRegistered,
     EmailNotVerified,
     InvalidCredentials,
     InvalidOneTimeToken,
@@ -125,11 +126,20 @@ async def register(
         ip_rule=REGISTER_IP,
         email_rule=REGISTER_EMAIL,
     )
-    await AuthService(db, email_sender).register(
-        email=str(payload.email),
-        password=payload.password,
-        display_name=payload.display_name,
-    )
+    try:
+        await AuthService(db, email_sender).register(
+            email=str(payload.email),
+            password=payload.password,
+            display_name=payload.display_name,
+        )
+    except EmailAlreadyRegistered:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "email_already_registered",
+                "message": "Bu e-posta adresiyle zaten bir hesap bulunuyor.",
+            },
+        ) from None
     return MessageResponse(message=GENERIC_REGISTER_MESSAGE)
 
 
@@ -200,10 +210,16 @@ async def google_login(
                 device_name=payload.device_name,
             ),
         )
-    except AccountLinkingRequired as exc:
+    except AccountLinkingRequired:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
+            detail={
+                "code": "google_account_already_exists",
+                "message": (
+                    "Bu e-posta adresiyle mevcut bir hesap var. Güvenlik için "
+                    "önce e-posta ve şifrenizle giriş yapın."
+                ),
+            },
         ) from None
     except (OAuthConfigurationError, OAuthTokenEncryptionError) as exc:
         logger.error("Google OAuth configuration error: %s", exc)
