@@ -7,6 +7,53 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  for (final testCase in <({ReceiptParserFailureKind kind, String message, bool canRetry})>[
+    (
+      kind: ReceiptParserFailureKind.rateLimited,
+      message:
+          'Çok fazla fiş analizi isteği gönderdiniz. Lütfen biraz bekleyip tekrar deneyin.',
+      canRetry: false,
+    ),
+    (
+      kind: ReceiptParserFailureKind.payloadTooLarge,
+      message:
+          'Fiş verisi işlenemeyecek kadar büyük. Lütfen fişi yeniden çekin veya bilgileri elle girin.',
+      canRetry: false,
+    ),
+    (
+      kind: ReceiptParserFailureKind.validation,
+      message:
+          'Fiş bilgileri doğrulanamadı. Lütfen fişi yeniden çekin veya bilgileri elle girin.',
+      canRetry: false,
+    ),
+  ]) {
+    testWidgets('${testCase.kind.name} mesajını hata diyaloğunda gösterir', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ExpenseScreen(
+            scanReceipt: (_) async => 'OCR',
+            parseReceipt: (_, {cancelToken}) async =>
+                throw ReceiptParserException(
+                  testCase.message,
+                  kind: testCase.kind,
+                ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('ocr_camera_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(testCase.message), findsOneWidget);
+      final retryButton = tester.widget<FilledButton>(
+        find.byKey(const Key('retry_parse_button')),
+      );
+      expect(retryButton.onPressed, testCase.canRetry ? isNotNull : isNull);
+    });
+  }
+
   testWidgets('retries the same OCR text from the user-safe error dialog', (
     tester,
   ) async {
@@ -50,6 +97,72 @@ void main() {
     expect(callCount, 2);
     expect(find.text('İşlemi Kontrol Et'), findsOneWidget);
     expect(find.text('Fiş analizi beklenenden uzun sürdü.'), findsNothing);
+  });
+
+  testWidgets('enables retry after the HTTP 429 Retry-After duration expires', (
+    tester,
+  ) async {
+    var parseCallCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExpenseScreen(
+          scanReceipt: (_) async => 'MIGROS TOPLAM 25,50 TL',
+          parseReceipt: (_, {cancelToken}) async {
+            parseCallCount++;
+
+            if (parseCallCount == 1) {
+              throw const ReceiptParserException(
+                'Fiş analiz kotanız doldu. 42 saniye sonra tekrar deneyebilirsiniz.',
+                kind: ReceiptParserFailureKind.rateLimited,
+                retryAfter: Duration(seconds: 42),
+              );
+            }
+
+            return const ReceiptParseResult(
+              draft: TransactionDraft(
+                institutionName: 'MIGROS',
+                category: 'Market',
+                amountInMinor: 2550,
+              ),
+              normalizedOcrText: 'MIGROS TOPLAM 25,50 TL',
+              confidenceScore: 0.9,
+              isParseSuccessful: true,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('ocr_camera_button')));
+    await tester.pumpAndSettle();
+
+    FilledButton retryButton = tester.widget<FilledButton>(
+      find.byKey(const Key('retry_parse_button')),
+    );
+
+    expect(retryButton.onPressed, isNull);
+    expect(parseCallCount, 1);
+
+    await tester.pump(const Duration(seconds: 41));
+
+    retryButton = tester.widget<FilledButton>(
+      find.byKey(const Key('retry_parse_button')),
+    );
+    expect(retryButton.onPressed, isNull);
+
+    await tester.pump(const Duration(seconds: 1));
+
+    retryButton = tester.widget<FilledButton>(
+      find.byKey(const Key('retry_parse_button')),
+    );
+    expect(retryButton.onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const Key('retry_parse_button')));
+    await tester.pumpAndSettle();
+
+    expect(parseCallCount, 2);
+    expect(find.text('İşlemi Kontrol Et'), findsOneWidget);
   });
 
   testWidgets('opens manual entry from the parse error dialog', (tester) async {

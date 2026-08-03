@@ -151,6 +151,13 @@ void main() {
   testWidgets('guest can open the login page from profile settings', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
     final authController = AuthSessionController(
       _AlwaysAuthenticatedRepository(),
     );
@@ -174,8 +181,10 @@ void main() {
     await tester.tap(find.byKey(const Key('drawer_profile_tile')));
     await tester.pumpAndSettle();
 
-    final loginButton = find.text('Hesaba Giriş Yap');
+    final loginButton = find.byKey(const Key('guest_login_button'));
+    await tester.pump();
     await tester.ensureVisible(loginButton);
+    await tester.pumpAndSettle();
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 

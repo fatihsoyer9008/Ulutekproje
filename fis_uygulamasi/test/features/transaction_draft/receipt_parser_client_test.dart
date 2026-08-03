@@ -3,16 +3,67 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:app_main/core/network/api_client.dart';
+import 'package:app_main/core/storage/installation_id_provider.dart';
 import 'package:app_main/core/storage/secure_token_storage.dart';
 import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('ReceiptParserErrorMapper', () {
+    const mapper = ReceiptParserErrorMapper();
+    final cases = <int, ({ReceiptParserFailureKind kind, String message})>{
+      429: (
+        kind: ReceiptParserFailureKind.rateLimited,
+        message: 'Çok fazla fiş analizi isteği',
+      ),
+      413: (
+        kind: ReceiptParserFailureKind.payloadTooLarge,
+        message: 'işlenemeyecek kadar büyük',
+      ),
+      422: (
+        kind: ReceiptParserFailureKind.validation,
+        message: 'Fiş bilgileri doğrulanamadı',
+      ),
+    };
+
+    for (final entry in cases.entries) {
+      test('HTTP ${entry.key} için güvenli Türkçe hata üretir', () {
+        final request = RequestOptions(path: '/api/v1/parse-receipt');
+        final failure = mapper.map(
+          DioException(
+            requestOptions: request,
+            response: Response<void>(
+              requestOptions: request,
+              statusCode: entry.key,
+              data: null,
+            ),
+            type: DioExceptionType.badResponse,
+          ),
+        );
+
+        expect(failure.kind, entry.value.kind);
+        expect(failure.message, contains(entry.value.message));
+        expect(failure.message, isNot(contains('Dio')));
+        expect(failure.message, isNot(contains('HTTP')));
+      });
+    }
+
+    test('yalnızca 429 hatası aynı istekle tekrar denenebilir', () {
+      expect(_mappedHttpFailure(mapper, 429).canRetry, isTrue);
+      expect(_mappedHttpFailure(mapper, 413).canRetry, isFalse);
+      expect(_mappedHttpFailure(mapper, 422).canRetry, isFalse);
+    });
+  });
+
   test('posts OCR text and maps the backend response to a draft', () async {
     final client = _clientWithResponse((options) {
       expect(options.method, 'POST');
       expect(options.path, '/api/v1/parse-receipt');
+      expect(
+        options.headers['X-Installation-ID'],
+        'installation-test-1234567890',
+      );
       expect(options.data, {'ocr_text': 'MIGROS TOPLAM 25,50 TL'});
       return _jsonResponse({
         'normalized_ocr_text': 'MIGROS\nTOPLAM 25,50 TL',
@@ -37,6 +88,48 @@ void main() {
     expect(result.isParseSuccessful, isTrue);
   });
 
+  test('sends the current JWT with an authenticated receipt request', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.com'));
+    dio.httpClientAdapter = _FakeAdapter((options) {
+      expect(options.path, '/api/v1/parse-receipt');
+      expect(options.headers['Authorization'], 'Bearer current-access-token');
+      expect(
+        options.headers['X-Installation-ID'],
+        'installation-test-1234567890',
+      );
+      return _jsonResponse({
+        'normalized_ocr_text': 'MIGROS\nTOPLAM 25,50 TL',
+        'merchant': 'MIGROS',
+        'total_amount_minor': 2550,
+        'date': null,
+        'category': 'Market',
+        'confidence_score': 0.92,
+        'is_parse_successful': true,
+      });
+    });
+    final apiClient = ApiClient(
+      baseUrl: 'https://example.com',
+      tokenStorage: _MemoryTokenStorage(),
+      dio: dio,
+    );
+    addTearDown(apiClient.close);
+    await apiClient.setSession(
+      const AuthTokenBundle(
+        accessToken: 'current-access-token',
+        refreshToken: 'current-refresh-token',
+        user: {},
+      ),
+    );
+    final client = ReceiptParserClient(
+      apiClient: apiClient,
+      installationIdProvider: const _FakeInstallationIdProvider(
+        'installation-test-1234567890',
+      ),
+    );
+
+    await client.parse('MIGROS TOPLAM 25,50 TL');
+  });
+
   test('rejects an empty OCR text without making a request', () async {
     final client = _clientWithResponse((_) => fail('request must not happen'));
 
@@ -52,7 +145,48 @@ void main() {
     );
   });
 
+  test(
+    'maps HTTP 429 and Retry-After to a delayed retry quota failure',
+    () async {
+      final client = _clientWithResponse(
+        (_) => ResponseBody.fromString(
+          'rate limited',
+          429,
+          headers: {
+            'retry-after': ['42'],
+          },
+        ),
+      );
+
+      expect(
+        () => client.parse('MIGROS\nTOPLAM 25,50 TL'),
+        throwsA(
+          isA<ReceiptParserException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                ReceiptParserFailureKind.rateLimited,
+              )
+              .having(
+                (error) => error.retryAfter,
+                'retryAfter',
+                const Duration(seconds: 42),
+              )
+              .having((error) => error.canRetry, 'canRetry', isTrue)
+              .having(
+                (error) => error.message,
+                'message',
+                contains('42 saniye'),
+              ),
+        ),
+      );
+    },
+  );
+
   for (final entry in <int, ReceiptParserFailureKind>{
+    413: ReceiptParserFailureKind.payloadTooLarge,
+    422: ReceiptParserFailureKind.validation,
+    429: ReceiptParserFailureKind.rateLimited,
     501: ReceiptParserFailureKind.geminiUnavailable,
     502: ReceiptParserFailureKind.serviceUnavailable,
     503: ReceiptParserFailureKind.serviceConfiguration,
@@ -342,6 +476,20 @@ void main() {
   });
 }
 
+ReceiptParserException _mappedHttpFailure(
+  ReceiptParserErrorMapper mapper,
+  int statusCode,
+) {
+  final request = RequestOptions(path: '/api/v1/parse-receipt');
+  return mapper.map(
+    DioException(
+      requestOptions: request,
+      response: Response<void>(requestOptions: request, statusCode: statusCode),
+      type: DioExceptionType.badResponse,
+    ),
+  );
+}
+
 ReceiptParserClient _clientWithResponse(
   ResponseBody Function(RequestOptions) handler,
 ) {
@@ -352,6 +500,9 @@ ReceiptParserClient _clientWithResponse(
       baseUrl: 'https://example.com',
       tokenStorage: _MemoryTokenStorage(),
       dio: dio,
+    ),
+    installationIdProvider: const _FakeInstallationIdProvider(
+      'installation-test-1234567890',
     ),
   );
 }
@@ -392,4 +543,13 @@ class _MemoryTokenStorage implements TokenStorage {
 
   @override
   Future<void> writeRefreshToken(String token) async => this.token = token;
+}
+
+class _FakeInstallationIdProvider implements InstallationIdProvider {
+  const _FakeInstallationIdProvider(this.installationId);
+
+  final String installationId;
+
+  @override
+  Future<String> getInstallationId() async => installationId;
 }
