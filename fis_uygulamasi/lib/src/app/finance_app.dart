@@ -23,6 +23,7 @@ class FinanceApp extends ConsumerStatefulWidget {
     this.transactionStreamFactory,
     this.saveTransaction,
     this.scanReceipt,
+    this.parseReceipt,
     this.transactionImportService,
   });
 
@@ -32,6 +33,7 @@ class FinanceApp extends ConsumerStatefulWidget {
   final Stream<List<TransactionEntity>> Function()? transactionStreamFactory;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
+  final ReceiptParseHandler? parseReceipt;
   final TransactionJsonImportService? transactionImportService;
 
   @override
@@ -131,6 +133,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
             transactions: snapshot.requireData,
             saveTransaction: widget.saveTransaction,
             scanReceipt: widget.scanReceipt,
+            parseReceipt: widget.parseReceipt,
           );
         },
       ),

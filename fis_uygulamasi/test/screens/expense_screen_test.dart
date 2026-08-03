@@ -114,6 +114,28 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('gallery validation error shows a friendly message', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExpenseScreen(
+          pickGalleryReceipt: (_) async =>
+              throw const ReceiptImageValidationException(
+                ReceiptImageValidationFailure.tooLarge,
+                'Seçilen görsel 10 MB sınırını aşıyor. Lütfen daha küçük bir görsel seçin.',
+              ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('gallery_upload_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('10 MB sınırını aşıyor'), findsOneWidget);
+    expect(find.byKey(const Key('expense_screen')), findsOneWidget);
+  });
+
   testWidgets('scanner cancellation preserves the expense empty state', (
     tester,
   ) async {

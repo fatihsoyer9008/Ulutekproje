@@ -150,6 +150,31 @@ void main() {
   });
 
   group('TransactionDraft JSON contract', () {
+    test('maps optional receipt item fields without unsafe casts', () {
+      final draft = TransactionDraft.fromJson({
+        'items': [
+          {
+            'name': 'Elma',
+            'price_minor': '1250',
+            'total_amount_minor': 2500,
+            'quantity': '2',
+            'unit_price_in_minor': 1250,
+            'tax_rate': '0.20',
+            'tax_amount_in_minor': '417',
+          },
+          'malformed item',
+        ],
+      });
+
+      expect(draft.receiptItems, hasLength(1));
+      final item = draft.receiptItems.single;
+      expect(item.quantity, 2);
+      expect(item.unitPriceInMinor, 1250);
+      expect(item.taxRate, .20);
+      expect(item.taxAmountInMinor, 417);
+      expect(draft.toJson()['items'], isA<List>());
+    });
+
     test('prefers current minor-unit API fields', () {
       for (final key in [
         'total_amount_minor',

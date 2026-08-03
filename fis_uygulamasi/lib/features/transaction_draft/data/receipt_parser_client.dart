@@ -50,10 +50,12 @@ enum ReceiptParserFailureKind {
   noInternet,
   dns,
   timeout,
-  rateLimited,
   geminiUnavailable,
   serviceConfiguration,
   serviceUnavailable,
+  rateLimited,
+  payloadTooLarge,
+  validation,
   invalidResponse,
   cancelled,
   unknown,
@@ -73,7 +75,11 @@ class ReceiptParserException implements Exception {
   bool get isCancelled => kind == ReceiptParserFailureKind.cancelled;
 
   bool get canRetry =>
-      kind != ReceiptParserFailureKind.emptyOcr && !isCancelled;
+      kind != ReceiptParserFailureKind.emptyOcr &&
+      kind != ReceiptParserFailureKind.payloadTooLarge &&
+      kind != ReceiptParserFailureKind.validation &&
+      !isCancelled;
+
   @override
   String toString() => message;
 }
@@ -87,9 +93,13 @@ class ReceiptParserClient {
          installationIdProvider ?? PersistentInstallationIdProvider(),
        );
 
-  ReceiptParserClient._(this._apiClient, this._installationIdProvider);
+  ReceiptParserClient._(
+    this._apiClient,
+    this._installationIdProvider,
+  );
 
   static const _endpoint = '/api/v1/parse-receipt';
+  static const _errorMapper = ReceiptParserErrorMapper();
 
   final ApiClient _apiClient;
   final InstallationIdProvider _installationIdProvider;
@@ -127,7 +137,7 @@ class ReceiptParserClient {
       rethrow;
     } on DioException catch (error) {
       debugPrint('Receipt API connection error ($_endpoint): $error');
-      final failure = _mapDioError(error);
+      final failure = _errorMapper.map(error);
       if (_canUseLocalFallback(error)) {
         final fallback = _tryLocalFallback(ocrText);
         if (fallback != null) return fallback;
@@ -146,83 +156,6 @@ class ReceiptParserClient {
       error.type == DioExceptionType.connectionTimeout ||
       error.type == DioExceptionType.sendTimeout ||
       error.type == DioExceptionType.receiveTimeout;
-
-  ReceiptParserException _mapDioError(DioException error) {
-    if (error.type == DioExceptionType.cancel) {
-      return const ReceiptParserException(
-        'Fiş analizi iptal edildi.',
-        kind: ReceiptParserFailureKind.cancelled,
-      );
-    }
-
-    if (error.type == DioExceptionType.connectionTimeout ||
-        error.type == DioExceptionType.sendTimeout ||
-        error.type == DioExceptionType.receiveTimeout) {
-      return const ReceiptParserException(
-        'Fiş analizi beklenenden uzun sürdü. Bağlantınızı kontrol edip tekrar deneyin.',
-        kind: ReceiptParserFailureKind.timeout,
-      );
-    }
-
-    final statusCode = error.response?.statusCode;
-    if (statusCode == 429) {
-      final retryAfterValue = error.response?.headers
-          .value('retry-after')
-          ?.trim();
-      final retryAfterSeconds = int.tryParse(retryAfterValue ?? '');
-      final retryAfter = retryAfterSeconds != null && retryAfterSeconds > 0
-          ? Duration(seconds: retryAfterSeconds)
-          : null;
-
-      final message = retryAfterSeconds != null && retryAfterSeconds > 0
-          ? 'Fiş analiz kotanız doldu. $retryAfterSeconds saniye sonra tekrar deneyebilirsiniz.'
-          : 'Fiş analiz kotanız doldu. Lütfen daha sonra tekrar deneyin.';
-
-      return ReceiptParserException(
-        message,
-        kind: ReceiptParserFailureKind.rateLimited,
-        retryAfter: retryAfter,
-      );
-    }
-    if (statusCode == 501) {
-      return const ReceiptParserException(
-        'Fiş analiz servisi şu anda yanıt veremiyor. Lütfen biraz sonra tekrar deneyin.',
-        kind: ReceiptParserFailureKind.geminiUnavailable,
-      );
-    }
-    if (statusCode == 503) {
-      return const ReceiptParserException(
-        'Fiş servisi yapılandırması şu anda hazır değil. Lütfen daha sonra tekrar deneyin.',
-        kind: ReceiptParserFailureKind.serviceConfiguration,
-      );
-    }
-    if (statusCode == 502) {
-      return const ReceiptParserException(
-        'Fiş servisine şu anda ulaşılamıyor. Lütfen tekrar deneyin.',
-        kind: ReceiptParserFailureKind.serviceUnavailable,
-      );
-    }
-    if (statusCode != null) {
-      return const ReceiptParserException(
-        'Fiş bilgileri işlenirken bir sorun oluştu. Lütfen tekrar deneyin.',
-        kind: ReceiptParserFailureKind.serviceUnavailable,
-      );
-    }
-
-    final details = '${error.error} ${error.message}'.toLowerCase();
-    if (details.contains('failed host lookup') ||
-        details.contains('host lookup') ||
-        details.contains('name or service not known')) {
-      return const ReceiptParserException(
-        'Fiş servisine ulaşılamadı. Sunucu adresini kontrol edin.',
-        kind: ReceiptParserFailureKind.dns,
-      );
-    }
-    return const ReceiptParserException(
-      'İnternet bağlantısı bulunamadı. Bağlantınızı kontrol edip tekrar deneyin.',
-      kind: ReceiptParserFailureKind.noInternet,
-    );
-  }
 
   ReceiptParseResult? _tryLocalFallback(String ocrText) {
     final lines = ocrText
@@ -303,5 +236,99 @@ class ReceiptParserClient {
     }
     return (int.parse(major) * 100) +
         int.parse(fraction.length == 1 ? '${fraction}0' : fraction);
+  }
+}
+
+/// Dio hatalarını uygulamanın kullanıcı güvenli fiş hata sözleşmesine çevirir.
+class ReceiptParserErrorMapper {
+  const ReceiptParserErrorMapper();
+
+  ReceiptParserException map(DioException error) {
+    if (error.type == DioExceptionType.cancel) {
+      return const ReceiptParserException(
+        'Fiş analizi iptal edildi.',
+        kind: ReceiptParserFailureKind.cancelled,
+      );
+    }
+
+    if (error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout) {
+      return const ReceiptParserException(
+        'Fiş analizi beklenenden uzun sürdü. Bağlantınızı kontrol edip tekrar deneyin.',
+        kind: ReceiptParserFailureKind.timeout,
+      );
+    }
+
+    final statusCode = error.response?.statusCode;
+    if (statusCode == 429) {
+      final retryAfterValue = error.response?.headers
+          .value('retry-after')
+          ?.trim();
+      final retryAfterSeconds = int.tryParse(retryAfterValue ?? '');
+      final retryAfter = retryAfterSeconds != null && retryAfterSeconds > 0
+          ? Duration(seconds: retryAfterSeconds)
+          : null;
+
+      final message = retryAfterSeconds != null && retryAfterSeconds > 0
+          ? 'Fiş analiz kotanız doldu. $retryAfterSeconds saniye sonra tekrar deneyebilirsiniz.'
+          : 'Çok fazla fiş analizi isteği gönderdiniz. Lütfen biraz bekleyip tekrar deneyin.';
+
+      return ReceiptParserException(
+        message,
+        kind: ReceiptParserFailureKind.rateLimited,
+        retryAfter: retryAfter,
+      );
+    }
+    if (statusCode == 413) {
+      return const ReceiptParserException(
+        'Fiş verisi işlenemeyecek kadar büyük. Lütfen fişi yeniden çekin veya bilgileri elle girin.',
+        kind: ReceiptParserFailureKind.payloadTooLarge,
+      );
+    }
+    if (statusCode == 422) {
+      return const ReceiptParserException(
+        'Fiş bilgileri doğrulanamadı. Lütfen fişi yeniden çekin veya bilgileri elle girin.',
+        kind: ReceiptParserFailureKind.validation,
+      );
+    }
+    if (statusCode == 501) {
+      return const ReceiptParserException(
+        'Fiş analiz servisi şu anda yanıt veremiyor. Lütfen biraz sonra tekrar deneyin.',
+        kind: ReceiptParserFailureKind.geminiUnavailable,
+      );
+    }
+    if (statusCode == 503) {
+      return const ReceiptParserException(
+        'Fiş servisi yapılandırması şu anda hazır değil. Lütfen daha sonra tekrar deneyin.',
+        kind: ReceiptParserFailureKind.serviceConfiguration,
+      );
+    }
+    if (statusCode == 502) {
+      return const ReceiptParserException(
+        'Fiş servisine şu anda ulaşılamıyor. Lütfen tekrar deneyin.',
+        kind: ReceiptParserFailureKind.serviceUnavailable,
+      );
+    }
+    if (statusCode != null) {
+      return const ReceiptParserException(
+        'Fiş bilgileri işlenirken bir sorun oluştu. Lütfen tekrar deneyin.',
+        kind: ReceiptParserFailureKind.serviceUnavailable,
+      );
+    }
+
+    final details = '${error.error} ${error.message}'.toLowerCase();
+    if (details.contains('failed host lookup') ||
+        details.contains('host lookup') ||
+        details.contains('name or service not known')) {
+      return const ReceiptParserException(
+        'Fiş servisine ulaşılamadı. Sunucu adresini kontrol edin.',
+        kind: ReceiptParserFailureKind.dns,
+      );
+    }
+    return const ReceiptParserException(
+      'İnternet bağlantısı bulunamadı. Bağlantınızı kontrol edip tekrar deneyin.',
+      kind: ReceiptParserFailureKind.noInternet,
+    );
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 import 'receipt_image_preprocessor.dart';
+import 'receipt_image_validator.dart';
 import 'receipt_ocr_layout.dart';
 import 'receipt_text_normalizer.dart';
 
@@ -18,6 +19,10 @@ abstract interface class ReceiptOcrEngine {
 }
 
 abstract interface class ReceiptImageWorkspace {
+  Future<void> cleanupStaleTemporaryImages();
+
+  Future<int> sourceLength(String imagePath);
+
   Future<Uint8List> readSource(String imagePath);
 
   Future<String> writeTemporaryImage(Uint8List bytes);
@@ -27,6 +32,8 @@ abstract interface class ReceiptImageWorkspace {
 
 typedef ReceiptImageEnhancer = Future<Uint8List> Function(Uint8List bytes);
 typedef ReceiptOcrEngineFactory = ReceiptOcrEngine Function();
+typedef ReceiptTemporaryDirectoryDeleter =
+    Future<void> Function(Directory directory);
 
 class ReceiptOcrCandidate {
   const ReceiptOcrCandidate({required this.text, required this.score});
@@ -55,15 +62,21 @@ class OnDeviceReceiptImageRecognizer implements ReceiptImageRecognizer {
 
   @override
   Future<String> recognize(String imagePath) async {
-    final ocrEngine = createOcrEngine();
+    ReceiptOcrEngine? ocrEngine;
     String? temporaryImagePath;
     try {
+      await workspace.cleanupStaleTemporaryImages();
+      final sourceLength = await workspace.sourceLength(imagePath);
+      validateReceiptImageSelection(
+        imagePath: imagePath,
+        byteLength: sourceLength,
+      );
       final sourceBytes = await workspace.readSource(imagePath);
-      if (sourceBytes.isEmpty) {
-        throw const FormatException('Görsel dosyası boş.');
-      }
+      await validateReceiptImageBytes(imagePath: imagePath, bytes: sourceBytes);
 
-      final originalCandidate = await ocrEngine.recognize(imagePath);
+      final engine = createOcrEngine();
+      ocrEngine = engine;
+      final originalCandidate = await engine.recognize(imagePath);
       var selectedCandidate = originalCandidate;
 
       try {
@@ -72,7 +85,7 @@ class OnDeviceReceiptImageRecognizer implements ReceiptImageRecognizer {
           throw const FormatException('İyileştirilmiş görsel boş.');
         }
         temporaryImagePath = await workspace.writeTemporaryImage(enhancedBytes);
-        final enhancedCandidate = await ocrEngine.recognize(temporaryImagePath);
+        final enhancedCandidate = await engine.recognize(temporaryImagePath);
         if (enhancedCandidate.score + 0.02 >= originalCandidate.score) {
           selectedCandidate = enhancedCandidate;
         }
@@ -90,12 +103,13 @@ class OnDeviceReceiptImageRecognizer implements ReceiptImageRecognizer {
       if (temporaryImagePath != null) {
         try {
           await workspace.deleteTemporaryImage(temporaryImagePath);
-        } catch (_) {
-          // Cleanup must never hide a successful OCR result or its real error.
+        } on Exception catch (error, stackTrace) {
+          debugPrint('[ReceiptScanner] Geçici görsel temizlenemedi: $error');
+          debugPrintStack(stackTrace: stackTrace);
         }
       }
       try {
-        await ocrEngine.close();
+        await ocrEngine?.close();
       } catch (_) {
         // Releasing ML Kit resources must not replace the recognition result.
       }
@@ -104,13 +118,60 @@ class OnDeviceReceiptImageRecognizer implements ReceiptImageRecognizer {
 }
 
 class FileSystemReceiptImageWorkspace implements ReceiptImageWorkspace {
+  FileSystemReceiptImageWorkspace({
+    ReceiptTemporaryDirectoryDeleter? deleteDirectory,
+  }) : _deleteDirectory = deleteDirectory ?? _deleteDirectoryRecursively;
+
+  static const _temporaryDirectoryPrefix = 'receipt_ocr_';
+  static const _orphanedDirectoryPrefix = 'receipt_ocr_orphaned_';
+  static const _staleDirectoryAge = Duration(days: 1);
+
+  final ReceiptTemporaryDirectoryDeleter _deleteDirectory;
+
+  @override
+  Future<void> cleanupStaleTemporaryImages() async {
+    final now = DateTime.now();
+    try {
+      await for (final entity in Directory.systemTemp.list(
+        followLinks: false,
+      )) {
+        if (entity is! Directory) continue;
+        final name = _fileName(entity.path);
+        final isOrphaned = name.startsWith(_orphanedDirectoryPrefix);
+        final isOldTemporaryDirectory =
+            !isOrphaned &&
+            name.startsWith(_temporaryDirectoryPrefix) &&
+            now.difference((await entity.stat()).modified) >=
+                _staleDirectoryAge;
+        if (!isOrphaned && !isOldTemporaryDirectory) continue;
+
+        try {
+          await entity.delete(recursive: true);
+        } on FileSystemException catch (error, stackTrace) {
+          debugPrint(
+            '[ReceiptScanner] Eski geçici görsel temizlenemedi: $error',
+          );
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }
+    } on FileSystemException catch (error, stackTrace) {
+      debugPrint('[ReceiptScanner] Geçici klasörler taranamadı: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  @override
+  Future<int> sourceLength(String imagePath) => File(imagePath).length();
+
   @override
   Future<Uint8List> readSource(String imagePath) =>
       File(imagePath).readAsBytes();
 
   @override
   Future<String> writeTemporaryImage(Uint8List bytes) async {
-    final directory = await Directory.systemTemp.createTemp('receipt_ocr_');
+    final directory = await Directory.systemTemp.createTemp(
+      _temporaryDirectoryPrefix,
+    );
     final file = File(
       '${directory.path}${Platform.pathSeparator}enhanced_receipt.jpg',
     );
@@ -129,11 +190,52 @@ class FileSystemReceiptImageWorkspace implements ReceiptImageWorkspace {
 
   @override
   Future<void> deleteTemporaryImage(String imagePath) async {
-    final file = File(imagePath);
-    if (await file.exists()) await file.delete();
-    final directory = file.parent;
-    if (await directory.exists()) await directory.delete();
+    final directory = File(imagePath).parent;
+    if (!await directory.exists()) return;
+    if (!_fileName(directory.path).startsWith(_temporaryDirectoryPrefix)) {
+      final file = File(imagePath);
+      if (await file.exists()) await file.delete();
+      return;
+    }
+
+    FileSystemException? lastError;
+    StackTrace? lastStackTrace;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        await _deleteDirectory(directory);
+        return;
+      } on FileSystemException catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+      }
+    }
+
+    await _markForLaterCleanup(directory);
+    Error.throwWithStackTrace(lastError!, lastStackTrace!);
   }
+
+  Future<void> _markForLaterCleanup(Directory directory) async {
+    final name = _fileName(directory.path);
+    final suffix = name.substring(_temporaryDirectoryPrefix.length);
+    final orphanedDirectory = Directory(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}'
+      '$_orphanedDirectoryPrefix$suffix',
+    );
+    try {
+      await directory.rename(orphanedDirectory.path);
+    } on FileSystemException catch (error, stackTrace) {
+      debugPrint(
+        '[ReceiptScanner] Geçici görsel sonraki temizliğe işaretlenemedi: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  static Future<void> _deleteDirectoryRecursively(Directory directory) =>
+      directory.delete(recursive: true);
+
+  static String _fileName(String path) =>
+      path.split(Platform.pathSeparator).where((part) => part.isNotEmpty).last;
 }
 
 class MlKitReceiptOcrEngine implements ReceiptOcrEngine {
