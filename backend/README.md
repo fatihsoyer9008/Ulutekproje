@@ -9,7 +9,7 @@ py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --no-proxy-headers
 ```
 
 Sunucu çalıştığında `http://127.0.0.1:8000/health` adresi `status: ok` döndürür.
@@ -101,7 +101,7 @@ cd backend
 Copy-Item .env.example .env
 .\.venv\Scripts\Activate.ps1
 alembic upgrade head
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-proxy-headers
 ```
 
 Makinede `5432` veya `6379` zaten kullanılıyorsa Compose servislerini farklı

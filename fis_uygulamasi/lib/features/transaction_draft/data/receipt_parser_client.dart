@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/network/api_client.dart';
+import '../../../core/storage/installation_id_provider.dart';
 import '../model/transaction_draft.dart';
 
 class ReceiptParseResult {
@@ -64,10 +65,12 @@ class ReceiptParserException implements Exception {
   const ReceiptParserException(
     this.message, {
     this.kind = ReceiptParserFailureKind.unknown,
+    this.retryAfter,
   });
 
   final String message;
   final ReceiptParserFailureKind kind;
+  final Duration? retryAfter;
 
   bool get isCancelled => kind == ReceiptParserFailureKind.cancelled;
 
@@ -82,13 +85,24 @@ class ReceiptParserException implements Exception {
 }
 
 class ReceiptParserClient {
-  // The public constructor name is kept for dependency injection readability.
-  // ignore: prefer_initializing_formals
-  ReceiptParserClient({required ApiClient apiClient}) : _apiClient = apiClient;
+  ReceiptParserClient({
+    required ApiClient apiClient,
+    InstallationIdProvider? installationIdProvider,
+  }) : this._(
+         apiClient,
+         installationIdProvider ?? PersistentInstallationIdProvider(),
+       );
+
+  ReceiptParserClient._(
+    this._apiClient,
+    this._installationIdProvider,
+  );
 
   static const _endpoint = '/api/v1/parse-receipt';
-  final ApiClient _apiClient;
   static const _errorMapper = ReceiptParserErrorMapper();
+
+  final ApiClient _apiClient;
+  final InstallationIdProvider _installationIdProvider;
 
   Future<ReceiptParseResult> parse(
     String ocrText, {
@@ -102,10 +116,13 @@ class ReceiptParserClient {
     }
 
     try {
+      final installationId = await _installationIdProvider.getInstallationId();
+
       debugPrint('Receipt API POST: $_endpoint');
       final response = await _apiClient.dio.post<Map<String, dynamic>>(
         _endpoint,
         data: {'ocr_text': ocrText},
+        options: Options(headers: {'X-Installation-ID': installationId}),
         cancelToken: cancelToken,
       );
       final body = response.data;
@@ -245,9 +262,22 @@ class ReceiptParserErrorMapper {
 
     final statusCode = error.response?.statusCode;
     if (statusCode == 429) {
-      return const ReceiptParserException(
-        'Çok fazla fiş analizi isteği gönderdiniz. Lütfen biraz bekleyip tekrar deneyin.',
+      final retryAfterValue = error.response?.headers
+          .value('retry-after')
+          ?.trim();
+      final retryAfterSeconds = int.tryParse(retryAfterValue ?? '');
+      final retryAfter = retryAfterSeconds != null && retryAfterSeconds > 0
+          ? Duration(seconds: retryAfterSeconds)
+          : null;
+
+      final message = retryAfterSeconds != null && retryAfterSeconds > 0
+          ? 'Fiş analiz kotanız doldu. $retryAfterSeconds saniye sonra tekrar deneyebilirsiniz.'
+          : 'Çok fazla fiş analizi isteği gönderdiniz. Lütfen biraz bekleyip tekrar deneyin.';
+
+      return ReceiptParserException(
+        message,
         kind: ReceiptParserFailureKind.rateLimited,
+        retryAfter: retryAfter,
       );
     }
     if (statusCode == 413) {

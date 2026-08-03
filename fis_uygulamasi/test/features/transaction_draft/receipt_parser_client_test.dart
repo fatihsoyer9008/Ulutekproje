@@ -7,6 +7,7 @@ import 'package:app_main/core/storage/secure_token_storage.dart';
 import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:app_main/core/storage/installation_id_provider.dart';
 
 void main() {
   group('ReceiptParserErrorMapper', () {
@@ -59,6 +60,10 @@ void main() {
     final client = _clientWithResponse((options) {
       expect(options.method, 'POST');
       expect(options.path, '/api/v1/parse-receipt');
+      expect(
+        options.headers['X-Installation-ID'],
+        'installation-test-1234567890',
+      );
       expect(options.data, {'ocr_text': 'MIGROS TOPLAM 25,50 TL'});
       return _jsonResponse({
         'normalized_ocr_text': 'MIGROS\nTOPLAM 25,50 TL',
@@ -97,6 +102,44 @@ void main() {
       ),
     );
   });
+
+  test(
+    'maps HTTP 429 and Retry-After to a delayed retry quota failure',
+    () async {
+      final client = _clientWithResponse(
+        (_) => ResponseBody.fromString(
+          'rate limited',
+          429,
+          headers: {
+            'retry-after': ['42'],
+          },
+        ),
+      );
+
+      expect(
+        () => client.parse('MIGROS\nTOPLAM 25,50 TL'),
+        throwsA(
+          isA<ReceiptParserException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                ReceiptParserFailureKind.rateLimited,
+              )
+              .having(
+                (error) => error.retryAfter,
+                'retryAfter',
+                const Duration(seconds: 42),
+              )
+              .having((error) => error.canRetry, 'canRetry', isTrue)
+              .having(
+                (error) => error.message,
+                'message',
+                contains('42 saniye'),
+              ),
+        ),
+      );
+    },
+  );
 
   for (final entry in <int, ReceiptParserFailureKind>{
     413: ReceiptParserFailureKind.payloadTooLarge,
@@ -416,6 +459,9 @@ ReceiptParserClient _clientWithResponse(
       tokenStorage: _MemoryTokenStorage(),
       dio: dio,
     ),
+    installationIdProvider: const _FakeInstallationIdProvider(
+      'installation-test-1234567890',
+    ),
   );
 }
 
@@ -455,4 +501,13 @@ class _MemoryTokenStorage implements TokenStorage {
 
   @override
   Future<void> writeRefreshToken(String token) async => this.token = token;
+}
+
+class _FakeInstallationIdProvider implements InstallationIdProvider {
+  const _FakeInstallationIdProvider(this.installationId);
+
+  final String installationId;
+
+  @override
+  Future<String> getInstallationId() async => installationId;
 }

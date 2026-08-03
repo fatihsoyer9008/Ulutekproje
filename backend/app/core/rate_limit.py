@@ -45,12 +45,12 @@ class RateLimiter:
                 key,
                 rule.window_seconds,
             )
+
         except RedisError as exc:
-            # Authentication write paths must not silently lose brute-force
-            # protection in production.
+            # Protected endpoints must fail closed when Redis is unavailable.
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Authentication protection is temporarily unavailable.",
+                detail="Request protection is temporarily unavailable.",
             ) from exc
 
         if int(current) > rule.limit:
