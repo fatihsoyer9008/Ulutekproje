@@ -2,7 +2,16 @@ import html
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -107,6 +116,20 @@ async def _email_limits(
     )
 
 
+async def _send_verification_safely(
+    email_sender: EmailSender,
+    *,
+    email: str,
+    token: str,
+) -> None:
+    try:
+        await email_sender.send_verification(email=email, token=token)
+    except Exception:
+        # Do not expose SMTP failures through the registration response and do
+        # not include the recipient or token in logs.
+        logger.exception("Verification email background delivery failed")
+
+
 @router.post(
     "/register",
     response_model=MessageResponse,
@@ -115,6 +138,7 @@ async def _email_limits(
 async def register(
     payload: RegisterRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db_session),
     email_sender: EmailSender = Depends(get_email_sender),
     limiter: RateLimiter = Depends(get_rate_limiter),
@@ -127,7 +151,7 @@ async def register(
         email_rule=REGISTER_EMAIL,
     )
     try:
-        await AuthService(db, email_sender).register(
+        pending_email = await AuthService(db, email_sender).register(
             email=str(payload.email),
             password=payload.password,
             display_name=payload.display_name,
@@ -138,6 +162,13 @@ async def register(
         # service avoids sending another verification email or changing the
         # existing account.
         pass
+    else:
+        background_tasks.add_task(
+            _send_verification_safely,
+            email_sender,
+            email=pending_email.email,
+            token=pending_email.token,
+        )
     return MessageResponse(message=GENERIC_REGISTER_MESSAGE)
 
 

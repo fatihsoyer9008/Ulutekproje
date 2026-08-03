@@ -1,4 +1,5 @@
 import uuid
+from dataclasses import dataclass
 from datetime import timedelta
 
 from sqlalchemy.exc import IntegrityError
@@ -52,6 +53,12 @@ class AccountDeletionFailed(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class PendingVerificationEmail:
+    email: str
+    token: str
+
+
 class AuthService:
     def __init__(self, db: AsyncSession, email_sender: EmailSender) -> None:
         self.db = db
@@ -67,7 +74,7 @@ class AuthService:
         email: str,
         password: str,
         display_name: str | None,
-    ) -> None:
+    ) -> PendingVerificationEmail:
         normalized_email = normalize_email(email)
         existing = await self.users.get_by_email(normalized_email)
         if existing is not None:
@@ -98,7 +105,10 @@ class AuthService:
                 "Email address is already registered"
             ) from None
 
-        await self.email_sender.send_verification(
+        # SMTP delivery must not be part of the public registration response
+        # path. The router dispatches this value after the response so SMTP
+        # latency and failures cannot reveal whether the account existed.
+        return PendingVerificationEmail(
             email=user.email,
             token=plaintext,
         )

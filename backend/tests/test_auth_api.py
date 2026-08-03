@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 
 import httpx
@@ -25,6 +26,18 @@ class CapturingEmailSender:
 
     async def send_password_reset(self, *, email: str, token: str) -> None:
         self.reset_tokens.append((email, token))
+
+
+class FailingVerificationEmailSender(CapturingEmailSender):
+    async def send_verification(self, *, email: str, token: str) -> None:
+        del email, token
+        raise RuntimeError("simulated SMTP failure")
+
+
+class DelayedVerificationEmailSender(CapturingEmailSender):
+    async def send_verification(self, *, email: str, token: str) -> None:
+        await asyncio.sleep(0.01)
+        await super().send_verification(email=email, token=token)
 
 
 @pytest_asyncio.fixture
@@ -309,6 +322,59 @@ async def test_registration_responses_do_not_enumerate_accounts(auth_context) ->
         "message": "If the address is eligible, a verification email will be sent."
     }
     assert len(sender.verification_tokens) == sent_before_duplicate + 1
+
+
+@pytest.mark.asyncio
+async def test_registration_response_is_stable_when_email_delivery_fails(
+    auth_context,
+) -> None:
+    client, _, _ = auth_context
+    sender = FailingVerificationEmailSender()
+
+    async def override_sender() -> FailingVerificationEmailSender:
+        return sender
+
+    app.dependency_overrides[get_email_sender] = override_sender
+
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "smtp-failure@example.com",
+            "password": "A-strong-test-password-123",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "message": "If the address is eligible, a verification email will be sent."
+    }
+
+
+@pytest.mark.asyncio
+async def test_registration_response_is_stable_with_delayed_email_sender(
+    auth_context,
+) -> None:
+    client, _, _ = auth_context
+    sender = DelayedVerificationEmailSender()
+
+    async def override_sender() -> DelayedVerificationEmailSender:
+        return sender
+
+    app.dependency_overrides[get_email_sender] = override_sender
+
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "slow-smtp@example.com",
+            "password": "A-strong-test-password-123",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "message": "If the address is eligible, a verification email will be sent."
+    }
+    assert len(sender.verification_tokens) == 1
 
 
 @pytest.mark.asyncio
