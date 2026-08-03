@@ -16,7 +16,13 @@ void main() {
       'database_providers_test_',
     );
     isar = await Isar.open(
-      [TransactionEntitySchema, OfflineTaskSchema, CategoryEntitySchema],
+      [
+        TransactionEntitySchema,
+        OfflineTaskSchema,
+        CategoryEntitySchema,
+        ReceiptEntitySchema,
+        ReceiptLineItemEntitySchema,
+      ],
       directory: tempDirectory.path,
       name: 'database_providers_test',
     );
@@ -48,5 +54,6 @@ void main() {
       container.read(categoryRepositoryProvider),
       isA<CategoryRepository>(),
     );
+    expect(container.read(receiptRepositoryProvider), isA<ReceiptRepository>());
   });
 }

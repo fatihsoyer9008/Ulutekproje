@@ -10,6 +10,7 @@ class TransactionDraft {
     required this.amountInMinor,
     this.transactionDate,
     this.rawOcrText,
+    this.lineItems = const [],
   });
 
   const TransactionDraft.empty()
@@ -17,7 +18,8 @@ class TransactionDraft {
       category = '',
       amountInMinor = null,
       transactionDate = null,
-      rawOcrText = null;
+      rawOcrText = null,
+      lineItems = const [];
 
   final String institutionName;
   final String category;
@@ -29,6 +31,8 @@ class TransactionDraft {
   /// Tarayıcının ürettiği, backend'e gönderilen ham OCR metni.
   final String? rawOcrText;
 
+  final List<ReceiptLineItemDraft> lineItems;
+
   factory TransactionDraft.fromJson(Map<String, dynamic> json) {
     return TransactionDraft(
       institutionName:
@@ -37,6 +41,7 @@ class TransactionDraft {
       amountInMinor: _parseAmountInMinor(json),
       transactionDate: _parseTransactionDate(json['date']),
       rawOcrText: _nullIfBlank(json['raw_ocr_text']),
+      lineItems: _parseLineItems(json['items']),
     );
   }
 
@@ -55,7 +60,23 @@ class TransactionDraft {
       json['raw_ocr_text'] = rawOcrText;
     }
 
+    if (lineItems.isNotEmpty) {
+      json['items'] = lineItems.map((item) => item.toJson()).toList();
+    }
+
     return json;
+  }
+
+  static List<ReceiptLineItemDraft> _parseLineItems(Object? value) {
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map(
+          (item) =>
+              ReceiptLineItemDraft.fromJson(Map<String, dynamic>.from(item)),
+        )
+        .where((item) => item.name.isNotEmpty)
+        .toList(growable: false);
   }
 
   static DateTime? _parseTransactionDate(Object? value) {
@@ -107,5 +128,85 @@ class TransactionDraft {
         ? 0
         : int.parse(fraction.length == 1 ? '${fraction}0' : fraction);
     return (lira * 100) + minor;
+  }
+}
+
+class ReceiptLineItemDraft {
+  const ReceiptLineItemDraft({
+    required this.name,
+    required this.totalAmountInMinor,
+    this.quantityInMillis = 1000,
+    this.unitPriceInMinor,
+    this.taxRateInBasisPoints,
+    this.category,
+  });
+
+  final String name;
+  final int totalAmountInMinor;
+  final int quantityInMillis;
+  final int? unitPriceInMinor;
+  final int? taxRateInBasisPoints;
+  final String? category;
+
+  factory ReceiptLineItemDraft.fromJson(Map<String, dynamic> json) {
+    final quantityInMillis = json['quantity_in_millis'] == null
+        ? _parseQuantityInMillis(json['quantity'])
+        : (_parseMinor(json['quantity_in_millis']) ?? 1000);
+    final unitPrice = _parseMinor(
+      json['unit_price_minor'] ?? json['unitPriceInMinor'],
+    );
+    final total = _parseMinor(
+      json['total_amount_minor'] ??
+          json['totalAmountInMinor'] ??
+          json['price_minor'],
+    );
+    return ReceiptLineItemDraft(
+      name: json['name']?.toString().trim() ?? '',
+      totalAmountInMinor:
+          total ?? _calculateTotal(unitPrice, quantityInMillis) ?? 0,
+      quantityInMillis: quantityInMillis,
+      unitPriceInMinor: unitPrice,
+      taxRateInBasisPoints: _parseTaxRate(json),
+      category: TransactionDraft._nullIfBlank(json['category']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'total_amount_minor': totalAmountInMinor,
+    'quantity_in_millis': quantityInMillis,
+    if (unitPriceInMinor != null) 'unit_price_minor': unitPriceInMinor,
+    if (taxRateInBasisPoints != null)
+      'tax_rate_basis_points': taxRateInBasisPoints,
+    if (category != null) 'category': category,
+  };
+
+  static int _parseQuantityInMillis(Object? value) {
+    if (value == null) return 1000;
+    if (value is int) return value > 0 ? value * 1000 : 1000;
+    final normalized = value.toString().trim().replaceAll(',', '.');
+    final parsed = double.tryParse(normalized);
+    return parsed == null || parsed <= 0 ? 1000 : (parsed * 1000).round();
+  }
+
+  static int? _parseMinor(Object? value) {
+    if (value == null) return null;
+    return value is int ? value : int.tryParse(value.toString().trim());
+  }
+
+  static int? _calculateTotal(int? unitPrice, int quantityInMillis) {
+    if (unitPrice == null) return null;
+    return (unitPrice * quantityInMillis / 1000).round();
+  }
+
+  static int? _parseTaxRate(Map<String, dynamic> json) {
+    final basisPoints = _parseMinor(
+      json['tax_rate_basis_points'] ?? json['taxRateInBasisPoints'],
+    );
+    if (basisPoints != null) return basisPoints;
+    final rate = json['tax_rate'] ?? json['taxRate'];
+    if (rate == null) return null;
+    final parsed = double.tryParse(rate.toString().replaceAll(',', '.'));
+    return parsed == null ? null : (parsed * 100).round();
   }
 }

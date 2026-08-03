@@ -205,6 +205,28 @@ void main() {
       expect(draft.transactionDate, isNull);
     });
 
+    test('ürün kalemlerinin opsiyonel miktar birim fiyat ve vergi alanlarını okur', () {
+      final draft = TransactionDraft.fromJson({
+        'items': [
+          {
+            'name': 'Zeytin',
+            'quantity': 1.5,
+            'unit_price_minor': 2000,
+            'tax_rate': 10,
+            'category': 'Gıda',
+          },
+        ],
+      });
+
+      final item = draft.lineItems.single;
+      expect(item.name, 'Zeytin');
+      expect(item.quantityInMillis, 1500);
+      expect(item.unitPriceInMinor, 2000);
+      expect(item.totalAmountInMinor, 3000);
+      expect(item.taxRateInBasisPoints, 1000);
+      expect(item.category, 'Gıda');
+    });
+
     test('maps the receipt date from JSON into the persisted entity', () {
       final draft = TransactionDraft.fromJson({
         'merchant': 'Market',

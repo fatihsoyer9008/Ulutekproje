@@ -188,6 +188,95 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Evcil Hayvan'), findsWidgets);
   });
+
+  testWidgets('ürünleri düzenler ve toplam uyuşmazlığı uyarısını günceller', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TransactionDraftPage(
+          initialDraft: TransactionDraft(
+            institutionName: 'Migros',
+            category: 'Market',
+            amountInMinor: 3000,
+            transactionDate: DateTime(2026, 8, 3),
+            lineItems: const [
+              ReceiptLineItemDraft(name: 'Süt', totalAmountInMinor: 1200),
+              ReceiptLineItemDraft(name: 'Ekmek', totalAmountInMinor: 1300),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('line_items_total_mismatch_warning')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(
+      find.byKey(const Key('line_items_total_mismatch_warning')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('edit_line_item_Ekmek')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('line_item_total_field')),
+      '18,00',
+    );
+    await tester.tap(find.byKey(const Key('save_line_item_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('line_items_total_mismatch_warning')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('ürün kalemi ekler ve siler', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TransactionDraftPage(
+          initialDraft: TransactionDraft(
+            institutionName: 'Migros',
+            category: 'Market',
+            amountInMinor: 1000,
+            transactionDate: DateTime(2026, 8, 3),
+          ),
+        ),
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('add_line_item_button')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    await tester.tap(find.byKey(const Key('add_line_item_button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('line_item_name_field')),
+      'Yoğurt',
+    );
+    await tester.enterText(
+      find.byKey(const Key('line_item_quantity_field')),
+      '2',
+    );
+    await tester.enterText(
+      find.byKey(const Key('line_item_total_field')),
+      '10,00',
+    );
+    await tester.tap(find.byKey(const Key('save_line_item_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Yoğurt'), findsOneWidget);
+    expect(find.text('2 adet'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('delete_line_item_Yoğurt')));
+    await tester.pump();
+    expect(find.text('Yoğurt'), findsNothing);
+  });
 }
 
 CategoryEntity _category(String name) => CategoryEntity()

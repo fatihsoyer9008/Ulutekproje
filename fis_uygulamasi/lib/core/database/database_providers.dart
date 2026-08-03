@@ -29,3 +29,7 @@ final categoryRepositoryProvider = Provider<CategoryRepository>(
 final categoriesProvider = StreamProvider<List<CategoryEntity>>(
   (ref) => ref.watch(categoryRepositoryProvider).watchAllCategories(),
 );
+
+final receiptRepositoryProvider = Provider<ReceiptRepository>(
+  (ref) => ReceiptRepository(ref.watch(isarProvider)),
+);

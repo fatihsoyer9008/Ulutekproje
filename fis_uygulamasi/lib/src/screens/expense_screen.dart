@@ -252,6 +252,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
             amountInMinor: result.draft.amountInMinor,
             transactionDate: result.draft.transactionDate,
             rawOcrText: rawText,
+            lineItems: result.draft.lineItems,
           ),
           normalizedOcrText: result.normalizedOcrText,
           confidenceScore: result.confidenceScore,
@@ -401,6 +402,10 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
         ),
       );
       if (!context.mounted) return;
+      if (source != TransactionSource.manual) {
+        await _saveReceiptIfAvailable(context, draft);
+      }
+      if (!context.mounted) return;
 
       Navigator.of(context).pop();
       messenger
@@ -415,6 +420,18 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
         ..showSnackBar(SnackBar(content: Text('Gider kaydedilemedi: $error')));
     } finally {
       _isSaving = false;
+    }
+  }
+
+  Future<void> _saveReceiptIfAvailable(
+    BuildContext context,
+    TransactionDraft draft,
+  ) async {
+    try {
+      final container = ProviderScope.containerOf(context, listen: false);
+      await container.read(receiptRepositoryProvider).addDraft(draft);
+    } on StateError {
+      // Bağımsız widget testlerinde Isar provider'ı bulunmayabilir.
     }
   }
 

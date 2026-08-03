@@ -14,6 +14,8 @@ class IsarService {
       TransactionEntitySchema,
       OfflineTaskSchema,
       CategoryEntitySchema,
+      ReceiptEntitySchema,
+      ReceiptLineItemEntitySchema,
     ], directory: directory.path);
     return _instance!;
   }
