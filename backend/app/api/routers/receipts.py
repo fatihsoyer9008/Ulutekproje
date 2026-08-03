@@ -1,3 +1,5 @@
+import logging
+from time import perf_counter
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -14,6 +16,7 @@ from app.services.receipt_parser import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["receipts"])
+logger = logging.getLogger("app.receipts")
 
 RECEIPT_IP_BURST = RateLimitRule(
     name="receipt-ip-burst",
@@ -109,10 +112,28 @@ async def parse_receipt(
         limiter=limiter,
     )
 
+    started_at = perf_counter()
+    request_id = getattr(request.state, "request_id", "unknown")
+    model_name = str(getattr(parser, "model_name", "unknown"))
+    outcome = "success"
     try:
         return await parser.parse(payload)
     except ReceiptParserError as exc:
+        outcome = "provider_error"
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=("Fiş metni yapay zekâ servisi tarafından " "ayrıştırılamadı"),
+            detail=("Fiş metni yapay zekâ servisi tarafından ayrıştırılamadı"),
         ) from exc
+    except Exception:
+        outcome = "unexpected_error"
+        raise
+    finally:
+        duration_ms = (perf_counter() - started_at) * 1000
+        logger.info(
+            "receipt_parse_completed request_id=%s duration_ms=%.2f "
+            "model=%s outcome=%s",
+            request_id,
+            duration_ms,
+            model_name,
+            outcome,
+        )

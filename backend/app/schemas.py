@@ -3,17 +3,17 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.ocr_security import OCR_TEXT_MAX_LENGTH, validate_ocr_text
+
 
 class ReceiptParserRequest(BaseModel):
-    ocr_text: str = Field(min_length=1, max_length=30_000)
+    ocr_text: str = Field(min_length=1, max_length=OCR_TEXT_MAX_LENGTH)
 
     @field_validator("ocr_text")
     @classmethod
     def validate_ocr_text(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("OCR metni boş olamaz")
-        return normalized
+        return validate_ocr_text(value)
+
 
 class ReceiptItem(BaseModel):
     name: str = Field(min_length=1)
@@ -27,6 +27,7 @@ class ReceiptItem(BaseModel):
     tax_rate: Optional[float] = Field(default=None, ge=0)
     tax_amount_in_minor: Optional[int] = Field(default=None, ge=0)
 
+
 class ReceiptParserResponse(BaseModel):
     normalized_ocr_text: str = Field(
         min_length=1,
@@ -34,21 +35,21 @@ class ReceiptParserResponse(BaseModel):
     )
     merchant: Optional[str] = Field(default=None, min_length=1)
     total_amount_minor: Optional[int] = Field(default=None, ge=0)
-    
+
     currency: Literal["TRY"] = "TRY"
     date: Optional[datetime] = None
     category: Optional[str] = None
     items: list[ReceiptItem] = Field(default_factory=list)
 
     is_parse_successful: bool = Field(
-        ..., 
-        description="Kurum, tarih ve tutar tam ve doğru okunabildiyse true, aksi halde false."
+        ...,
+        description="Kurum, tarih ve tutar tam ve doğru okunabildiyse true, aksi halde false.",
     )
     confidence_score: float = Field(
         ...,
         ge=0,
         le=1,
-        description="OCR metninden çıkarılan verilerin genel güvenilirlik skoru (0.0 ile 1.0 arası)."
+        description="OCR metninden çıkarılan verilerin genel güvenilirlik skoru (0.0 ile 1.0 arası).",
     )
 
     @model_validator(mode="after")
