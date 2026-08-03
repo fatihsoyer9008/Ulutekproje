@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 
 import httpx
@@ -25,6 +26,18 @@ class CapturingEmailSender:
 
     async def send_password_reset(self, *, email: str, token: str) -> None:
         self.reset_tokens.append((email, token))
+
+
+class FailingVerificationEmailSender(CapturingEmailSender):
+    async def send_verification(self, *, email: str, token: str) -> None:
+        del email, token
+        raise RuntimeError("simulated SMTP failure")
+
+
+class DelayedVerificationEmailSender(CapturingEmailSender):
+    async def send_verification(self, *, email: str, token: str) -> None:
+        await asyncio.sleep(0.01)
+        await super().send_verification(email=email, token=token)
 
 
 @pytest_asyncio.fixture
@@ -289,10 +302,11 @@ async def test_password_reset_revokes_sessions(auth_context) -> None:
 
 
 @pytest.mark.asyncio
-async def test_auth_responses_do_not_enumerate_accounts(auth_context) -> None:
+async def test_registration_responses_do_not_enumerate_accounts(auth_context) -> None:
     client, sender, _ = auth_context
     password = "A-strong-test-password-123"
     await _register_and_verify(client, sender, password=password)
+    sent_before_duplicate = len(sender.verification_tokens)
 
     duplicate = await client.post(
         "/api/v1/auth/register",
@@ -300,13 +314,74 @@ async def test_auth_responses_do_not_enumerate_accounts(auth_context) -> None:
     )
     unknown = await client.post(
         "/api/v1/auth/register",
+        json={"email": "new-user@example.com", "password": password},
+    )
+
+    assert duplicate.status_code == unknown.status_code == 202
+    assert duplicate.json() == unknown.json() == {
+        "message": "If the address is eligible, a verification email will be sent."
+    }
+    assert len(sender.verification_tokens) == sent_before_duplicate + 1
+
+
+@pytest.mark.asyncio
+async def test_registration_response_is_stable_when_email_delivery_fails(
+    auth_context,
+) -> None:
+    client, _, _ = auth_context
+    sender = FailingVerificationEmailSender()
+
+    async def override_sender() -> FailingVerificationEmailSender:
+        return sender
+
+    app.dependency_overrides[get_email_sender] = override_sender
+
+    response = await client.post(
+        "/api/v1/auth/register",
         json={
-            "email": "another@example.com",
-            "password": "Another-strong-password-123",
+            "email": "smtp-failure@example.com",
+            "password": "A-strong-test-password-123",
         },
     )
-    assert duplicate.status_code == unknown.status_code == 202
-    assert duplicate.json() == unknown.json()
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "message": "If the address is eligible, a verification email will be sent."
+    }
+
+
+@pytest.mark.asyncio
+async def test_registration_response_is_stable_with_delayed_email_sender(
+    auth_context,
+) -> None:
+    client, _, _ = auth_context
+    sender = DelayedVerificationEmailSender()
+
+    async def override_sender() -> DelayedVerificationEmailSender:
+        return sender
+
+    app.dependency_overrides[get_email_sender] = override_sender
+
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "slow-smtp@example.com",
+            "password": "A-strong-test-password-123",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "message": "If the address is eligible, a verification email will be sent."
+    }
+    assert len(sender.verification_tokens) == 1
+
+
+@pytest.mark.asyncio
+async def test_login_responses_do_not_enumerate_accounts(auth_context) -> None:
+    client, sender, _ = auth_context
+    password = "A-strong-test-password-123"
+    await _register_and_verify(client, sender, password=password)
 
     wrong_password = await client.post(
         "/api/v1/auth/login",
