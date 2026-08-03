@@ -26,8 +26,22 @@ class DummyReceiptParserService:
             confidence_score=0.99,
             is_parse_successful=True,
             items=[
-                ReceiptItem(name="Süt 1L", price_minor=1200, category="Gıda"),
-                ReceiptItem(name="Ekmek", price_minor=1350, category="Fırın"),
+                ReceiptItem(
+                    name="Süt 1L",
+                    price_minor=1200,
+                    unit_price_in_minor=1200,
+                    quantity=1,
+                    total_amount_minor=1200,
+                    category="Gıda",
+                ),
+                ReceiptItem(
+                    name="Ekmek",
+                    price_minor=1350,
+                    unit_price_in_minor=1350,
+                    quantity=1,
+                    total_amount_minor=1350,
+                    category="Fırın",
+                ),
             ],
         )
 
