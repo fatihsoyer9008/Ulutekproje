@@ -175,6 +175,9 @@ void main() {
           receiptItems: const [ReceiptItem(name: 'Süt', priceMinor: 2500)],
         ).toTransactionEntity();
         final id = await repository.addTransaction(transaction);
+        final receiptBeforeUpdate = await repository.getReceiptByTransactionId(
+          id,
+        );
 
         final unloaded = await isar.transactionEntitys.get(id);
         expect(unloaded?.receiptLineItemsLoaded, isFalse);
@@ -182,7 +185,15 @@ void main() {
         await repository.updateTransaction(unloaded);
 
         final updated = await repository.getTransactionById(id);
+        final receiptAfterUpdate = await repository.getReceiptByTransactionId(
+          id,
+        );
         expect(updated?.merchantName, 'Migros Jet');
+        expect(receiptAfterUpdate?.id, receiptBeforeUpdate?.id);
+        expect(
+          updated?.receiptLineItems.single.receiptId,
+          receiptAfterUpdate?.id,
+        );
         expect(updated?.receiptLineItems.single.name, 'Süt');
       },
     );

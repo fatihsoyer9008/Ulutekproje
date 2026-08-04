@@ -10,13 +10,15 @@ class IsarService {
     if (_instance != null && _instance!.isOpen) return _instance!;
 
     final directory = await getApplicationDocumentsDirectory();
-    _instance = await Isar.open([
+    final isar = await Isar.open([
       TransactionEntitySchema,
       ReceiptEntitySchema,
       ReceiptLineItemEntitySchema,
       OfflineTaskSchema,
       CategoryEntitySchema,
     ], directory: directory.path);
-    return _instance!;
+    await TransactionRepository(isar).backfillReceiptLinks();
+    _instance = isar;
+    return isar;
   }
 }

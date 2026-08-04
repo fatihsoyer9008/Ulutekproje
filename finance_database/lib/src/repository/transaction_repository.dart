@@ -224,6 +224,45 @@ class TransactionRepository {
       .transactionIdEqualTo(transactionId)
       .findFirst();
 
+  /// Eski şemadan kalan ürün satırları için fiş oluşturur ve receiptId atar.
+  Future<void> backfillReceiptLinks() async {
+    final lineItems = await _isar.receiptLineItemEntitys.where().findAll();
+    if (lineItems.isEmpty) return;
+
+    await _isar.writeTxn(() async {
+      final receiptIds = (await _isar.receiptEntitys.where().findAll())
+          .map((receipt) => receipt.id)
+          .toSet();
+      final transactionIds = lineItems
+          .where(
+            (item) =>
+                item.receiptId <= 0 || !receiptIds.contains(item.receiptId),
+          )
+          .map((item) => item.transactionId)
+          .toSet();
+
+      for (final transactionId in transactionIds) {
+        final transaction = await _isar.transactionEntitys.get(transactionId);
+        if (transaction == null) continue;
+
+        final receiptId = await _upsertReceipt(
+          transactionId,
+          transaction,
+          force: true,
+        );
+        if (receiptId == null) continue;
+
+        final transactionItems = lineItems
+            .where((item) => item.transactionId == transactionId)
+            .toList();
+        for (final item in transactionItems) {
+          item.receiptId = receiptId;
+        }
+        await _isar.receiptLineItemEntitys.putAll(transactionItems);
+      }
+    });
+  }
+
   /// Mevcut bir işlemi günceller.
   Future<void> updateTransaction(TransactionEntity transaction) async {
     transaction.updatedAt = DateTime.now();
@@ -280,10 +319,13 @@ class TransactionRepository {
 
   Future<Id?> _upsertReceipt(
     Id transactionId,
-    TransactionEntity transaction,
-  ) async {
+    TransactionEntity transaction, {
+    bool force = false,
+  }) async {
     final existing = await getReceiptByTransactionId(transactionId);
-    if (!_hasReceipt(transaction)) {
+    final preserveUnloadedReceipt =
+        existing != null && !transaction.receiptLineItemsLoaded;
+    if (!force && !preserveUnloadedReceipt && !_hasReceipt(transaction)) {
       if (existing != null) await _isar.receiptEntitys.delete(existing.id);
       return null;
     }
