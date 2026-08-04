@@ -58,6 +58,9 @@ void main() {
         ..category = TransactionCategory.market
         ..date = DateTime.now()
         ..source = TransactionSource.manual
+        ..clientRecordId = 'd9ca5a3e-599d-497c-8c96-c68c0e5b90d1'
+        ..ownerKey = 'guest:test-installation'
+        ..syncState = SyncState.pending
         ..merchantName = 'Migros';
 
       final id = await repository.addTransaction(newTransaction);
@@ -67,6 +70,12 @@ void main() {
       expect(fetched?.id, equals(id));
       expect(fetched?.amountInMinor, equals(1250));
       expect(fetched?.merchantName, equals('Migros'));
+      expect(
+        fetched?.clientRecordId,
+        equals('d9ca5a3e-599d-497c-8c96-c68c0e5b90d1'),
+      );
+      expect(fetched?.ownerKey, equals('guest:test-installation'));
+      expect(fetched?.syncState, SyncState.pending);
     });
 
     // Test 2: Tüm Kayıtları Getirme
