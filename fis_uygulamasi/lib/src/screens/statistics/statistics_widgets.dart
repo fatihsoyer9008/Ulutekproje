@@ -203,7 +203,7 @@ class StatisticsContent extends StatelessWidget {
           if (categories.isEmpty)
             StatisticsCard(
               child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
+                padding: const EdgeInsets.symmetric(vertical: 18),
                 child: Center(
                   child: Text(
                     'Henüz kategori verisi bulunmuyor.',
@@ -453,7 +453,8 @@ class StatisticsChart extends StatelessWidget {
             ],
             isCurved: true,
             curveSmoothness: .25,
-            color: AppColors.primary,
+            preventCurveOverShooting: true, // Çizginin 0'ın altına taşmasını engeller!
+            color: AppColors.primary, // Eski yeşil renk
             barWidth: 4,
             isStrokeCapRound: true,
             dotData: FlDotData(
