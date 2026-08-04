@@ -3,6 +3,8 @@ import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/text/turkish_text_normalizer.dart';
+
 class TransactionsScreen extends StatefulWidget {
   const TransactionsScreen({required this.transactions, super.key});
 
@@ -21,7 +23,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     super.initState();
     _searchController.addListener(() {
       setState(() {
-        _searchQuery = _searchController.text.trim().toLowerCase();
+        _searchQuery = normalizeTurkishText(_searchController.text);
       });
     });
   }
@@ -42,15 +44,21 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     final filteredTransactions = sortedTransactions.where((transaction) {
       if (_searchQuery.isEmpty) return true;
 
-      final merchant = (transaction.merchantName ?? '').toLowerCase();
-      final category = _categoryName(transaction.category).toLowerCase();
+      final merchant = normalizeTurkishText(transaction.merchantName ?? '');
+      final category = normalizeTurkishText(
+        _categoryName(transaction.category),
+      );
+      final customCategory = normalizeTurkishText(
+        transaction.categoryName ?? '',
+      );
       final type = transaction.transactionType == TransactionType.income
           ? 'gelir'
           : 'gider';
-      final amount = _formatFormattedAmount(transaction).toLowerCase();
+      final amount = normalizeTurkishText(_formatFormattedAmount(transaction));
 
       return merchant.contains(_searchQuery) ||
           category.contains(_searchQuery) ||
+          customCategory.contains(_searchQuery) ||
           type.contains(_searchQuery) ||
           amount.contains(_searchQuery);
     }).toList();
@@ -141,10 +149,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               child: Text(
                 group.key,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: scheme.onSurfaceVariant,
-                      fontSize: 14,
-                    ),
+                  fontWeight: FontWeight.bold,
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 14,
+                ),
               ),
             ),
             for (final transaction in group.value) ...[
@@ -230,18 +238,18 @@ class _TransactionTile extends StatelessWidget {
                 Text(
                   transaction.merchantName ?? (isIncome ? 'Gelir' : 'Gider'),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '${isIncome ? 'Gelir' : _categoryName(transaction.category)}'
                   ' • ${DateFormat('d MMM, HH:mm', 'tr_TR').format(transaction.date)}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant.withValues(alpha: .80),
-                        fontWeight: FontWeight.w400,
-                      ),
+                    color: scheme.onSurfaceVariant.withValues(alpha: .80),
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
               ],
             ),
@@ -267,7 +275,7 @@ class _TransactionTile extends StatelessWidget {
 String _formatFormattedAmount(TransactionEntity transaction) {
   final isIncome = transaction.transactionType == TransactionType.income;
   final prefix = isIncome ? '+' : '-';
-  
+
   final rawAmount = NumberFormat.currency(
     locale: 'tr_TR',
     symbol: '',
@@ -278,14 +286,14 @@ String _formatFormattedAmount(TransactionEntity transaction) {
 }
 
 String _categoryName(TransactionCategory category) => switch (category) {
-      TransactionCategory.market => 'Market',
-      TransactionCategory.ulasim => 'Ulaşım',
-      TransactionCategory.fatura => 'Fatura',
-      TransactionCategory.eglence => 'Eğlence',
-      TransactionCategory.saglik => 'Sağlık',
-      TransactionCategory.giyim => 'Giyim',
-      TransactionCategory.diger => 'Diğer',
-    };
+  TransactionCategory.market => 'Market',
+  TransactionCategory.ulasim => 'Ulaşım',
+  TransactionCategory.fatura => 'Fatura',
+  TransactionCategory.eglence => 'Eğlence',
+  TransactionCategory.saglik => 'Sağlık',
+  TransactionCategory.giyim => 'Giyim',
+  TransactionCategory.diger => 'Diğer',
+};
 
 IconData _categoryIcon(TransactionEntity transaction) {
   if (transaction.transactionType == TransactionType.income) {

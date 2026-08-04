@@ -370,7 +370,7 @@ class StatisticsChart extends StatelessWidget {
       );
     }
     final values = spending
-        .map((item) => item.amountInMinor / 100)
+        .map((item) => math.max(0, item.amountInMinor) / 100)
         .toList(growable: false);
     final highest = values.fold<double>(0, math.max);
     final maxY = highest <= 0 ? 10.0 : highest * 1.2;
@@ -453,8 +453,8 @@ class StatisticsChart extends StatelessWidget {
             ],
             isCurved: true,
             curveSmoothness: .25,
-            preventCurveOverShooting: true, // Çizginin 0'ın altına taşmasını engeller!
-            color: AppColors.primary, // Eski yeşil renk
+            preventCurveOverShooting: true,
+            color: AppColors.primary,
             barWidth: 4,
             isStrokeCapRound: true,
             dotData: FlDotData(
