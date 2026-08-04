@@ -233,6 +233,14 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                       label: const Text('Görseli güvenli analiz için gönder'),
                     ),
                   ),
+                  if (widget.onSecureAnalysisRequested == null) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Güvenli analiz özelliği yakında kullanıma açılacak.',
+                      key: Key('secure_analysis_coming_soon'),
+                      style: TextStyle(color: AppColors.muted),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                 ],
               ],
