@@ -17,7 +17,11 @@ void main() {
       'export_service_test_',
     );
     isar = await Isar.open(
-      [TransactionEntitySchema, ReceiptLineItemEntitySchema],
+      [
+        TransactionEntitySchema,
+        ReceiptEntitySchema,
+        ReceiptLineItemEntitySchema,
+      ],
       directory: tempDirectory.path,
       name: 'export_service_test',
     );

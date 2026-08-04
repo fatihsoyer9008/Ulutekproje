@@ -20,7 +20,11 @@ void main() {
 
     // Isar, IsarService'e bağımlı olmadan doğrudan geçici klasörde açılır
     isar = await Isar.open(
-      [TransactionEntitySchema, ReceiptLineItemEntitySchema],
+      [
+        TransactionEntitySchema,
+        ReceiptEntitySchema,
+        ReceiptLineItemEntitySchema,
+      ],
       directory: tempDir.path,
       name: 'transaction_repository_test',
     );
@@ -201,9 +205,13 @@ void main() {
 
       final id = await repository.addTransaction(transaction);
       final items = await repository.getReceiptLineItems(id);
+      final receipt = await repository.getReceiptByTransactionId(id);
 
       expect(items.map((item) => item.name), ['Süt', 'Ekmek']);
       expect(items.first.transactionId, id);
+      expect(receipt?.transactionId, id);
+      expect(receipt?.totalAmountInMinor, 4500);
+      expect(items.first.receiptId, receipt?.id);
       expect(items.first.quantity, 2);
       expect(items.first.unitPriceInMinor, 1500);
       expect(
@@ -212,7 +220,32 @@ void main() {
       );
 
       await repository.deleteTransaction(id);
+      expect(await repository.getReceiptByTransactionId(id), isNull);
       expect(await repository.getReceiptLineItems(id), isEmpty);
+    });
+
+    test('ürün kaydı hata verirse işlem, fiş ve ürünleri geri alır', () async {
+      final transaction = TransactionEntity()
+        ..amountInMinor = 1000
+        ..category = TransactionCategory.market
+        ..date = DateTime(2026, 8, 4)
+        ..source = TransactionSource.ocrLlm
+        ..receiptLineItems = [
+          ReceiptLineItemEntity()
+            ..transactionId = 0
+            ..receiptId = 0
+            ..position = 0,
+        ]
+        ..receiptLineItemsLoaded = true;
+
+      await expectLater(
+        repository.addTransaction(transaction),
+        throwsA(anything),
+      );
+
+      expect(await isar.transactionEntitys.count(), 0);
+      expect(await isar.receiptEntitys.count(), 0);
+      expect(await isar.receiptLineItemEntitys.count(), 0);
     });
   });
   group('TransactionRepository analiz sorguları', () {

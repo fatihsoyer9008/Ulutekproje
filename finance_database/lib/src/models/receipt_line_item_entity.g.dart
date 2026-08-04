@@ -35,24 +35,29 @@ const ReceiptLineItemEntitySchema = CollectionSchema(
       name: r'quantity',
       type: IsarType.double,
     ),
-    r'taxAmountInMinor': PropertySchema(
+    r'receiptId': PropertySchema(
       id: 5,
+      name: r'receiptId',
+      type: IsarType.long,
+    ),
+    r'taxAmountInMinor': PropertySchema(
+      id: 6,
       name: r'taxAmountInMinor',
       type: IsarType.long,
     ),
-    r'taxRate': PropertySchema(id: 6, name: r'taxRate', type: IsarType.double),
+    r'taxRate': PropertySchema(id: 7, name: r'taxRate', type: IsarType.double),
     r'totalAmountInMinor': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'totalAmountInMinor',
       type: IsarType.long,
     ),
     r'transactionId': PropertySchema(
-      id: 8,
+      id: 9,
       name: r'transactionId',
       type: IsarType.long,
     ),
     r'unitPriceInMinor': PropertySchema(
-      id: 9,
+      id: 10,
       name: r'unitPriceInMinor',
       type: IsarType.long,
     ),
@@ -71,6 +76,19 @@ const ReceiptLineItemEntitySchema = CollectionSchema(
       properties: [
         IndexPropertySchema(
           name: r'transactionId',
+          type: IndexType.value,
+          caseSensitive: false,
+        ),
+      ],
+    ),
+    r'receiptId': IndexSchema(
+      id: 5666094434830883054,
+      name: r'receiptId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'receiptId',
           type: IndexType.value,
           caseSensitive: false,
         ),
@@ -112,11 +130,12 @@ void _receiptLineItemEntitySerialize(
   writer.writeLong(offsets[2], object.position);
   writer.writeLong(offsets[3], object.priceInMinor);
   writer.writeDouble(offsets[4], object.quantity);
-  writer.writeLong(offsets[5], object.taxAmountInMinor);
-  writer.writeDouble(offsets[6], object.taxRate);
-  writer.writeLong(offsets[7], object.totalAmountInMinor);
-  writer.writeLong(offsets[8], object.transactionId);
-  writer.writeLong(offsets[9], object.unitPriceInMinor);
+  writer.writeLong(offsets[5], object.receiptId);
+  writer.writeLong(offsets[6], object.taxAmountInMinor);
+  writer.writeDouble(offsets[7], object.taxRate);
+  writer.writeLong(offsets[8], object.totalAmountInMinor);
+  writer.writeLong(offsets[9], object.transactionId);
+  writer.writeLong(offsets[10], object.unitPriceInMinor);
 }
 
 ReceiptLineItemEntity _receiptLineItemEntityDeserialize(
@@ -132,11 +151,12 @@ ReceiptLineItemEntity _receiptLineItemEntityDeserialize(
   object.position = reader.readLong(offsets[2]);
   object.priceInMinor = reader.readLongOrNull(offsets[3]);
   object.quantity = reader.readDoubleOrNull(offsets[4]);
-  object.taxAmountInMinor = reader.readLongOrNull(offsets[5]);
-  object.taxRate = reader.readDoubleOrNull(offsets[6]);
-  object.totalAmountInMinor = reader.readLongOrNull(offsets[7]);
-  object.transactionId = reader.readLong(offsets[8]);
-  object.unitPriceInMinor = reader.readLongOrNull(offsets[9]);
+  object.receiptId = reader.readLong(offsets[5]);
+  object.taxAmountInMinor = reader.readLongOrNull(offsets[6]);
+  object.taxRate = reader.readDoubleOrNull(offsets[7]);
+  object.totalAmountInMinor = reader.readLongOrNull(offsets[8]);
+  object.transactionId = reader.readLong(offsets[9]);
+  object.unitPriceInMinor = reader.readLongOrNull(offsets[10]);
   return object;
 }
 
@@ -158,14 +178,16 @@ P _receiptLineItemEntityDeserializeProp<P>(
     case 4:
       return (reader.readDoubleOrNull(offset)) as P;
     case 5:
-      return (reader.readLongOrNull(offset)) as P;
-    case 6:
-      return (reader.readDoubleOrNull(offset)) as P;
-    case 7:
-      return (reader.readLongOrNull(offset)) as P;
-    case 8:
       return (reader.readLong(offset)) as P;
+    case 6:
+      return (reader.readLongOrNull(offset)) as P;
+    case 7:
+      return (reader.readDoubleOrNull(offset)) as P;
+    case 8:
+      return (reader.readLongOrNull(offset)) as P;
     case 9:
+      return (reader.readLong(offset)) as P;
+    case 10:
       return (reader.readLongOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -204,6 +226,15 @@ extension ReceiptLineItemEntityQueryWhereSort
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
         const IndexWhereClause.any(indexName: r'transactionId'),
+      );
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterWhere>
+  anyReceiptId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'receiptId'),
       );
     });
   }
@@ -380,6 +411,106 @@ extension ReceiptLineItemEntityQueryWhere
           lower: [lowerTransactionId],
           includeLower: includeLower,
           upper: [upperTransactionId],
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterWhereClause>
+  receiptIdEqualTo(int receiptId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'receiptId', value: [receiptId]),
+      );
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterWhereClause>
+  receiptIdNotEqualTo(int receiptId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'receiptId',
+                lower: [],
+                upper: [receiptId],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'receiptId',
+                lower: [receiptId],
+                includeLower: false,
+                upper: [],
+              ),
+            );
+      } else {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'receiptId',
+                lower: [receiptId],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'receiptId',
+                lower: [],
+                upper: [receiptId],
+                includeUpper: false,
+              ),
+            );
+      }
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterWhereClause>
+  receiptIdGreaterThan(int receiptId, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'receiptId',
+          lower: [receiptId],
+          includeLower: include,
+          upper: [],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterWhereClause>
+  receiptIdLessThan(int receiptId, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'receiptId',
+          lower: [],
+          upper: [receiptId],
+          includeUpper: include,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterWhereClause>
+  receiptIdBetween(
+    int lowerReceiptId,
+    int upperReceiptId, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'receiptId',
+          lower: [lowerReceiptId],
+          includeLower: includeLower,
+          upper: [upperReceiptId],
           includeUpper: includeUpper,
         ),
       );
@@ -1139,6 +1270,77 @@ extension ReceiptLineItemEntityQueryFilter
     ReceiptLineItemEntity,
     QAfterFilterCondition
   >
+  receiptIdEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'receiptId', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<
+    ReceiptLineItemEntity,
+    ReceiptLineItemEntity,
+    QAfterFilterCondition
+  >
+  receiptIdGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'receiptId',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    ReceiptLineItemEntity,
+    ReceiptLineItemEntity,
+    QAfterFilterCondition
+  >
+  receiptIdLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'receiptId',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    ReceiptLineItemEntity,
+    ReceiptLineItemEntity,
+    QAfterFilterCondition
+  >
+  receiptIdBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'receiptId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<
+    ReceiptLineItemEntity,
+    ReceiptLineItemEntity,
+    QAfterFilterCondition
+  >
   taxAmountInMinorIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -1699,6 +1901,20 @@ extension ReceiptLineItemEntityQuerySortBy
   }
 
   QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterSortBy>
+  sortByReceiptId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receiptId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterSortBy>
+  sortByReceiptIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receiptId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterSortBy>
   sortByTaxAmountInMinor() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'taxAmountInMinor', Sort.asc);
@@ -1856,6 +2072,20 @@ extension ReceiptLineItemEntityQuerySortThenBy
   }
 
   QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterSortBy>
+  thenByReceiptId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receiptId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterSortBy>
+  thenByReceiptIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receiptId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QAfterSortBy>
   thenByTaxAmountInMinor() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'taxAmountInMinor', Sort.asc);
@@ -1964,6 +2194,13 @@ extension ReceiptLineItemEntityQueryWhereDistinct
   }
 
   QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QDistinct>
+  distinctByReceiptId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'receiptId');
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, ReceiptLineItemEntity, QDistinct>
   distinctByTaxAmountInMinor() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'taxAmountInMinor');
@@ -2043,6 +2280,13 @@ extension ReceiptLineItemEntityQueryProperty
   quantityProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'quantity');
+    });
+  }
+
+  QueryBuilder<ReceiptLineItemEntity, int, QQueryOperations>
+  receiptIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'receiptId');
     });
   }
 
