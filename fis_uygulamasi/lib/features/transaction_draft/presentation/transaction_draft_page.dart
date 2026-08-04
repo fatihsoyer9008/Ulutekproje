@@ -17,6 +17,7 @@ class TransactionDraftPage extends StatefulWidget {
     this.normalizedOcrText,
     this.confidenceScore,
     this.isParseSuccessful = true,
+    this.onSecureAnalysisRequested,
     this.mode = TransactionDraftPageMode.ocrReview,
     this.categories,
   }) : assert(
@@ -28,6 +29,7 @@ class TransactionDraftPage extends StatefulWidget {
   final String? normalizedOcrText;
   final double? confidenceScore;
   final bool isParseSuccessful;
+  final VoidCallback? onSecureAnalysisRequested;
   final TransactionDraftPageMode mode;
   final List<CategoryEntity>? categories;
 
@@ -46,6 +48,13 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   late List<ReceiptItem> _receiptItems;
   bool _showDateRequiredError = false;
   bool _isConfirming = false;
+
+  bool get _shouldOfferSecureAnalysis =>
+      widget.mode == TransactionDraftPageMode.ocrReview &&
+      widget.confidenceScore != null &&
+      (!widget.isParseSuccessful ||
+          widget.confidenceScore! <
+              ReceiptLowConfidenceWarning.defaultThreshold);
 
   @override
   void initState() {
@@ -208,13 +217,21 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                   confidenceScore: widget.confidenceScore!,
                   isParseSuccessful: widget.isParseSuccessful,
                 ),
-                if (!widget.isParseSuccessful ||
-                    widget.confidenceScore! <
-                        ReceiptLowConfidenceWarning.defaultThreshold) ...[
+                if (_shouldOfferSecureAnalysis) ...[
                   const SizedBox(height: 8),
                   const Text(
                     'Fiş fotoğrafını tekrar çekebilir veya aşağıdaki bilgileri elle kontrol edebilirsiniz.',
                     key: Key('retake_receipt_suggestion'),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      key: const Key('secure_analysis_button'),
+                      onPressed: widget.onSecureAnalysisRequested,
+                      icon: const Icon(Icons.cloud_upload_outlined),
+                      label: const Text('Görseli güvenli analiz için gönder'),
+                    ),
                   ),
                   const SizedBox(height: 16),
                 ],
