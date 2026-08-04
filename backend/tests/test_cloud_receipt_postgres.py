@@ -37,7 +37,7 @@ async def test_cloud_receipt_migration_is_at_head(
     revision = await postgres_connection.scalar(
         text("SELECT version_num FROM alembic_version")
     )
-    assert revision == "20260803_0002"
+    assert revision == "20260804_0003"
 
     table_names = set(
         (
@@ -51,6 +51,15 @@ async def test_cloud_receipt_migration_is_at_head(
         ).scalars()
     )
     assert table_names == {"cloud_receipts", "cloud_receipt_line_items"}
+
+    sync_index = await postgres_connection.scalar(
+        text(
+            "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' "
+            "AND tablename = 'cloud_transactions' "
+            "AND indexname = 'ix_cloud_transactions_user_updated_id'"
+        )
+    )
+    assert sync_index == "ix_cloud_transactions_user_updated_id"
 
 
 @pytest.mark.asyncio
@@ -141,10 +150,7 @@ async def test_cloud_receipt_constraints_and_cascade(
         {"id": receipt_id},
     )
     remaining_line_items = await postgres_connection.scalar(
-        text(
-            "SELECT count(*) FROM cloud_receipt_line_items "
-            "WHERE id = :line_item_id"
-        ),
+        text("SELECT count(*) FROM cloud_receipt_line_items WHERE id = :line_item_id"),
         {"line_item_id": line_item_id},
     )
     assert remaining_line_items == 0

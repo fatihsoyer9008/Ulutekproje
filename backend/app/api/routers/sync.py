@@ -1,12 +1,16 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
 from app.core.database import get_db_session
 from app.models.user import User
-from app.services.sync_service import InvalidSyncCursor, SyncService
+from app.services.sync_service import (
+    ClaimIdempotencyConflict,
+    InvalidSyncCursor,
+    SyncService,
+)
 from app.sync_schemas import (
     ClaimRequest,
     ClaimResponse,
@@ -21,14 +25,25 @@ router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
 @router.post("/claim", response_model=ClaimResponse)
 async def claim_transactions(
     payload: ClaimRequest,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=8, max_length=128),
+    ],
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> ClaimResponse:
-    return await SyncService(db).claim(
-        user=user,
-        installation_id=payload.installation_id,
-        transactions=payload.transactions,
-    )
+    try:
+        return await SyncService(db).claim(
+            user=user,
+            idempotency_key=idempotency_key,
+            installation_id=payload.installation_id,
+            transactions=payload.transactions,
+        )
+    except ClaimIdempotencyConflict:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Idempotency-Key was already used for a different request.",
+        ) from None
 
 
 @router.post("/push", response_model=PushResponse)

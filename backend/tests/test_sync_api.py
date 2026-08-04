@@ -13,6 +13,7 @@ from app.api.dependencies import get_current_user
 from app.core.database import Base, get_db_session
 from app.main import app
 from app.models.cloud_transaction import CloudTransaction
+from app.models.sync_claim_request import SyncClaimRequest
 from app.models.user import User
 
 INSTALLATION_ID = "installation-sync-test-1234"
@@ -106,20 +107,101 @@ async def test_claim_is_idempotent_and_hashes_installation(sync_context) -> None
         "transactions": [payload],
     }
 
-    first = await client.post("/api/v1/sync/claim", json=request)
-    second = await client.post("/api/v1/sync/claim", json=request)
+    idempotency_headers = {"Idempotency-Key": "claim-retry-0001"}
+    first = await client.post(
+        "/api/v1/sync/claim",
+        json=request,
+        headers=idempotency_headers,
+    )
+    second = await client.post(
+        "/api/v1/sync/claim",
+        json=request,
+        headers=idempotency_headers,
+    )
+    duplicate = await client.post(
+        "/api/v1/sync/claim",
+        json=request,
+        headers={"Idempotency-Key": "claim-retry-0002"},
+    )
 
     assert first.status_code == 200
     assert first.json()["owner_key"] == f"user:{first_user.id}"
-    assert first.json()["results"][0]["status"] == "created"
+    assert first.json()["results"][0]["status"] == "accepted"
     assert second.status_code == 200
-    assert second.json()["results"][0]["status"] == "unchanged"
+    assert second.json() == first.json()
+    assert duplicate.status_code == 200
+    assert duplicate.json()["results"][0]["status"] == "duplicate"
 
     async with session_factory() as session:
         stored = (await session.scalars(select(CloudTransaction))).all()
+        claim_requests = (await session.scalars(select(SyncClaimRequest))).all()
     assert len(stored) == 1
     assert stored[0].installation_id_hash != INSTALLATION_ID
     assert len(stored[0].installation_id_hash) == 64
+    assert len(claim_requests) == 2
+    assert all(
+        item.idempotency_key_hash != "claim-retry-0001" for item in claim_requests
+    )
+
+
+@pytest.mark.asyncio
+async def test_claim_returns_per_record_results_for_partial_failure(
+    sync_context,
+) -> None:
+    client, _, _, _, _ = sync_context
+    valid_record = transaction_payload()
+    invalid_record = transaction_payload()
+    invalid_record["amount_in_minor"] = -1
+
+    response = await client.post(
+        "/api/v1/sync/claim",
+        json={
+            "installation_id": INSTALLATION_ID,
+            "transactions": [valid_record, invalid_record, valid_record],
+        },
+        headers={"Idempotency-Key": "partial-claim-0001"},
+    )
+
+    assert response.status_code == 200
+    assert [result["status"] for result in response.json()["results"]] == [
+        "accepted",
+        "rejected",
+        "duplicate",
+    ]
+    assert (
+        response.json()["results"][1]["client_record_id"]
+        == invalid_record["client_record_id"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_claim_rejects_reused_idempotency_key_with_different_body(
+    sync_context,
+) -> None:
+    client, _, _, _, _ = sync_context
+    headers = {"Idempotency-Key": "conflicting-claim-key-0001"}
+    first = await client.post(
+        "/api/v1/sync/claim",
+        json={
+            "installation_id": INSTALLATION_ID,
+            "transactions": [transaction_payload(amount_in_minor=1000)],
+        },
+        headers=headers,
+    )
+    conflicting = await client.post(
+        "/api/v1/sync/claim",
+        json={
+            "installation_id": INSTALLATION_ID,
+            "transactions": [transaction_payload(amount_in_minor=2000)],
+        },
+        headers=headers,
+    )
+
+    assert first.status_code == 200
+    assert conflicting.status_code == 409
+    assert conflicting.json() == {
+        "detail": "Idempotency-Key was already used for a different request."
+    }
 
 
 @pytest.mark.asyncio
@@ -137,6 +219,7 @@ async def test_push_handles_update_conflict_and_idempotent_delete(
     claim = await client.post(
         "/api/v1/sync/claim",
         json={"installation_id": INSTALLATION_ID, "transactions": [original]},
+        headers={"Idempotency-Key": "push-setup-claim-0001"},
     )
     assert claim.status_code == 200
 
@@ -213,6 +296,7 @@ async def test_pull_is_cursor_paginated_and_includes_tombstones(
     response = await client.post(
         "/api/v1/sync/claim",
         json={"installation_id": INSTALLATION_ID, "transactions": records},
+        headers={"Idempotency-Key": "pull-setup-claim-0001"},
     )
     assert response.status_code == 200
 
@@ -291,6 +375,7 @@ async def test_same_client_record_id_is_isolated_per_user(sync_context) -> None:
                 "installation_id": INSTALLATION_ID,
                 "transactions": [first_payload],
             },
+            headers={"Idempotency-Key": "first-user-claim-0001"},
         )
     ).status_code == 200
     current_user["value"] = second_user
@@ -301,6 +386,7 @@ async def test_same_client_record_id_is_isolated_per_user(sync_context) -> None:
                 "installation_id": INSTALLATION_ID,
                 "transactions": [second_payload],
             },
+            headers={"Idempotency-Key": "second-user-claim-0001"},
         )
     ).status_code == 200
 

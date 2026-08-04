@@ -1,18 +1,22 @@
 import base64
 import binascii
+import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import privacy_hash, utc_now
 from app.models.cloud_transaction import CloudTransaction
 from app.models.user import User
 from app.repositories.cloud_transactions import CloudTransactionRepository
+from app.repositories.sync_claim_requests import SyncClaimRequestRepository
 from app.sync_schemas import (
     ClaimResponse,
+    ClaimResult,
     PullResponse,
     PushOperation,
     PushResponse,
@@ -26,29 +30,83 @@ class InvalidSyncCursor(ValueError):
     pass
 
 
+class ClaimIdempotencyConflict(ValueError):
+    pass
+
+
 class SyncService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
         self.transactions = CloudTransactionRepository(db)
+        self.claim_requests = SyncClaimRequestRepository(db)
 
     async def claim(
         self,
         *,
         user: User,
+        idempotency_key: str,
         installation_id: str,
-        transactions: list[TransactionSyncPayload],
+        transactions: list[object],
     ) -> ClaimResponse:
+        key_hash = privacy_hash(f"sync-claim:{idempotency_key}")
+        request_hash = _claim_request_hash(installation_id, transactions)
+        claim_request = await self.claim_requests.try_create(
+            user_id=user.id,
+            idempotency_key_hash=key_hash,
+            request_hash=request_hash,
+        )
+        if claim_request is None:
+            previous = await self.claim_requests.get(
+                user_id=user.id,
+                idempotency_key_hash=key_hash,
+            )
+            if previous is None or previous.response_json is None:
+                raise RuntimeError("Claim idempotency record is unavailable")
+            if previous.request_hash != request_hash:
+                raise ClaimIdempotencyConflict
+            return ClaimResponse.model_validate(previous.response_json)
+
         installation_hash = _installation_hash(installation_id)
-        results = [
-            await self._upsert(
+        results: list[ClaimResult] = []
+        for raw_transaction in transactions:
+            try:
+                payload = TransactionSyncPayload.model_validate(raw_transaction)
+            except ValidationError:
+                results.append(
+                    ClaimResult(
+                        client_record_id=_extract_client_record_id(raw_transaction),
+                        status="rejected",
+                        error="Invalid transaction payload.",
+                    )
+                )
+                continue
+
+            sync_result = await self._upsert(
                 user=user,
                 installation_hash=installation_hash,
                 payload=payload,
             )
-            for payload in transactions
-        ]
+            if sync_result.status in {"created", "updated"}:
+                claim_status = "accepted"
+                error = None
+            elif sync_result.status == "unchanged":
+                claim_status = "duplicate"
+                error = None
+            else:
+                claim_status = "rejected"
+                error = "A newer or different version already exists."
+            results.append(
+                ClaimResult(
+                    client_record_id=payload.client_record_id,
+                    status=claim_status,
+                    error=error,
+                )
+            )
+
+        response = ClaimResponse(owner_key=f"user:{user.id}", results=results)
+        claim_request.response_json = response.model_dump(mode="json")
         await self.db.commit()
-        return ClaimResponse(owner_key=f"user:{user.id}", results=results)
+        return response
 
     async def push(
         self,
@@ -112,23 +170,40 @@ class SyncService:
         payload: TransactionSyncPayload,
         operation_id: str | None = None,
     ) -> SyncResult:
+        now = utc_now()
+        insert_values = {
+            "id": uuid.uuid4(),
+            "user_id": user.id,
+            "installation_id_hash": installation_hash,
+            "created_at": now,
+            "updated_at": now,
+            "deleted_at": None,
+            **_payload_values(payload),
+        }
+        created = await self.transactions.try_insert(values=insert_values)
+        if created is not None:
+            return _result(created, "created", operation_id)
+
+        updated = await self.transactions.update_if_newer(
+            user_id=user.id,
+            client_record_id=payload.client_record_id,
+            client_updated_at=payload.client_updated_at,
+            values={
+                **_payload_values(payload),
+                "installation_id_hash": installation_hash,
+                "deleted_at": None,
+                "updated_at": now,
+            },
+        )
+        if updated is not None:
+            return _result(updated, "updated", operation_id)
+
         existing = await self.transactions.get_for_user(
             user_id=user.id,
             client_record_id=payload.client_record_id,
         )
-        now = utc_now()
         if existing is None:
-            transaction = CloudTransaction(
-                id=uuid.uuid4(),
-                user_id=user.id,
-                installation_id_hash=installation_hash,
-                created_at=now,
-                updated_at=now,
-                deleted_at=None,
-                **_payload_values(payload),
-            )
-            await self.transactions.add(transaction)
-            return _result(transaction, "created", operation_id)
+            raise RuntimeError("Cloud transaction disappeared during upsert")
 
         freshness = _compare_timestamps(
             payload.client_updated_at,
@@ -141,13 +216,7 @@ class SyncService:
                 return _result(existing, "unchanged", operation_id)
             return _result(existing, "conflict", operation_id)
 
-        for field, value in _payload_values(payload).items():
-            setattr(existing, field, value)
-        existing.installation_id_hash = installation_hash
-        existing.deleted_at = None
-        existing.updated_at = now
-        await self.db.flush()
-        return _result(existing, "updated", operation_id)
+        return _result(existing, "conflict", operation_id)
 
     async def _delete(
         self,
@@ -157,6 +226,16 @@ class SyncService:
         client_updated_at: datetime,
         operation_id: str,
     ) -> SyncResult:
+        now = utc_now()
+        deleted = await self.transactions.delete_if_newer(
+            user_id=user.id,
+            client_record_id=client_record_id,
+            client_updated_at=client_updated_at,
+            deleted_at=now,
+        )
+        if deleted is not None:
+            return _result(deleted, "deleted", operation_id)
+
         existing = await self.transactions.get_for_user(
             user_id=user.id,
             client_record_id=client_record_id,
@@ -180,16 +259,33 @@ class SyncService:
         if freshness == 0:
             return _result(existing, "conflict", operation_id)
 
-        now = utc_now()
-        existing.client_updated_at = client_updated_at
-        existing.deleted_at = now
-        existing.updated_at = now
-        await self.db.flush()
-        return _result(existing, "deleted", operation_id)
+        return _result(existing, "conflict", operation_id)
 
 
 def _installation_hash(installation_id: str) -> str:
     return privacy_hash(f"installation:{installation_id}")
+
+
+def _claim_request_hash(
+    installation_id: str,
+    transactions: list[object],
+) -> str:
+    canonical = json.dumps(
+        {"installation_id": installation_id, "transactions": transactions},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _extract_client_record_id(raw_transaction: object) -> uuid.UUID | None:
+    if not isinstance(raw_transaction, dict):
+        return None
+    try:
+        return uuid.UUID(str(raw_transaction.get("client_record_id")))
+    except (AttributeError, TypeError, ValueError):
+        return None
 
 
 def _payload_values(payload: TransactionSyncPayload) -> dict[str, object]:

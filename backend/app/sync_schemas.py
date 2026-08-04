@@ -1,12 +1,13 @@
 import uuid
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 InstallationId = str
 SyncAction = Literal["upsert", "delete"]
 SyncResultStatus = Literal["created", "updated", "unchanged", "deleted", "conflict"]
+ClaimResultStatus = Literal["accepted", "duplicate", "rejected"]
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -54,18 +55,9 @@ class ClaimRequest(BaseModel):
         max_length=128,
         pattern=r"^[A-Za-z0-9._:-]+$",
     )
-    transactions: list[TransactionSyncPayload] = Field(min_length=1, max_length=500)
-
-    @field_validator("transactions")
-    @classmethod
-    def reject_duplicate_records(
-        cls,
-        value: list[TransactionSyncPayload],
-    ) -> list[TransactionSyncPayload]:
-        record_ids = [item.client_record_id for item in value]
-        if len(record_ids) != len(set(record_ids)):
-            raise ValueError("transactions contains duplicate client_record_id values")
-        return value
+    # Items are validated independently by the service so one malformed record does
+    # not reject the complete claim batch.
+    transactions: list[Any] = Field(min_length=1, max_length=500)
 
 
 class PushOperation(BaseModel):
@@ -129,9 +121,15 @@ class SyncResult(BaseModel):
     server_updated_at: datetime
 
 
+class ClaimResult(BaseModel):
+    client_record_id: uuid.UUID | None
+    status: ClaimResultStatus
+    error: str | None = None
+
+
 class ClaimResponse(BaseModel):
     owner_key: str
-    results: list[SyncResult]
+    results: list[ClaimResult]
 
 
 class PushResponse(BaseModel):
