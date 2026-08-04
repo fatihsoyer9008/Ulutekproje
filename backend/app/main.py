@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.routers.auth import router as auth_router
 from app.api.routers.receipts import router as receipt_router
+from app.api.routers.sync import router as sync_router
 from app.core.config import settings
 from app.core.observability import (
     PROCESS_TIME_HEADER,
@@ -15,6 +16,7 @@ from app.core.observability import (
     redact_personal_data,
     resolve_request_id,
 )
+from app.core.receipt_upload_guard import ReceiptImageBodyLimitMiddleware
 
 request_logger = logging.getLogger("app.request")
 
@@ -23,11 +25,25 @@ def _validate_production_settings() -> None:
     if settings.app_env != "production":
         return
 
+    if settings.receipt_image_upload_enabled:
+        if settings.use_dummy_parser:
+            raise RuntimeError(
+                "Receipt image upload cannot use the dummy parser in production"
+            )
+        gemini_api_key = (
+            settings.gemini_api_key.get_secret_value().strip()
+            if settings.gemini_api_key is not None
+            else ""
+        )
+        if not gemini_api_key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is required when receipt image upload is enabled"
+            )
+
     if not settings.use_dummy_parser and not settings.rate_limit_enabled:
         raise RuntimeError(
             "RATE_LIMIT_ENABLED must be true when Gemini parsing is enabled"
         )
-
     if (
         not settings.trust_proxy_headers
         or not settings.trusted_client_ip_header.strip()
@@ -92,8 +108,10 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan,
 )
+app.add_middleware(ReceiptImageBodyLimitMiddleware)
 app.include_router(auth_router)
 app.include_router(receipt_router)
+app.include_router(sync_router)
 
 
 @app.middleware("http")

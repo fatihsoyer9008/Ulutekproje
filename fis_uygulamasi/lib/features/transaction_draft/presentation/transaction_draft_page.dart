@@ -4,9 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
-import '../model/receipt_total_validation.dart';
 import '../model/turkish_money.dart';
-import 'widgets/receipt_total_mismatch_warning.dart';
 
 enum TransactionDraftPageMode { manual, ocrReview, income }
 
@@ -17,6 +15,7 @@ class TransactionDraftPage extends StatefulWidget {
     this.normalizedOcrText,
     this.confidenceScore,
     this.isParseSuccessful = true,
+    this.onSecureAnalysisRequested,
     this.mode = TransactionDraftPageMode.ocrReview,
     this.categories,
   }) : assert(
@@ -28,6 +27,7 @@ class TransactionDraftPage extends StatefulWidget {
   final String? normalizedOcrText;
   final double? confidenceScore;
   final bool isParseSuccessful;
+  final VoidCallback? onSecureAnalysisRequested;
   final TransactionDraftPageMode mode;
   final List<CategoryEntity>? categories;
 
@@ -46,6 +46,13 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   late List<ReceiptItem> _receiptItems;
   bool _showDateRequiredError = false;
   bool _isConfirming = false;
+
+  bool get _shouldOfferSecureAnalysis =>
+      widget.mode == TransactionDraftPageMode.ocrReview &&
+      widget.confidenceScore != null &&
+      (!widget.isParseSuccessful ||
+          widget.confidenceScore! <
+              ReceiptLowConfidenceWarning.defaultThreshold);
 
   @override
   void initState() {
@@ -68,8 +75,6 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
           ? ''
           : formatMinorAsTurkishLira(initialAmount),
     );
-    _amountController.addListener(_onAmountChanged);
-
     _transactionDate = widget.initialDraft.transactionDate;
     _receiptItems = [...widget.initialDraft.receiptItems];
     _dateController = TextEditingController(
@@ -79,15 +84,10 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
 
   @override
   void dispose() {
-    _amountController.removeListener(_onAmountChanged);
     _institutionController.dispose();
     _amountController.dispose();
     _dateController.dispose();
     super.dispose();
-  }
-
-  void _onAmountChanged() {
-    if (mounted) setState(() {});
   }
 
   String _formatTransactionDate(DateTime? date) {
@@ -152,38 +152,8 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
     );
   }
 
-  Future<void> _addReceiptItem() async {
-    final item = await _showReceiptItemDialog();
-    if (item == null || !mounted) return;
-    setState(() => _receiptItems.add(item));
-  }
-
-  Future<void> _editReceiptItem(int index) async {
-    final item = await _showReceiptItemDialog(
-      initialItem: _receiptItems[index],
-    );
-    if (item == null || !mounted) return;
-    setState(() => _receiptItems[index] = item);
-  }
-
-  void _deleteReceiptItem(int index) {
-    setState(() => _receiptItems.removeAt(index));
-  }
-
-  Future<ReceiptItem?> _showReceiptItemDialog({ReceiptItem? initialItem}) {
-    return showDialog<ReceiptItem>(
-      context: context,
-      builder: (context) => _ReceiptItemDialog(initialItem: initialItem),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final receiptTotalValidation = ReceiptTotalValidation.evaluate(
-      items: _receiptItems,
-      mainReceiptTotalInMinor: parseTurkishLiraToMinor(_amountController.text),
-    );
-
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -208,26 +178,32 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                   confidenceScore: widget.confidenceScore!,
                   isParseSuccessful: widget.isParseSuccessful,
                 ),
-                if (!widget.isParseSuccessful ||
-                    widget.confidenceScore! <
-                        ReceiptLowConfidenceWarning.defaultThreshold) ...[
+                if (_shouldOfferSecureAnalysis) ...[
                   const SizedBox(height: 8),
                   const Text(
                     'Fiş fotoğrafını tekrar çekebilir veya aşağıdaki bilgileri elle kontrol edebilirsiniz.',
                     key: Key('retake_receipt_suggestion'),
                   ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      key: const Key('secure_analysis_button'),
+                      onPressed: widget.onSecureAnalysisRequested,
+                      icon: const Icon(Icons.cloud_upload_outlined),
+                      label: const Text('Görseli güvenli analiz için gönder'),
+                    ),
+                  ),
+                  if (widget.onSecureAnalysisRequested == null) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Güvenli analiz özelliği yakında kullanıma açılacak.',
+                      key: Key('secure_analysis_coming_soon'),
+                      style: TextStyle(color: AppColors.muted),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                 ],
-              ],
-              if (widget.mode == TransactionDraftPageMode.ocrReview &&
-                  receiptTotalValidation.hasMismatch) ...[
-                const SizedBox(height: 16),
-                ReceiptTotalMismatchWarning(
-                  itemsTotalInMinor:
-                      receiptTotalValidation.calculatedItemsTotalInMinor!,
-                  receiptTotalInMinor:
-                      receiptTotalValidation.mainReceiptTotalInMinor!,
-                ),
               ],
               AppCard(
                 child: Column(
@@ -340,55 +316,6 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                   ],
                 ),
               ),
-              if (widget.mode == TransactionDraftPageMode.ocrReview) ...[
-                const SizedBox(height: 16),
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Fiş ürünleri',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                          ),
-                          FilledButton.tonalIcon(
-                            key: const Key('add_receipt_item_button'),
-                            onPressed: _addReceiptItem,
-                            icon: const Icon(Icons.add_rounded),
-                            label: const Text('Ürün ekle'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _receiptItems.isEmpty
-                            ? 'Fişte ürün bulunamadı. Ürünleri elle ekleyebilirsiniz.'
-                            : 'Okunan ürünleri kaydetmeden önce kontrol edin.',
-                        key: const Key('receipt_items_description'),
-                        style: const TextStyle(color: AppColors.muted),
-                      ),
-                      if (_receiptItems.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        for (
-                          var index = 0;
-                          index < _receiptItems.length;
-                          index++
-                        )
-                          _ReceiptItemTile(
-                            key: ValueKey('receipt_item_$index'),
-                            item: _receiptItems[index],
-                            onEdit: () => _editReceiptItem(index),
-                            onDelete: () => _deleteReceiptItem(index),
-                            index: index,
-                          ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
               if (widget.mode == TransactionDraftPageMode.ocrReview &&
                   widget.normalizedOcrText?.trim().isNotEmpty == true) ...[
                 const SizedBox(height: 16),
@@ -447,274 +374,6 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
     );
   }
 }
-
-class _ReceiptItemTile extends StatelessWidget {
-  const _ReceiptItemTile({
-    required this.item,
-    required this.index,
-    required this.onEdit,
-    required this.onDelete,
-    super.key,
-  });
-
-  final ReceiptItem item;
-  final int index;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final total = item.totalAmountInMinor ?? item.priceMinor;
-    final quantity = item.quantity;
-    final details = <String>[
-      if (quantity != null) '${_formatQuantity(quantity)} adet',
-      if (item.unitPriceInMinor != null)
-        '${formatMinorAsTurkishLira(item.unitPriceInMinor!)} TL/birim',
-    ];
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-      decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.name,
-                  key: ValueKey('receipt_item_name_$index'),
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                if (details.isNotEmpty)
-                  Text(
-                    details.join(' • '),
-                    style: const TextStyle(color: AppColors.muted),
-                  ),
-              ],
-            ),
-          ),
-          if (total != null)
-            Text(
-              '${formatMinorAsTurkishLira(total)} TL',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          IconButton(
-            key: ValueKey('edit_receipt_item_$index'),
-            tooltip: 'Ürünü düzenle',
-            onPressed: onEdit,
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          IconButton(
-            key: ValueKey('delete_receipt_item_$index'),
-            tooltip: 'Ürünü sil',
-            onPressed: onDelete,
-            icon: const Icon(Icons.delete_outline_rounded),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReceiptItemDialog extends StatefulWidget {
-  const _ReceiptItemDialog({this.initialItem});
-
-  final ReceiptItem? initialItem;
-
-  @override
-  State<_ReceiptItemDialog> createState() => _ReceiptItemDialogState();
-}
-
-class _ReceiptItemDialogState extends State<_ReceiptItemDialog> {
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _nameController;
-  late final TextEditingController _quantityController;
-  late final TextEditingController _unitPriceController;
-  late final TextEditingController _totalController;
-
-  @override
-  void initState() {
-    super.initState();
-    final item = widget.initialItem;
-    _nameController = TextEditingController(text: item?.name ?? '');
-    _quantityController = TextEditingController(
-      text: _formatQuantity(item?.quantity ?? 1),
-    );
-    _unitPriceController = TextEditingController(
-      text: item?.unitPriceInMinor == null
-          ? ''
-          : formatMinorAsTurkishLira(item!.unitPriceInMinor!),
-    );
-    final total = item?.totalAmountInMinor ?? item?.priceMinor;
-    _totalController = TextEditingController(
-      text: total == null ? '' : formatMinorAsTurkishLira(total),
-    );
-    _quantityController.addListener(_recalculateTotal);
-    _unitPriceController.addListener(_recalculateTotal);
-  }
-
-  @override
-  void dispose() {
-    _quantityController.removeListener(_recalculateTotal);
-    _unitPriceController.removeListener(_recalculateTotal);
-    _nameController.dispose();
-    _quantityController.dispose();
-    _unitPriceController.dispose();
-    _totalController.dispose();
-    super.dispose();
-  }
-
-  void _recalculateTotal() {
-    final quantity = _parseQuantity(_quantityController.text);
-    final unitPrice = parseTurkishLiraToMinor(_unitPriceController.text);
-    if (quantity == null || quantity <= 0 || unitPrice == null) return;
-
-    final total = ReceiptTotalValidation.calculateItemTotalInMinor(
-      ReceiptItem(
-        name: _nameController.text,
-        quantity: quantity,
-        unitPriceInMinor: unitPrice,
-      ),
-    );
-    if (total != null) {
-      _totalController.text = formatMinorAsTurkishLira(total);
-    }
-  }
-
-  void _submit() {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-
-    final initial = widget.initialItem;
-    final total = parseTurkishLiraToMinor(_totalController.text)!;
-    Navigator.of(context).pop(
-      ReceiptItem(
-        name: _nameController.text.trim(),
-        category: initial?.category,
-        priceMinor: total,
-        totalAmountInMinor: total,
-        quantity: _parseQuantity(_quantityController.text),
-        unitPriceInMinor: parseTurkishLiraToMinor(_unitPriceController.text),
-        taxRate: initial?.taxRate,
-        taxAmountInMinor: initial?.taxAmountInMinor,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.initialItem == null ? 'Ürün ekle' : 'Ürünü düzenle'),
-    content: Form(
-      key: _formKey,
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              key: const Key('receipt_item_name_field'),
-              controller: _nameController,
-              autofocus: true,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: 'Ürün adı',
-                border: OutlineInputBorder(),
-              ),
-              validator: (value) => value == null || value.trim().isEmpty
-                  ? 'Ürün adı zorunludur'
-                  : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              key: const Key('receipt_item_quantity_field'),
-              controller: _quantityController,
-              textInputAction: TextInputAction.next,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9,.]')),
-              ],
-              decoration: const InputDecoration(
-                labelText: 'Miktar',
-                border: OutlineInputBorder(),
-              ),
-              validator: (value) {
-                final quantity = _parseQuantity(value);
-                return quantity == null || quantity <= 0
-                    ? 'Geçerli bir miktar giriniz'
-                    : null;
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              key: const Key('receipt_item_unit_price_field'),
-              controller: _unitPriceController,
-              textInputAction: TextInputAction.next,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9,. \s]')),
-              ],
-              decoration: const InputDecoration(
-                labelText: 'Birim fiyat (isteğe bağlı)',
-                suffixText: 'TL',
-                border: OutlineInputBorder(),
-              ),
-              validator: (value) => value == null || value.trim().isEmpty
-                  ? null
-                  : parseTurkishLiraToMinor(value) == null
-                  ? 'Geçerli bir fiyat giriniz'
-                  : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              key: const Key('receipt_item_total_field'),
-              controller: _totalController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9,. \s]')),
-              ],
-              onFieldSubmitted: (_) => _submit(),
-              decoration: const InputDecoration(
-                labelText: 'Satır toplamı',
-                suffixText: 'TL',
-                border: OutlineInputBorder(),
-              ),
-              validator: (value) => parseTurkishLiraToMinor(value) == null
-                  ? 'Geçerli bir toplam giriniz'
-                  : null,
-            ),
-          ],
-        ),
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Vazgeç'),
-      ),
-      FilledButton(
-        key: const Key('save_receipt_item_button'),
-        onPressed: _submit,
-        child: const Text('Kaydet'),
-      ),
-    ],
-  );
-}
-
-double? _parseQuantity(String? value) =>
-    double.tryParse(value?.trim().replaceAll(',', '.') ?? '');
-
-String _formatQuantity(double value) => value == value.roundToDouble()
-    ? value.toInt().toString()
-    : value.toString().replaceAll('.', ',');
 
 List<CategoryEntity> _buildCategories(
   List<CategoryEntity> source,

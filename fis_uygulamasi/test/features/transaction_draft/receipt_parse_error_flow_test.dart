@@ -219,6 +219,11 @@ void main() {
         find.byKey(const Key('retake_receipt_suggestion')),
         findsOneWidget,
       );
+      expect(
+        find.widgetWithText(FilledButton, 'Görseli güvenli analiz için gönder'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('secure_analysis_button')), findsOneWidget);
       expect(find.text('İşlemi Kontrol Et'), findsOneWidget);
     },
   );

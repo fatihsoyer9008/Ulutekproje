@@ -4,6 +4,115 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('güvenli analiz butonu', () {
+    Future<void> pumpSubject(
+      WidgetTester tester, {
+      TransactionDraftPageMode mode = TransactionDraftPageMode.ocrReview,
+      double? confidenceScore,
+      bool isParseSuccessful = true,
+      VoidCallback? onSecureAnalysisRequested,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        home: TransactionDraftPage(
+          mode: mode,
+          confidenceScore: confidenceScore,
+          isParseSuccessful: isParseSuccessful,
+          onSecureAnalysisRequested: onSecureAnalysisRequested,
+        ),
+      ),
+    );
+
+    testWidgets('yüzde 70 altındaki skorda gösterilir', (tester) async {
+      await pumpSubject(tester, confidenceScore: .69);
+
+      expect(find.byKey(const Key('secure_analysis_button')), findsOneWidget);
+    });
+
+    testWidgets('tam yüzde 70 skorda gösterilmez', (tester) async {
+      await pumpSubject(tester, confidenceScore: .70);
+
+      expect(find.byKey(const Key('secure_analysis_button')), findsNothing);
+    });
+
+    testWidgets('ayrıştırma başarısızsa yüksek skorda da gösterilir', (
+      tester,
+    ) async {
+      await pumpSubject(tester, confidenceScore: .90, isParseSuccessful: false);
+
+      expect(find.byKey(const Key('secure_analysis_button')), findsOneWidget);
+    });
+
+    testWidgets('güven skoru bulunmadığında gösterilmez', (tester) async {
+      await pumpSubject(tester);
+
+      expect(find.byKey(const Key('secure_analysis_button')), findsNothing);
+    });
+
+    testWidgets('manuel gider girişinde gösterilmez', (tester) async {
+      await pumpSubject(
+        tester,
+        mode: TransactionDraftPageMode.manual,
+        confidenceScore: .20,
+      );
+
+      expect(find.byKey(const Key('secure_analysis_button')), findsNothing);
+    });
+
+    testWidgets('gelir girişinde gösterilmez', (tester) async {
+      await pumpSubject(
+        tester,
+        mode: TransactionDraftPageMode.income,
+        confidenceScore: .20,
+      );
+
+      expect(find.byKey(const Key('secure_analysis_button')), findsNothing);
+    });
+
+    testWidgets('callback verildiğinde aktiftir ve bir kez çağrılır', (
+      tester,
+    ) async {
+      var requestCount = 0;
+      await pumpSubject(
+        tester,
+        confidenceScore: .20,
+        onSecureAnalysisRequested: () => requestCount++,
+      );
+
+      final button = tester.widget<FilledButton>(
+        find.byKey(const Key('secure_analysis_button')),
+      );
+      expect(button.onPressed, isNotNull);
+
+      await tester.tap(find.byKey(const Key('secure_analysis_button')));
+      await tester.pump();
+
+      expect(requestCount, 1);
+      expect(
+        find.byKey(const Key('secure_analysis_coming_soon')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('callback yoksa pasiftir ve yakında açıklaması gösterilir', (
+      tester,
+    ) async {
+      await pumpSubject(tester, confidenceScore: .20);
+
+      final button = tester.widget<FilledButton>(
+        find.byKey(const Key('secure_analysis_button')),
+      );
+      expect(button.onPressed, isNull);
+      expect(
+        find.text('Güvenli analiz özelliği yakında kullanıma açılacak.'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('secure_analysis_coming_soon')),
+        findsOneWidget,
+      );
+    });
+  });
+
   testWidgets(
     'OCR tarihi ve metni onay ekranında korunur, kullanıcı tarihi değiştirir',
     (tester) async {
@@ -189,7 +298,7 @@ void main() {
     expect(find.text('Evcil Hayvan'), findsWidgets);
   });
 
-  testWidgets('fiş ürünleri düzenlenebilir, eklenebilir ve silinebilir', (
+  testWidgets('fiş ürünlerini ekranda göstermeden taslakta korur', (
     tester,
   ) async {
     TransactionDraft? result;
@@ -224,60 +333,22 @@ void main() {
     await tester.tap(find.text('Aç'));
     await tester.pumpAndSettle();
 
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('edit_receipt_item_0')),
-      300,
-      scrollable: find.byType(Scrollable).first,
+    expect(find.byKey(const Key('add_receipt_item_button')), findsNothing);
+    expect(find.byKey(const Key('receipt_items_description')), findsNothing);
+    expect(
+      find.byKey(const Key('receipt_total_mismatch_warning')),
+      findsNothing,
     );
-    await tester.tap(find.byKey(const ValueKey('edit_receipt_item_0')));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const Key('receipt_item_name_field')),
-      'Laktozsuz Süt',
-    );
-    await tester.enterText(
-      find.byKey(const Key('receipt_item_quantity_field')),
-      '2',
-    );
-    await tester.enterText(
-      find.byKey(const Key('receipt_item_unit_price_field')),
-      '11,25',
-    );
-    final calculatedTotal = tester.widget<TextFormField>(
-      find.byKey(const Key('receipt_item_total_field')),
-    );
-    expect(calculatedTotal.controller?.text, '22,50');
-    await tester.tap(find.byKey(const Key('save_receipt_item_button')));
-    await tester.pumpAndSettle();
-    expect(find.text('Laktozsuz Süt'), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('delete_receipt_item_1')));
-    await tester.pump();
+    expect(find.text('Süt'), findsNothing);
     expect(find.text('Ekmek'), findsNothing);
-
-    await tester.tap(find.byKey(const Key('add_receipt_item_button')));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const Key('receipt_item_name_field')),
-      'Yoğurt',
-    );
-    await tester.enterText(
-      find.byKey(const Key('receipt_item_total_field')),
-      '12,50',
-    );
-    await tester.tap(find.byKey(const Key('save_receipt_item_button')));
-    await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.byKey(const Key('confirm_draft_button')));
     await tester.tap(find.byKey(const Key('confirm_draft_button')));
     await tester.pumpAndSettle();
 
-    expect(result?.receiptItems.map((item) => item.name), [
-      'Laktozsuz Süt',
-      'Yoğurt',
-    ]);
-    expect(result?.receiptItems.first.totalAmountInMinor, 2250);
-    expect(result?.receiptItems.last.totalAmountInMinor, 1250);
+    expect(result?.receiptItems.map((item) => item.name), ['Süt', 'Ekmek']);
+    expect(result?.receiptItems.first.priceMinor, 2000);
+    expect(result?.receiptItems.last.priceMinor, 1500);
   });
 }
 

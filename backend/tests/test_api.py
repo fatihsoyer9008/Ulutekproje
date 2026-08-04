@@ -166,6 +166,35 @@ def test_production_rejects_incomplete_proxy_configuration(
         _validate_production_settings()
 
 
+def test_production_image_upload_rejects_dummy_parser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "receipt_image_upload_enabled", True)
+    monkeypatch.setattr(settings, "use_dummy_parser", True)
+
+    with pytest.raises(
+        RuntimeError,
+        match="cannot use the dummy parser",
+    ):
+        _validate_production_settings()
+
+
+def test_production_image_upload_requires_gemini_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "receipt_image_upload_enabled", True)
+    monkeypatch.setattr(settings, "use_dummy_parser", False)
+    monkeypatch.setattr(settings, "gemini_api_key", None)
+
+    with pytest.raises(
+        RuntimeError,
+        match="GEMINI_API_KEY is required",
+    ):
+        _validate_production_settings()
+
+
 def test_receipt_ignores_forwarded_for_when_proxy_trust_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
