@@ -29,6 +29,12 @@ class CloudTransaction(Base):
             "user_id",
             "transaction_date",
         ),
+        Index(
+            "ix_cloud_transactions_user_updated_id",
+            "user_id",
+            "updated_at",
+            "id",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
