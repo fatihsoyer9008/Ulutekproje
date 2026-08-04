@@ -30,7 +30,11 @@ void main() {
     ).create();
 
     isar = await Isar.open(
-      [TransactionEntitySchema, ReceiptLineItemEntitySchema],
+      [
+        TransactionEntitySchema,
+        ReceiptEntitySchema,
+        ReceiptLineItemEntitySchema,
+      ],
       directory: tempDirectory!.path,
       name: 'ocr_dashboard_e2e',
     );

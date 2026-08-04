@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:isar/isar.dart';
 
 import '../backup/transaction_json_backup.dart';
+import '../models/receipt_entity.dart';
 import '../models/receipt_line_item_entity.dart';
 import '../models/transaction_entity.dart';
 
@@ -20,8 +21,10 @@ class TransactionRepository {
 
     return await _isar.writeTxn(() async {
       final transactionId = await _isar.transactionEntitys.put(transaction);
+      final receiptId = await _upsertReceipt(transactionId, transaction);
       await _replaceReceiptLineItems(
         transactionId,
+        receiptId,
         transaction.receiptLineItems,
       );
       transaction.receiptLineItemsLoaded = true;
@@ -71,6 +74,7 @@ class TransactionRepository {
         for (var index = 0; index < insertions.length; index++) {
           await _replaceReceiptLineItems(
             ids[index],
+            await _upsertReceipt(ids[index], insertions[index]),
             insertions[index].receiptLineItems,
           );
           insertions[index].receiptLineItemsLoaded = true;
@@ -214,15 +218,62 @@ class TransactionRepository {
           .sortByPosition()
           .findAll();
 
+  Future<ReceiptEntity?> getReceiptByTransactionId(Id transactionId) => _isar
+      .receiptEntitys
+      .filter()
+      .transactionIdEqualTo(transactionId)
+      .findFirst();
+
+  /// Eski şemadan kalan ürün satırları için fiş oluşturur ve receiptId atar.
+  Future<void> backfillReceiptLinks() async {
+    final lineItems = await _isar.receiptLineItemEntitys.where().findAll();
+    if (lineItems.isEmpty) return;
+
+    await _isar.writeTxn(() async {
+      final receiptIds = (await _isar.receiptEntitys.where().findAll())
+          .map((receipt) => receipt.id)
+          .toSet();
+      final transactionIds = lineItems
+          .where(
+            (item) =>
+                item.receiptId <= 0 || !receiptIds.contains(item.receiptId),
+          )
+          .map((item) => item.transactionId)
+          .toSet();
+
+      for (final transactionId in transactionIds) {
+        final transaction = await _isar.transactionEntitys.get(transactionId);
+        if (transaction == null) continue;
+
+        final receiptId = await _upsertReceipt(
+          transactionId,
+          transaction,
+          force: true,
+        );
+        if (receiptId == null) continue;
+
+        final transactionItems = lineItems
+            .where((item) => item.transactionId == transactionId)
+            .toList();
+        for (final item in transactionItems) {
+          item.receiptId = receiptId;
+        }
+        await _isar.receiptLineItemEntitys.putAll(transactionItems);
+      }
+    });
+  }
+
   /// Mevcut bir işlemi günceller.
   Future<void> updateTransaction(TransactionEntity transaction) async {
     transaction.updatedAt = DateTime.now();
 
     await _isar.writeTxn(() async {
       await _isar.transactionEntitys.put(transaction);
+      final receiptId = await _upsertReceipt(transaction.id, transaction);
       if (transaction.receiptLineItemsLoaded) {
         await _replaceReceiptLineItems(
           transaction.id,
+          receiptId,
           transaction.receiptLineItems,
         );
       }
@@ -233,21 +284,27 @@ class TransactionRepository {
   Future<bool> deleteTransaction(Id id) async {
     return await _isar.writeTxn(() async {
       await _deleteReceiptLineItems(id);
+      await _deleteReceipt(id);
       return await _isar.transactionEntitys.delete(id);
     });
   }
 
   Future<void> _replaceReceiptLineItems(
     Id transactionId,
+    Id? receiptId,
     List<ReceiptLineItemEntity> items,
   ) async {
     await _deleteReceiptLineItems(transactionId);
     if (items.isEmpty) return;
+    if (receiptId == null) {
+      throw StateError('Ürün kalemleri bir fiş kaydı olmadan saklanamaz.');
+    }
 
     for (var index = 0; index < items.length; index++) {
       items[index]
         ..id = Isar.autoIncrement
         ..transactionId = transactionId
+        ..receiptId = receiptId
         ..position = index;
     }
     await _isar.receiptLineItemEntitys.putAll(items);
@@ -259,6 +316,45 @@ class TransactionRepository {
         .transactionIdEqualTo(transactionId)
         .deleteAll();
   }
+
+  Future<Id?> _upsertReceipt(
+    Id transactionId,
+    TransactionEntity transaction, {
+    bool force = false,
+  }) async {
+    final existing = await getReceiptByTransactionId(transactionId);
+    final preserveUnloadedReceipt =
+        existing != null && !transaction.receiptLineItemsLoaded;
+    if (!force && !preserveUnloadedReceipt && !_hasReceipt(transaction)) {
+      if (existing != null) await _isar.receiptEntitys.delete(existing.id);
+      return null;
+    }
+
+    final now = DateTime.now();
+    final receipt = existing ?? ReceiptEntity()
+      ..createdAt = now;
+    receipt
+      ..transactionId = transactionId
+      ..merchantName = transaction.merchantName
+      ..totalAmountInMinor = transaction.amountInMinor
+      ..date = transaction.date
+      ..category = transaction.categoryName ?? transaction.category.name
+      ..rawOcrText = transaction.rawOcrText
+      ..updatedAt = now;
+    return _isar.receiptEntitys.put(receipt);
+  }
+
+  Future<void> _deleteReceipt(Id transactionId) async {
+    await _isar.receiptEntitys
+        .filter()
+        .transactionIdEqualTo(transactionId)
+        .deleteAll();
+  }
+
+  bool _hasReceipt(TransactionEntity transaction) =>
+      transaction.source != TransactionSource.manual ||
+      transaction.rawOcrText?.trim().isNotEmpty == true ||
+      transaction.receiptLineItems.isNotEmpty;
 
   Future<List<TransactionEntity>> _hydrateReceiptLineItems(
     List<TransactionEntity> transactions,

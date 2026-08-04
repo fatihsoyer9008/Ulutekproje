@@ -15,7 +15,11 @@ void main() {
       'transaction_import_repository_test_',
     );
     isar = await Isar.open(
-      [TransactionEntitySchema, ReceiptLineItemEntitySchema],
+      [
+        TransactionEntitySchema,
+        ReceiptEntitySchema,
+        ReceiptLineItemEntitySchema,
+      ],
       directory: tempDirectory.path,
       name: 'transaction_import_repository_test',
     );
