@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.routers.auth import router as auth_router
 from app.api.routers.receipts import router as receipt_router
+from app.api.routers.sync import router as sync_router
 from app.core.config import settings
 from app.core.observability import (
     PROCESS_TIME_HEADER,
@@ -94,6 +95,7 @@ app = FastAPI(
 )
 app.include_router(auth_router)
 app.include_router(receipt_router)
+app.include_router(sync_router)
 
 
 @app.middleware("http")
