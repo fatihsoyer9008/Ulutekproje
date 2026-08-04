@@ -15,8 +15,9 @@ from fastapi import (
 
 from app.api.dependencies import get_rate_limiter, request_ip
 from app.core.config import settings
-from app.core.rate_limit import RateLimiter, RateLimitRule
+from app.core.rate_limit import RateLimiter
 from app.core.receipt_image_security import read_validated_receipt_image
+from app.core.receipt_rate_limits import enforce_receipt_rate_limits
 from app.schemas import ReceiptParserRequest, ReceiptParserResponse
 from app.services.receipt_parser import (
     DummyReceiptParserService,
@@ -27,27 +28,6 @@ from app.services.receipt_parser import (
 
 router = APIRouter(prefix="/api/v1", tags=["receipts"])
 logger = logging.getLogger("app.receipts")
-
-RECEIPT_IP_BURST = RateLimitRule(
-    name="receipt-ip-burst",
-    limit=settings.receipt_ip_burst_limit,
-    window_seconds=60,
-)
-RECEIPT_IP_DAILY = RateLimitRule(
-    name="receipt-ip-daily",
-    limit=settings.receipt_ip_daily_limit,
-    window_seconds=86_400,
-)
-RECEIPT_INSTALLATION_BURST = RateLimitRule(
-    name="receipt-installation-burst",
-    limit=settings.receipt_installation_burst_limit,
-    window_seconds=60,
-)
-RECEIPT_INSTALLATION_DAILY = RateLimitRule(
-    name="receipt-installation-daily",
-    limit=settings.receipt_installation_daily_limit,
-    window_seconds=86_400,
-)
 
 InstallationIdHeader = Annotated[
     str | None,
@@ -82,47 +62,8 @@ async def _enforce_receipt_limits(
     installation_id: str | None,
     limiter: RateLimiter,
 ) -> None:
-    ip_identifier = f"ip:{request_ip(request)}"
-
-    await limiter.enforce(
-        RECEIPT_IP_BURST,
-        identifier=ip_identifier,
-    )
-    await limiter.enforce(
-        RECEIPT_IP_DAILY,
-        identifier=ip_identifier,
-    )
-
-    if installation_id is None:
-        return
-
-    installation_identifier = f"installation:{installation_id}"
-
-    await limiter.enforce(
-        RECEIPT_INSTALLATION_BURST,
-        identifier=installation_identifier,
-    )
-    await limiter.enforce(
-        RECEIPT_INSTALLATION_DAILY,
-        identifier=installation_identifier,
-    )
-
-
-def require_receipt_image_upload_enabled() -> None:
-    if not settings.receipt_image_upload_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Fiş görüntüsü ayrıştırma geçici olarak kullanılamıyor.",
-        )
-
-
-async def enforce_receipt_image_limits(
-    request: Request,
-    installation_id: InstallationIdHeader = None,
-    limiter: RateLimiter = Depends(get_rate_limiter),
-) -> None:
-    await _enforce_receipt_limits(
-        request=request,
+    await enforce_receipt_rate_limits(
+        client_ip=request_ip(request),
         installation_id=installation_id,
         limiter=limiter,
     )
@@ -172,10 +113,6 @@ async def parse_receipt(
 @router.post(
     "/receipts/parse-image",
     response_model=ReceiptParserResponse,
-    dependencies=[
-        Depends(require_receipt_image_upload_enabled),
-        Depends(enforce_receipt_image_limits),
-    ],
 )
 async def parse_receipt_image(
     request: Request,
@@ -183,8 +120,10 @@ async def parse_receipt_image(
         UploadFile,
         File(description="JPEG veya PNG biçimindeki fiş fotoğrafı"),
     ],
+    installation_id: InstallationIdHeader = None,
     parser: ReceiptParserService = Depends(get_receipt_parser_service),
 ) -> ReceiptParserResponse:
+    del installation_id
     validated_image = await read_validated_receipt_image(image)
     started_at = perf_counter()
     request_id = getattr(request.state, "request_id", "unknown")

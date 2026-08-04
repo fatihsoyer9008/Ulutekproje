@@ -6,10 +6,9 @@ from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app.api.dependencies import get_rate_limiter
+import app.core.receipt_upload_guard as upload_guard
 from app.api.routers.receipts import get_receipt_parser_service
 from app.core.config import settings
-from app.core.rate_limit import NoOpRateLimiter, RateLimitRule
 from app.main import app
 from app.schemas import ReceiptParserRequest, ReceiptParserResponse
 from app.services.receipt_parser import ReceiptParserError
@@ -77,28 +76,20 @@ class FailingImageParser(RecordingImageParser):
         )
 
 
-class BlockingLimiter:
-    async def enforce(
-        self,
-        rule: RateLimitRule,
-        *,
-        identifier: str,
-    ) -> None:
-        del rule, identifier
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many requests. Please try again later.",
-            headers={"Retry-After": "30"},
-        )
-
-
 @pytest.fixture(autouse=True)
 def reset_dependency_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    async def allow_access(scope) -> None:
+        del scope
+
     app.dependency_overrides.clear()
-    app.dependency_overrides[get_rate_limiter] = lambda: NoOpRateLimiter()
     monkeypatch.setattr(settings, "receipt_image_upload_enabled", True)
+    monkeypatch.setattr(
+        upload_guard,
+        "enforce_receipt_image_access",
+        allow_access,
+    )
     yield
     app.dependency_overrides.clear()
 
@@ -211,9 +202,24 @@ def test_parse_image_requires_image_field() -> None:
     assert parser.calls == []
 
 
-def test_rate_limit_prevents_image_parser_call() -> None:
+def test_rate_limit_prevents_image_parser_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     parser = RecordingImageParser()
-    app.dependency_overrides[get_rate_limiter] = lambda: BlockingLimiter()
+
+    async def reject_access(scope) -> None:
+        del scope
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Please try again later.",
+            headers={"Retry-After": "30"},
+        )
+
+    monkeypatch.setattr(
+        upload_guard,
+        "enforce_receipt_image_access",
+        reject_access,
+    )
     app.dependency_overrides[get_receipt_parser_service] = lambda: parser
 
     with TestClient(app) as client:
@@ -255,7 +261,19 @@ def test_parse_image_is_unavailable_when_feature_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     parser = RecordingImageParser()
-    monkeypatch.setattr(settings, "receipt_image_upload_enabled", False)
+
+    async def reject_disabled(scope) -> None:
+        del scope
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Fiş görüntüsü ayrıştırma geçici olarak kullanılamıyor.",
+        )
+
+    monkeypatch.setattr(
+        upload_guard,
+        "enforce_receipt_image_access",
+        reject_disabled,
+    )
     app.dependency_overrides[get_receipt_parser_service] = lambda: parser
 
     with TestClient(app) as client:

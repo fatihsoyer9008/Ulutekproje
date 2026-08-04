@@ -61,6 +61,11 @@ class Settings(BaseSettings):
         ge=1,
         le=50_000_000,
     )
+    receipt_image_processing_concurrency: int = Field(
+        default=2,
+        ge=1,
+        le=8,
+    )
     receipt_ip_burst_limit: int = Field(default=10, ge=1, le=10_000)
     receipt_ip_daily_limit: int = Field(default=50, ge=1, le=1_000_000)
     receipt_installation_burst_limit: int = Field(

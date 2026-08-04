@@ -1,8 +1,10 @@
 import warnings
 from dataclasses import dataclass
+from functools import partial
 from io import BytesIO
 from pathlib import PurePath
 
+from anyio import CapacityLimiter, to_thread
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -16,6 +18,9 @@ _ALLOWED_EXTENSIONS = {
     "image/jpeg": {".jpg", ".jpeg"},
     "image/png": {".png"},
 }
+_IMAGE_PROCESSING_LIMITER = CapacityLimiter(
+    settings.receipt_image_processing_concurrency
+)
 
 
 @dataclass(frozen=True)
@@ -86,11 +91,7 @@ def _normalize_image(
                             optimize=True,
                         )
                     else:
-                        target_mode = (
-                            "RGBA"
-                            if "A" in normalized.getbands()
-                            else "RGB"
-                        )
+                        target_mode = "RGBA" if "A" in normalized.getbands() else "RGB"
                         if normalized.mode != target_mode:
                             normalized = normalized.convert(target_mode)
                         normalized.save(
@@ -124,16 +125,27 @@ def _normalize_image(
     return normalized_bytes
 
 
+async def _normalize_image_in_worker(
+    data: bytes,
+    *,
+    expected_mime_type: str,
+) -> bytes:
+    normalize = partial(
+        _normalize_image,
+        data,
+        expected_mime_type=expected_mime_type,
+    )
+    return await to_thread.run_sync(
+        normalize,
+        limiter=_IMAGE_PROCESSING_LIMITER,
+    )
+
+
 async def read_validated_receipt_image(
     upload: UploadFile,
 ) -> ValidatedReceiptImage:
     try:
-        declared_mime = (
-            (upload.content_type or "")
-            .partition(";")[0]
-            .strip()
-            .casefold()
-        )
+        declared_mime = (upload.content_type or "").partition(";")[0].strip().casefold()
         if declared_mime not in _ALLOWED_EXTENSIONS:
             raise _unsupported_image()
 
@@ -142,9 +154,7 @@ async def read_validated_receipt_image(
             raise _unsupported_image()
 
         if upload.size is not None and upload.size > settings.receipt_image_max_bytes:
-            raise _image_too_large(
-                "Fiş görüntüsü izin verilen dosya boyutunu aşıyor."
-            )
+            raise _image_too_large("Fiş görüntüsü izin verilen dosya boyutunu aşıyor.")
 
         contents = bytearray()
         while chunk := await upload.read(_READ_CHUNK_SIZE):
@@ -167,7 +177,7 @@ async def read_validated_receipt_image(
         if suffix not in _ALLOWED_EXTENSIONS[signature_mime_type]:
             raise _unsupported_image()
 
-        normalized_bytes = _normalize_image(
+        normalized_bytes = await _normalize_image_in_worker(
             image_bytes,
             expected_mime_type=signature_mime_type,
         )

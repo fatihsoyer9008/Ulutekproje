@@ -1,14 +1,59 @@
+import re
+
+from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from redis.asyncio import Redis
+from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.api.dependencies import request_ip
 from app.core.config import settings
+from app.core.rate_limit import RateLimiter
+from app.core.receipt_rate_limits import enforce_receipt_rate_limits
 
 _MULTIPART_OVERHEAD_BYTES = 64 * 1024
 _RECEIPT_IMAGE_PATH = "/api/v1/receipts/parse-image"
+_INSTALLATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]+$")
 
 
 class ReceiptImageRequestTooLarge(RuntimeError):
     pass
+
+
+def _installation_id_from_headers(headers: Headers) -> str | None:
+    installation_id = headers.get("x-installation-id")
+    if installation_id is None:
+        return None
+    if not 16 <= len(installation_id) <= 128:
+        return None
+    if _INSTALLATION_ID_PATTERN.fullmatch(installation_id) is None:
+        return None
+    return installation_id
+
+
+async def enforce_receipt_image_access(scope: Scope) -> None:
+    if not settings.receipt_image_upload_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Fiş görüntüsü ayrıştırma geçici olarak kullanılamıyor.",
+        )
+
+    headers = Headers(scope=scope)
+    request = Request(scope)
+    redis = Redis.from_url(
+        settings.redis_url.get_secret_value(),
+        encoding="utf-8",
+        decode_responses=True,
+    )
+
+    try:
+        await enforce_receipt_rate_limits(
+            client_ip=request_ip(request),
+            installation_id=_installation_id_from_headers(headers),
+            limiter=RateLimiter(redis),
+        )
+    finally:
+        await redis.aclose()
 
 
 class ReceiptImageBodyLimitMiddleware:
@@ -29,11 +74,24 @@ class ReceiptImageBodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
+        try:
+            await enforce_receipt_image_access(scope)
+        except HTTPException as exc:
+            await self._send_error(
+                scope,
+                receive,
+                send,
+                status_code=exc.status_code,
+                detail=str(exc.detail),
+                headers=exc.headers,
+            )
+            return
+
         maximum_request_bytes = (
             settings.receipt_image_max_bytes + _MULTIPART_OVERHEAD_BYTES
         )
-        headers = {key.lower(): value for key, value in scope.get("headers", [])}
-        content_length = headers.get(b"content-length")
+        headers = Headers(scope=scope)
+        content_length = headers.get("content-length")
 
         if content_length is not None:
             try:
@@ -43,7 +101,7 @@ class ReceiptImageBodyLimitMiddleware:
                     scope,
                     receive,
                     send,
-                    status_code=400,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Geçersiz Content-Length başlığı.",
                 )
                 return
@@ -53,7 +111,7 @@ class ReceiptImageBodyLimitMiddleware:
                     scope,
                     receive,
                     send,
-                    status_code=400,
+                    status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Geçersiz Content-Length başlığı.",
                 )
                 return
@@ -89,7 +147,7 @@ class ReceiptImageBodyLimitMiddleware:
             scope,
             receive,
             send,
-            status_code=413,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="Multipart istek izin verilen boyutu aşıyor.",
         )
 
@@ -101,9 +159,11 @@ class ReceiptImageBodyLimitMiddleware:
         *,
         status_code: int,
         detail: str,
+        headers: dict[str, str] | None = None,
     ) -> None:
         response = JSONResponse(
             status_code=status_code,
             content={"detail": detail},
+            headers=headers,
         )
         await response(scope, receive, send)
