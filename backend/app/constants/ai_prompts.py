@@ -23,7 +23,9 @@ KESİN KURALLAR:
    KDV ve kart tutarı yerine genel TOPLAM değerini önceliklendir.
    Ürün satırlarında mümkünse quantity, unit_price_in_minor,
    total_amount_minor, tax_rate ve tax_amount_in_minor alanlarını da çıkar;
-   OCR metninde güvenilir biçimde yoksa bu alanları null bırak.
+   OCR metninde güvenilir biçimde yoksa price_minor ve category dahil ilgili
+   alanları null bırak. Yalnızca ürün adı güvenilir biçimde okunuyorsa ürünü
+   items listesinde adıyla koru; eksik fiyat veya kategori nedeniyle ürünü atma.
 4. BAŞARILI FİŞ: merchant, date ve total_amount_minor alanlarının üçü de
    güvenilir ve tutarlı biçimde çıkarılmışsa is_parse_successful=true yap.
 5. EKSİK FİŞ: Zorunlu alanlardan herhangi biri okunamıyorsa ilgili alanı
@@ -61,7 +63,9 @@ KESİN KURALLAR:
    KDV ve kart tutarı yerine genel TOPLAM değerini önceliklendir.
    Ürün satırlarında mümkünse quantity, unit_price_in_minor,
    total_amount_minor, tax_rate ve tax_amount_in_minor alanlarını çıkar;
-   görüntüde güvenilir biçimde okunamıyorsa bu alanları null bırak.
+   görüntüde güvenilir biçimde okunamıyorsa price_minor ve category dahil ilgili
+   alanları null bırak. Yalnızca ürün adı güvenilir biçimde okunuyorsa ürünü
+   items listesinde adıyla koru; eksik fiyat veya kategori nedeniyle ürünü atma.
 4. BAŞARILI FİŞ: merchant, date ve total_amount_minor alanlarının üçü de
    görüntüden güvenilir ve tutarlı biçimde çıkarılmışsa
    is_parse_successful=true yap.
