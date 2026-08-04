@@ -4,7 +4,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from app.constants.ai_prompts import RECEIPT_EXTRACTION_SYSTEM_INSTRUCTION
+from app.constants.ai_prompts import (
+    RECEIPT_EXTRACTION_SYSTEM_INSTRUCTION,
+    RECEIPT_IMAGE_EXTRACTION_SYSTEM_INSTRUCTION,
+)
 from app.schemas import ReceiptParserRequest, ReceiptParserResponse
 from app.services.receipt_parser import GeminiReceiptParserService, ReceiptParserError
 
@@ -80,6 +83,38 @@ async def test_successful_ocr_returns_complete_receipt(mock_client_class) -> Non
     assert (
         call.kwargs["config"].system_instruction
         == RECEIPT_EXTRACTION_SYSTEM_INSTRUCTION
+    )
+    mock_client.aio.aclose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("app.services.receipt_parser.genai.Client")
+async def test_successful_image_uses_inline_bytes_and_image_prompt(
+    mock_client_class,
+) -> None:
+    mock_client = create_mock_gemini_client(parsed=successful_payload())
+    mock_client_class.return_value = mock_client
+    image_bytes = b"\xff\xd8\xff\xe0receipt-image"
+
+    result = await GeminiReceiptParserService(
+        api_key="test-key",
+        model="test-model",
+    ).parse_image(
+        image_bytes=image_bytes,
+        mime_type="image/jpeg",
+    )
+
+    assert result.total_amount_minor == 2550
+
+    call = mock_client.aio.models.generate_content.await_args
+    image_part = call.kwargs["contents"][0]
+
+    assert image_part.inline_data is not None
+    assert image_part.inline_data.data == image_bytes
+    assert image_part.inline_data.mime_type == "image/jpeg"
+    assert (
+        call.kwargs["config"].system_instruction
+        == RECEIPT_IMAGE_EXTRACTION_SYSTEM_INSTRUCTION
     )
     mock_client.aio.aclose.assert_awaited_once()
 
@@ -208,7 +243,7 @@ def test_total_amount_minor_cannot_be_negative() -> None:
             category=None,
             is_parse_successful=False,
             confidence_score=0.1,
-    )
+        )
 
 
 def test_receipt_item_accepts_optional_pricing_and_tax_fields() -> None:

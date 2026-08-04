@@ -2,11 +2,21 @@ import logging
 from time import perf_counter
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 
 from app.api.dependencies import get_rate_limiter, request_ip
 from app.core.config import settings
 from app.core.rate_limit import RateLimiter, RateLimitRule
+from app.core.receipt_image_security import read_validated_receipt_image
 from app.schemas import ReceiptParserRequest, ReceiptParserResponse
 from app.services.receipt_parser import (
     DummyReceiptParserService,
@@ -98,6 +108,26 @@ async def _enforce_receipt_limits(
     )
 
 
+def require_receipt_image_upload_enabled() -> None:
+    if not settings.receipt_image_upload_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Fiş görüntüsü ayrıştırma geçici olarak kullanılamıyor.",
+        )
+
+
+async def enforce_receipt_image_limits(
+    request: Request,
+    installation_id: InstallationIdHeader = None,
+    limiter: RateLimiter = Depends(get_rate_limiter),
+) -> None:
+    await _enforce_receipt_limits(
+        request=request,
+        installation_id=installation_id,
+        limiter=limiter,
+    )
+
+
 @router.post("/parse-receipt", response_model=ReceiptParserResponse)
 async def parse_receipt(
     payload: ReceiptParserRequest,
@@ -131,6 +161,61 @@ async def parse_receipt(
         duration_ms = (perf_counter() - started_at) * 1000
         logger.info(
             "receipt_parse_completed request_id=%s duration_ms=%.2f "
+            "model=%s outcome=%s",
+            request_id,
+            duration_ms,
+            model_name,
+            outcome,
+        )
+
+
+@router.post(
+    "/receipts/parse-image",
+    response_model=ReceiptParserResponse,
+    dependencies=[
+        Depends(require_receipt_image_upload_enabled),
+        Depends(enforce_receipt_image_limits),
+    ],
+)
+async def parse_receipt_image(
+    request: Request,
+    image: Annotated[
+        UploadFile,
+        File(description="JPEG veya PNG biçimindeki fiş fotoğrafı"),
+    ],
+    parser: ReceiptParserService = Depends(get_receipt_parser_service),
+) -> ReceiptParserResponse:
+    validated_image = await read_validated_receipt_image(image)
+    started_at = perf_counter()
+    request_id = getattr(request.state, "request_id", "unknown")
+    model_name = str(getattr(parser, "model_name", "unknown"))
+    outcome = "success"
+
+    try:
+        return await parser.parse_image(
+            image_bytes=validated_image.data,
+            mime_type=validated_image.mime_type,
+        )
+    except ReceiptParserError as exc:
+        outcome = "provider_error"
+        provider_error = exc.__cause__ or exc
+        logger.warning(
+            "receipt_image_provider_failed request_id=%s model=%s " "error_type=%s",
+            request_id,
+            model_name,
+            type(provider_error).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=("Fiş görüntüsü yapay zekâ servisi tarafından ayrıştırılamadı"),
+        ) from exc
+    except Exception:
+        outcome = "unexpected_error"
+        raise
+    finally:
+        duration_ms = (perf_counter() - started_at) * 1000
+        logger.info(
+            "receipt_image_parse_completed request_id=%s duration_ms=%.2f "
             "model=%s outcome=%s",
             request_id,
             duration_ms,

@@ -20,6 +20,15 @@ services:
       - key: USE_DUMMY_PARSER
         value: "true"
         scope: RUN_TIME
+      - key: RECEIPT_IMAGE_UPLOAD_ENABLED
+        value: "false"
+        scope: RUN_TIME
+      - key: RECEIPT_IMAGE_MAX_BYTES
+        value: "10485760"
+        scope: RUN_TIME
+      - key: RECEIPT_IMAGE_MAX_PIXELS
+        value: "25000000"
+        scope: RUN_TIME
       - key: TRUST_PROXY_HEADERS
         value: "true"
         scope: RUN_TIME
