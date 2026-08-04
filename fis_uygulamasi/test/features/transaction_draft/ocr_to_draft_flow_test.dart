@@ -94,6 +94,7 @@ void main() {
     );
     expect(find.widgetWithText(TextFormField, '25,50'), findsOneWidget);
     expect(find.byKey(const Key('transaction_date_field')), findsOneWidget);
+    expect(find.byKey(const Key('secure_analysis_button')), findsNothing);
     expect(savedTransactions, isEmpty);
     await tester.drag(find.byType(ListView), const Offset(0, -500));
     await tester.pumpAndSettle();
