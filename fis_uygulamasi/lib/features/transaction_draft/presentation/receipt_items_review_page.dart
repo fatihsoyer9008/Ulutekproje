@@ -27,8 +27,7 @@ class ReceiptItemsReviewPage extends StatefulWidget {
   final int? receiptTotalInMinor;
 
   @override
-  State<ReceiptItemsReviewPage> createState() =>
-      _ReceiptItemsReviewPageState();
+  State<ReceiptItemsReviewPage> createState() => _ReceiptItemsReviewPageState();
 }
 
 class _ReceiptItemsReviewPageState extends State<ReceiptItemsReviewPage> {
@@ -43,12 +42,22 @@ class _ReceiptItemsReviewPageState extends State<ReceiptItemsReviewPage> {
     mainReceiptTotalInMinor: _effectiveReceiptTotal,
   );
 
+  void _replaceItems(VoidCallback mutation) {
+    setState(() {
+      mutation();
+      // A previously approved receipt total only belongs to the exact item
+      // list from which it was calculated. Any mutation requires fresh user
+      // confirmation instead of silently keeping a stale amount.
+      _updatedReceiptTotalInMinor = null;
+    });
+  }
+
   Future<void> _addItem() async {
     final item = await showDialog<ReceiptItem>(
       context: context,
       builder: (_) => const ReceiptItemFormDialog(),
     );
-    if (item != null && mounted) setState(() => _items.add(item));
+    if (item != null && mounted) _replaceItems(() => _items.add(item));
   }
 
   Future<void> _editItem(int index) async {
@@ -56,7 +65,9 @@ class _ReceiptItemsReviewPageState extends State<ReceiptItemsReviewPage> {
       context: context,
       builder: (_) => ReceiptItemFormDialog(initialItem: _items[index]),
     );
-    if (item != null && mounted) setState(() => _items[index] = item);
+    if (item != null && mounted) {
+      _replaceItems(() => _items[index] = item);
+    }
   }
 
   Future<void> _deleteItem(int index) async {
@@ -78,7 +89,9 @@ class _ReceiptItemsReviewPageState extends State<ReceiptItemsReviewPage> {
         ],
       ),
     );
-    if (shouldDelete == true && mounted) setState(() => _items.removeAt(index));
+    if (shouldDelete == true && mounted) {
+      _replaceItems(() => _items.removeAt(index));
+    }
   }
 
   Future<void> _useItemsTotal() async {
@@ -173,8 +186,10 @@ class _ReceiptItemsReviewPageState extends State<ReceiptItemsReviewPage> {
                       itemCount: _items.length,
                       itemBuilder: (context, index) {
                         final item = _items[index];
-                        final total = ReceiptTotalValidation
-                            .calculateItemTotalInMinor(item);
+                        final total =
+                            ReceiptTotalValidation.calculateItemTotalInMinor(
+                              item,
+                            );
                         final unitPrice =
                             item.unitPriceInMinor ?? item.priceMinor;
                         final quantityLabel = item.quantity == null

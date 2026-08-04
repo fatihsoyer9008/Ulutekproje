@@ -103,6 +103,11 @@ void main() {
     );
     expect(find.widgetWithText(TextFormField, '25,50'), findsOneWidget);
     expect(find.byKey(const Key('transaction_date_field')), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('receipt_items_summary_count')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('1 ürün kalemi bulundu.'), findsOneWidget);
     expect(find.byKey(const Key('secure_analysis_button')), findsNothing);
     expect(savedTransactions, isEmpty);

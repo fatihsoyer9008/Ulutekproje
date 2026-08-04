@@ -11,8 +11,7 @@ class ReceiptItemFormDialog extends StatefulWidget {
   final ReceiptItem? initialItem;
 
   @override
-  State<ReceiptItemFormDialog> createState() =>
-      _ReceiptItemFormDialogState();
+  State<ReceiptItemFormDialog> createState() => _ReceiptItemFormDialogState();
 }
 
 class _ReceiptItemFormDialogState extends State<ReceiptItemFormDialog> {
@@ -21,18 +20,30 @@ class _ReceiptItemFormDialogState extends State<ReceiptItemFormDialog> {
   late final TextEditingController _categoryController;
   late final TextEditingController _quantityController;
   late final TextEditingController _unitPriceController;
+  late final TextEditingController _lineTotalController;
+  late final String _initialQuantityText;
+  late final String _initialUnitPriceText;
 
   @override
   void initState() {
     super.initState();
     final item = widget.initialItem;
-    final quantity = item?.quantity ?? 1;
+    final quantity = item?.quantity;
     final unitPrice = item?.unitPriceInMinor ?? item?.priceMinor;
     _nameController = TextEditingController(text: item?.name ?? '');
     _categoryController = TextEditingController(text: item?.category ?? '');
-    _quantityController = TextEditingController(text: _formatQuantity(quantity));
+    _quantityController = TextEditingController(
+      text: quantity == null ? '' : _formatQuantity(quantity),
+    );
     _unitPriceController = TextEditingController(
       text: unitPrice == null ? '' : formatMinorAsTurkishLira(unitPrice),
+    );
+    _initialQuantityText = _quantityController.text;
+    _initialUnitPriceText = _unitPriceController.text;
+    _lineTotalController = TextEditingController(
+      text: item?.totalAmountInMinor == null
+          ? ''
+          : formatMinorAsTurkishLira(item!.totalAmountInMinor!),
     );
   }
 
@@ -42,6 +53,7 @@ class _ReceiptItemFormDialogState extends State<ReceiptItemFormDialog> {
     _categoryController.dispose();
     _quantityController.dispose();
     _unitPriceController.dispose();
+    _lineTotalController.dispose();
     super.dispose();
   }
 
@@ -54,8 +66,9 @@ class _ReceiptItemFormDialogState extends State<ReceiptItemFormDialog> {
 
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    final quantity = _parseQuantity(_quantityController.text)!;
-    final unitPrice = parseTurkishLiraToMinor(_unitPriceController.text)!;
+    final quantity = _optionalQuantity(_quantityController.text);
+    final unitPrice = _optionalMoney(_unitPriceController.text);
+    final enteredLineTotal = _optionalMoney(_lineTotalController.text);
     final provisional = ReceiptItem(
       name: _nameController.text.trim(),
       category: _categoryController.text.trim().isEmpty
@@ -67,6 +80,14 @@ class _ReceiptItemFormDialogState extends State<ReceiptItemFormDialog> {
       taxRate: widget.initialItem?.taxRate,
       taxAmountInMinor: widget.initialItem?.taxAmountInMinor,
     );
+    final calculatedLineTotal =
+        ReceiptTotalValidation.calculateItemTotalInMinor(provisional);
+    final quantityOrUnitPriceChanged =
+        _quantityController.text.trim() != _initialQuantityText ||
+        _unitPriceController.text.trim() != _initialUnitPriceText;
+    final shouldCalculateLineTotal =
+        calculatedLineTotal != null &&
+        (quantityOrUnitPriceChanged || enteredLineTotal == null);
     Navigator.of(context).pop(
       ReceiptItem(
         name: provisional.name,
@@ -74,13 +95,20 @@ class _ReceiptItemFormDialogState extends State<ReceiptItemFormDialog> {
         quantity: quantity,
         unitPriceInMinor: unitPrice,
         priceMinor: unitPrice,
-        totalAmountInMinor:
-            ReceiptTotalValidation.calculateItemTotalInMinor(provisional),
+        totalAmountInMinor: shouldCalculateLineTotal
+            ? calculatedLineTotal
+            : enteredLineTotal,
         taxRate: provisional.taxRate,
         taxAmountInMinor: provisional.taxAmountInMinor,
       ),
     );
   }
+
+  double? _optionalQuantity(String value) =>
+      value.trim().isEmpty ? null : _parseQuantity(value);
+
+  int? _optionalMoney(String value) =>
+      value.trim().isEmpty ? null : parseTurkishLiraToMinor(value);
 
   @override
   Widget build(BuildContext context) => AlertDialog(
@@ -132,11 +160,12 @@ class _ReceiptItemFormDialogState extends State<ReceiptItemFormDialog> {
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9,.]')),
                 ],
                 decoration: const InputDecoration(
-                  labelText: 'Miktar',
+                  labelText: 'Miktar (isteğe bağlı)',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
-                  final quantity = _parseQuantity(value ?? '');
+                  if (value == null || value.trim().isEmpty) return null;
+                  final quantity = _parseQuantity(value);
                   return quantity == null || quantity <= 0
                       ? 'Miktar sıfırdan büyük olmalıdır'
                       : null;
@@ -157,11 +186,41 @@ class _ReceiptItemFormDialogState extends State<ReceiptItemFormDialog> {
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9,.\s]')),
                 ],
                 decoration: const InputDecoration(
-                  labelText: 'Birim fiyat',
+                  labelText: 'Birim fiyat (isteğe bağlı)',
                   suffixText: 'TL',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
+                  if (value == null || value.trim().isEmpty) return null;
+                  final amount = parseTurkishLiraToMinor(value);
+                  return amount == null || amount < 0
+                      ? 'Geçerli bir tutar giriniz'
+                      : null;
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            Semantics(
+              label: 'Ürün satır toplamı Türk lirası',
+              textField: true,
+              child: TextFormField(
+                key: const Key('receipt_item_line_total_field'),
+                controller: _lineTotalController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9,.\s]')),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'Satır toplamı (isteğe bağlı)',
+                  helperText:
+                      'Miktar ve birim fiyat girilirse otomatik hesaplanır.',
+                  suffixText: 'TL',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) return null;
                   final amount = parseTurkishLiraToMinor(value);
                   return amount == null || amount < 0
                       ? 'Geçerli bir tutar giriniz'

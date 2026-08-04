@@ -101,9 +101,7 @@ void main() {
   ) async {
     await openPage(
       tester,
-      items: const [
-        ReceiptItem(name: 'Kahve', totalAmountInMinor: 3000),
-      ],
+      items: const [ReceiptItem(name: 'Kahve', totalAmountInMinor: 3000)],
       receiptTotalInMinor: 2500,
     );
     expect(
@@ -120,9 +118,39 @@ void main() {
     );
   });
 
-  testWidgets('eksik ürün alanlarını güvenli biçimde gösterir', (
+  testWidgets('ürün değişince daha önce onaylanan fiş tutarı sıfırlanır', (
     tester,
   ) async {
+    await openPage(
+      tester,
+      items: const [ReceiptItem(name: 'Kahve', totalAmountInMinor: 3000)],
+      receiptTotalInMinor: 2500,
+    );
+    await tester.tap(find.byKey(const Key('use_receipt_items_total_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm_use_items_total_button')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('receipt_items_mismatch_warning')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const Key('edit_receipt_item_0')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('receipt_item_name_field')),
+      'Filtre Kahve',
+    );
+    await tester.tap(find.byKey(const Key('save_receipt_item_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('receipt_items_mismatch_warning')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('eksik ürün alanlarını güvenli biçimde gösterir', (tester) async {
     await openPage(
       tester,
       items: const [ReceiptItem(name: 'Tanımsız ürün')],
@@ -134,9 +162,72 @@ void main() {
     expect(find.text('Satır toplamı: Belirtilmedi'), findsOneWidget);
   });
 
-  testWidgets('boş ad, sıfır miktar ve negatif fiyat kaydedilemez', (
+  testWidgets(
+    'yalnız adı okunan OCR ürünü null alanları korunarak düzenlenir',
+    (tester) async {
+      await openPage(
+        tester,
+        items: const [ReceiptItem(name: 'Tanımsız ürün')],
+        receiptTotalInMinor: 1000,
+      );
+
+      await tester.tap(find.byKey(const Key('edit_receipt_item_0')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextFormField>(
+              find.byKey(const Key('receipt_item_quantity_field')),
+            )
+            .controller
+            ?.text,
+        isEmpty,
+      );
+      expect(
+        tester
+            .widget<TextFormField>(
+              find.byKey(const Key('receipt_item_unit_price_field')),
+            )
+            .controller
+            ?.text,
+        isEmpty,
+      );
+      await tester.enterText(
+        find.byKey(const Key('receipt_item_category_field')),
+        'Diğer',
+      );
+      await tester.tap(find.byKey(const Key('save_receipt_item_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Diğer'), findsOneWidget);
+      expect(find.text('Miktar: Belirtilmedi'), findsOneWidget);
+      expect(find.text('Birim fiyat: Belirtilmedi'), findsOneWidget);
+      expect(find.text('Satır toplamı: Belirtilmedi'), findsOneWidget);
+    },
+  );
+
+  testWidgets('ayrı satır toplamı miktar ve birim fiyat olmadan kaydedilir', (
     tester,
   ) async {
+    await openPage(tester, receiptTotalInMinor: 2500);
+    await tester.tap(find.byKey(const Key('add_receipt_item_button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('receipt_item_name_field')),
+      'Paket ürün',
+    );
+    await tester.enterText(
+      find.byKey(const Key('receipt_item_line_total_field')),
+      '25,00',
+    );
+    await tester.tap(find.byKey(const Key('save_receipt_item_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Miktar: Belirtilmedi'), findsOneWidget);
+    expect(find.text('Birim fiyat: Belirtilmedi'), findsOneWidget);
+    expect(find.text('Satır toplamı: 25,00 TL'), findsOneWidget);
+  });
+
+  testWidgets('boş ad ve girilmiş sıfır miktar kaydedilemez', (tester) async {
     await openPage(tester);
     await tester.tap(find.byKey(const Key('add_receipt_item_button')));
     await tester.pumpAndSettle();
@@ -161,7 +252,7 @@ void main() {
 
     expect(find.text('Ürün adı zorunludur'), findsOneWidget);
     expect(find.text('Miktar sıfırdan büyük olmalıdır'), findsOneWidget);
-    expect(find.text('Geçerli bir tutar giriniz'), findsOneWidget);
+    expect(find.text('Geçerli bir tutar giriniz'), findsNothing);
     expect(find.byType(AlertDialog), findsOneWidget);
   });
 
@@ -187,9 +278,7 @@ void main() {
       contains('Süt'),
     );
     expect(
-      tester
-          .getSemantics(find.byKey(const Key('edit_receipt_item_0')))
-          .tooltip,
+      tester.getSemantics(find.byKey(const Key('edit_receipt_item_0'))).tooltip,
       'Süt ürününü düzenle',
     );
     semantics.dispose();
