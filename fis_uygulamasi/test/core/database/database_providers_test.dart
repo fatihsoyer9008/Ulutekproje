@@ -18,6 +18,7 @@ void main() {
     isar = await Isar.open(
       [
         TransactionEntitySchema,
+        ReceiptEntitySchema,
         ReceiptLineItemEntitySchema,
         OfflineTaskSchema,
         CategoryEntitySchema,
