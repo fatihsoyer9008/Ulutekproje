@@ -98,13 +98,15 @@ class _AppBootstrap extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final transactionRepository = ref.watch(transactionRepositoryProvider);
-    final offlineTaskRepository = ref.watch(offlineTaskRepositoryProvider);
     final offlineFirstWriter = OfflineFirstTransactionWriter(
       saveTransaction: (transaction) async {
         await transactionRepository.addTransaction(transaction);
       },
-      addOfflineTask: (task) async {
-        await offlineTaskRepository.add(task);
+      saveTransactionWithOfflineTask: (transaction, buildOfflineTask) async {
+        await transactionRepository.addTransactionWithOfflineTask(
+          transaction,
+          buildOfflineTask: buildOfflineTask,
+        );
       },
     );
     final transactionImportService = TransactionJsonImportService(
@@ -118,12 +120,12 @@ class _AppBootstrap extends ConsumerWidget {
       transactionStreamFactory: transactionRepository.watchAllTransactions,
       saveTransaction: (transaction) async {
         final auth = ref.read(authSessionControllerProvider);
-        final userId = auth.user?.id;
-        if (auth.status != AuthStatus.authenticated || userId == null) {
-          await transactionRepository.addTransaction(transaction);
-          return;
-        }
-        await offlineFirstWriter.save(transaction, ownerKey: 'user:$userId');
+        await offlineFirstWriter.save(
+          transaction,
+          authenticatedUserId: auth.status == AuthStatus.authenticated
+              ? auth.user?.id
+              : null,
+        );
       },
       transactionImportService: transactionImportService,
     );

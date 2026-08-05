@@ -1,4 +1,6 @@
 import 'package:core_ui/core_ui.dart';
+import 'package:finance_database/finance_database.dart'
+    show OfflineQueueSummary;
 import 'package:flutter/material.dart';
 
 import '../../domain/sync_state.dart';
@@ -7,17 +9,23 @@ class ProfileSyncStatusCard extends StatelessWidget {
   const ProfileSyncStatusCard({
     required this.state,
     required this.isGuest,
-    this.pendingTaskCount = 0,
+    this.queueSummary = const OfflineQueueSummary(),
+    this.onSyncPending,
     this.onRetry,
     super.key,
   });
 
   final SyncState state;
   final bool isGuest;
-  final int pendingTaskCount;
+  final OfflineQueueSummary queueSummary;
+  final VoidCallback? onSyncPending;
   final VoidCallback? onRetry;
 
-  bool get _hasPendingTasks => pendingTaskCount > 0;
+  bool get _hasPendingTasks => queueSummary.hasPending;
+  bool get _hasRetryableTasks =>
+      queueSummary.retryableCount > 0 ||
+      state.status == SyncStatus.error ||
+      state.status == SyncStatus.conflict;
 
   @override
   Widget build(BuildContext context) {
@@ -69,19 +77,17 @@ class ProfileSyncStatusCard extends StatelessWidget {
             ),
           ],
           if (!isGuest &&
-              (_hasPendingTasks ||
-                  state.status == SyncStatus.error ||
-                  state.status == SyncStatus.conflict) &&
-              onRetry != null) ...[
+              ((_hasRetryableTasks && onRetry != null) ||
+                  (_hasPendingTasks && onSyncPending != null))) ...[
             const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
                 key: const Key('profile_sync_retry_button'),
-                onPressed: onRetry,
+                onPressed: _hasRetryableTasks ? onRetry : onSyncPending,
                 icon: const Icon(Icons.refresh_rounded),
                 label: Text(
-                  _hasPendingTasks ? 'Şimdi senkronize et' : 'Tekrar dene',
+                  _hasRetryableTasks ? 'Tekrar dene' : 'Şimdi senkronize et',
                 ),
               ),
             ),
@@ -102,12 +108,50 @@ class ProfileSyncStatusCard extends StatelessWidget {
       );
     }
 
-    if (_hasPendingTasks && state.status != SyncStatus.syncing) {
+    if (state.status == SyncStatus.syncing) {
+      return _SyncPresentation(
+        icon: Icons.cloud_upload_outlined,
+        color: AppColors.warning,
+        title: 'Senkronize ediliyor',
+        description: state.totalCount == 0
+            ? 'Bekleyen işlemler buluta gönderiliyor.'
+            : '${state.completedCount}/${state.totalCount} işlem tamamlandı.',
+      );
+    }
+
+    if (queueSummary.hasConflicts || state.status == SyncStatus.conflict) {
+      final conflictCount = queueSummary.conflictCount > 0
+          ? queueSummary.conflictCount
+          : state.conflictCount;
+      return _SyncPresentation(
+        icon: Icons.sync_problem_outlined,
+        color: AppColors.warning,
+        title: 'Dikkat gereken kayıtlar var',
+        description: conflictCount == 0
+            ? 'Bazı kayıtlar eşitlenemedi. Yeniden deneyebilirsin.'
+            : '$conflictCount kayıt çakışması yeniden denenmeyi bekliyor.',
+      );
+    }
+
+    if (queueSummary.hasFailures || state.status == SyncStatus.error) {
+      return _SyncPresentation(
+        icon: Icons.cloud_off_outlined,
+        color: AppColors.expense,
+        title: 'Senkronizasyon tamamlanamadı',
+        description: queueSummary.failedCount > 0
+            ? '${queueSummary.failedCount} işlem yeniden denenmeyi bekliyor.'
+            : state.errorMessage ??
+                  'Bağlantını kontrol edip yeniden deneyebilirsin.',
+      );
+    }
+
+    if (_hasPendingTasks) {
       return _SyncPresentation(
         icon: Icons.cloud_upload_outlined,
         color: AppColors.warning,
         title: 'Senkronizasyon bekliyor',
-        description: '$pendingTaskCount işlem buluta gönderilmeyi bekliyor.',
+        description:
+            '${queueSummary.pendingCount} işlem buluta gönderilmeyi bekliyor.',
       );
     }
 
@@ -119,14 +163,6 @@ class ProfileSyncStatusCard extends StatelessWidget {
         description:
             'Bekleyen işlemler bağlantı kurulduğunda otomatik olarak eşitlenir.',
       ),
-      SyncStatus.syncing => _SyncPresentation(
-        icon: Icons.cloud_upload_outlined,
-        color: AppColors.warning,
-        title: 'Senkronize ediliyor',
-        description: state.totalCount == 0
-            ? 'Bekleyen işlemler buluta gönderiliyor.'
-            : '${state.completedCount}/${state.totalCount} işlem tamamlandı.',
-      ),
       SyncStatus.success => _SyncPresentation(
         icon: Icons.cloud_done_outlined,
         color: AppColors.primary,
@@ -135,22 +171,9 @@ class ProfileSyncStatusCard extends StatelessWidget {
             ? 'Tüm verilerin güncel.'
             : '${state.completedCount} işlem başarıyla eşitlendi.',
       ),
-      SyncStatus.conflict => _SyncPresentation(
-        icon: Icons.sync_problem_outlined,
-        color: AppColors.warning,
-        title: 'Dikkat gereken kayıtlar var',
-        description: state.conflictCount == 0
-            ? 'Bazı kayıtlar eşitlenemedi. Yeniden deneyebilirsin.'
-            : '${state.conflictCount} kayıt çakışması yeniden denenmeyi bekliyor.',
-      ),
-      SyncStatus.error => _SyncPresentation(
-        icon: Icons.cloud_off_outlined,
-        color: AppColors.expense,
-        title: 'Senkronizasyon tamamlanamadı',
-        description:
-            state.errorMessage ??
-            'Bağlantını kontrol edip yeniden deneyebilirsin.',
-      ),
+      SyncStatus.syncing ||
+      SyncStatus.conflict ||
+      SyncStatus.error => throw StateError('Durum yukarıda ele alınmalı.'),
     };
   }
 }

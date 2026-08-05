@@ -1,5 +1,7 @@
 import 'package:app_main/features/sync/domain/sync_state.dart';
 import 'package:app_main/features/sync/presentation/widgets/profile_sync_status_card.dart';
+import 'package:finance_database/finance_database.dart'
+    show OfflineQueueSummary;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -8,7 +10,8 @@ void main() {
     WidgetTester tester, {
     required SyncState state,
     bool isGuest = false,
-    int pendingTaskCount = 0,
+    OfflineQueueSummary queueSummary = const OfflineQueueSummary(),
+    VoidCallback? onSyncPending,
     VoidCallback? onRetry,
   }) => tester.pumpWidget(
     MaterialApp(
@@ -16,7 +19,8 @@ void main() {
         body: ProfileSyncStatusCard(
           state: state,
           isGuest: isGuest,
-          pendingTaskCount: pendingTaskCount,
+          queueSummary: queueSummary,
+          onSyncPending: onSyncPending,
           onRetry: onRetry,
         ),
       ),
@@ -41,62 +45,30 @@ void main() {
     expect(progress.value, .4);
   });
 
-  testWidgets('hata durumunda yeniden deneme sunar', (tester) async {
+  testWidgets('kalıcı failed özeti controller idle olsa da hata gösterir', (
+    tester,
+  ) async {
     var retryCount = 0;
     await pumpCard(
       tester,
-      state: const SyncState(
-        status: SyncStatus.error,
-        errorMessage: 'Sunucuya ulaşılamadı.',
-      ),
+      state: const SyncState(),
+      queueSummary: const OfflineQueueSummary(failedCount: 2),
       onRetry: () => retryCount++,
     );
 
     expect(find.text('Senkronizasyon tamamlanamadı'), findsOneWidget);
-    expect(find.text('Sunucuya ulaşılamadı.'), findsOneWidget);
+    expect(find.text('2 işlem yeniden denenmeyi bekliyor.'), findsOneWidget);
     await tester.tap(find.byKey(const Key('profile_sync_retry_button')));
     expect(retryCount, 1);
   });
 
-  testWidgets(
-    'yeni offline görev gelince tamamlandı yerine bekliyor gösterir',
-    (tester) async {
-      var syncCount = 0;
-      await pumpCard(
-        tester,
-        state: const SyncState(status: SyncStatus.success),
-        pendingTaskCount: 2,
-        onRetry: () => syncCount++,
-      );
-
-      expect(find.text('Senkronizasyon bekliyor'), findsOneWidget);
-      expect(
-        find.text('2 işlem buluta gönderilmeyi bekliyor.'),
-        findsOneWidget,
-      );
-      expect(find.text('Şimdi senkronize et'), findsOneWidget);
-      await tester.tap(find.byKey(const Key('profile_sync_retry_button')));
-      expect(syncCount, 1);
-    },
-  );
-
-  testWidgets('misafir kullanıcıya yerel veri durumunu gösterir', (
+  testWidgets('kalıcı conflict özeti controller idle olsa da görünür', (
     tester,
   ) async {
     await pumpCard(
       tester,
-      state: const SyncState(status: SyncStatus.error),
-      isGuest: true,
-    );
-
-    expect(find.text('Yalnızca bu cihazda'), findsOneWidget);
-    expect(find.byKey(const Key('profile_sync_retry_button')), findsNothing);
-  });
-
-  testWidgets('çakışan kayıt sayısını gösterir', (tester) async {
-    await pumpCard(
-      tester,
-      state: const SyncState(status: SyncStatus.conflict, conflictCount: 3),
+      state: const SyncState(),
+      queueSummary: const OfflineQueueSummary(conflictCount: 3),
       onRetry: () {},
     );
 
@@ -105,5 +77,35 @@ void main() {
       find.text('3 kayıt çakışması yeniden denenmeyi bekliyor.'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('pending görev için manuel senkronizasyon sunar', (tester) async {
+    var syncCount = 0;
+    await pumpCard(
+      tester,
+      state: const SyncState(status: SyncStatus.success),
+      queueSummary: const OfflineQueueSummary(pendingCount: 2),
+      onSyncPending: () => syncCount++,
+    );
+
+    expect(find.text('Senkronizasyon bekliyor'), findsOneWidget);
+    expect(find.text('2 işlem buluta gönderilmeyi bekliyor.'), findsOneWidget);
+    expect(find.text('Şimdi senkronize et'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('profile_sync_retry_button')));
+    expect(syncCount, 1);
+  });
+
+  testWidgets('misafir kullanıcıya yerel veri durumunu gösterir', (
+    tester,
+  ) async {
+    await pumpCard(
+      tester,
+      state: const SyncState(status: SyncStatus.error),
+      isGuest: true,
+      queueSummary: const OfflineQueueSummary(failedCount: 1),
+    );
+
+    expect(find.text('Yalnızca bu cihazda'), findsOneWidget);
+    expect(find.byKey(const Key('profile_sync_retry_button')), findsNothing);
   });
 }

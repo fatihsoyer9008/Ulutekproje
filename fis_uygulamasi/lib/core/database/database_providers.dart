@@ -22,6 +22,10 @@ final pendingOfflineTasksProvider = StreamProvider<List<OfflineTask>>(
   (ref) => ref.watch(offlineTaskRepositoryProvider).watchPending(),
 );
 
+final offlineQueueSummaryProvider = StreamProvider<OfflineQueueSummary>(
+  (ref) => ref.watch(offlineTaskRepositoryProvider).watchQueueSummary(),
+);
+
 final categoryRepositoryProvider = Provider<CategoryRepository>(
   (ref) => CategoryRepository(ref.watch(isarProvider)),
 );

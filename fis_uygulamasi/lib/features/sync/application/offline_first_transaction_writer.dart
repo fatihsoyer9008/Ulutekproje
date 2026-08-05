@@ -6,36 +6,47 @@ import 'package:finance_database/finance_database.dart';
 
 typedef SaveLocalTransaction =
     Future<void> Function(TransactionEntity transaction);
-typedef AddOfflineTask = Future<void> Function(OfflineTask task);
+typedef SaveTransactionWithOfflineTask =
+    Future<void> Function(
+      TransactionEntity transaction,
+      OfflineTask Function(TransactionEntity persistedTransaction)
+      buildOfflineTask,
+    );
 
 class OfflineFirstTransactionWriter {
   OfflineFirstTransactionWriter({
     required this.saveTransaction,
-    required this.addOfflineTask,
+    required this.saveTransactionWithOfflineTask,
     Random? random,
   }) : _random = random ?? Random.secure();
 
   final SaveLocalTransaction saveTransaction;
-  final AddOfflineTask addOfflineTask;
+  final SaveTransactionWithOfflineTask saveTransactionWithOfflineTask;
   final Random _random;
 
   Future<void> save(
     TransactionEntity transaction, {
-    required String ownerKey,
+    required String? authenticatedUserId,
   }) async {
+    if (authenticatedUserId == null) {
+      transaction.syncState = SyncState.localOnly;
+      await saveTransaction(transaction);
+      return;
+    }
+
     final clientRecordId = transaction.clientRecordId ?? _uuidV4();
     transaction
       ..clientRecordId = clientRecordId
-      ..ownerKey = ownerKey
+      ..ownerKey = 'user:$authenticatedUserId'
       ..syncState = SyncState.pending;
 
-    await saveTransaction(transaction);
-
-    final task = OfflineTask()
-      ..clientTaskId = 'op-${_uuidV4()}'
-      ..type = OfflineTaskType.createTransaction
-      ..payloadJson = jsonEncode(_syncPayload(transaction));
-    await addOfflineTask(task);
+    await saveTransactionWithOfflineTask(
+      transaction,
+      (persistedTransaction) => OfflineTask()
+        ..clientTaskId = 'op-${_uuidV4()}'
+        ..type = OfflineTaskType.createTransaction
+        ..payloadJson = jsonEncode(_syncPayload(persistedTransaction)),
+    );
   }
 
   Map<String, Object?> _syncPayload(TransactionEntity transaction) => {

@@ -28,9 +28,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   Widget build(BuildContext context) {
     final state = ref.watch(authSessionControllerProvider);
     final syncState = ref.watch(syncCoordinatorProvider);
-    final pendingTaskCount = ref
-        .watch(pendingOfflineTasksProvider)
-        .maybeWhen(data: (tasks) => tasks.length, orElse: () => 0);
+    final queueSummary = ref
+        .watch(offlineQueueSummaryProvider)
+        .maybeWhen(data: (summary) => summary, orElse: OfflineQueueSummary.new);
     final user = state.user;
     final isGuest = state.status == AuthStatus.guest;
     return Scaffold(
@@ -69,12 +69,17 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           ProfileSyncStatusCard(
             state: syncState,
             isGuest: isGuest,
-            pendingTaskCount: pendingTaskCount,
-            onRetry: isGuest
+            queueSummary: queueSummary,
+            onSyncPending: isGuest
                 ? null
                 : () => ref
                       .read(syncCoordinatorProvider.notifier)
                       .syncPendingTasks(),
+            onRetry: isGuest
+                ? null
+                : () => ref
+                      .read(syncCoordinatorProvider.notifier)
+                      .retryFailedAndConflicted(),
           ),
           if (widget.transactionImportService != null) ...[
             const SizedBox(height: 20),

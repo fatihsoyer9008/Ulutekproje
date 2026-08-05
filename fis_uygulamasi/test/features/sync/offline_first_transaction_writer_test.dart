@@ -6,30 +6,27 @@ import 'package:finance_database/finance_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('yerel kaydı pending göreviyle birlikte hazırlar', () async {
+  test('giriş yapan kullanıcının kaydını atomik callback ile hazırlar', () async {
     TransactionEntity? savedTransaction;
     OfflineTask? savedTask;
+    var localSaveCount = 0;
     final writer = OfflineFirstTransactionWriter(
-      saveTransaction: (transaction) async {
+      saveTransaction: (_) async => localSaveCount++,
+      saveTransactionWithOfflineTask: (transaction, buildTask) async {
         final now = DateTime.utc(2026, 8, 5, 10);
         transaction
           ..createdAt = now
           ..updatedAt = now;
         savedTransaction = transaction;
+        savedTask = buildTask(transaction);
       },
-      addOfflineTask: (task) async => savedTask = task,
       random: Random(7),
     );
-    final transaction = TransactionEntity()
-      ..transactionType = TransactionType.expense
-      ..amountInMinor = 2500
-      ..category = TransactionCategory.market
-      ..date = DateTime.utc(2026, 8, 5)
-      ..merchantName = 'Market'
-      ..source = TransactionSource.manual;
+    final transaction = _transaction();
 
-    await writer.save(transaction, ownerKey: 'user:user-id');
+    await writer.save(transaction, authenticatedUserId: 'user-id');
 
+    expect(localSaveCount, 0);
     expect(savedTransaction, same(transaction));
     expect(transaction.ownerKey, 'user:user-id');
     expect(transaction.syncState, SyncState.pending);
@@ -43,7 +40,6 @@ void main() {
     );
     expect(savedTask, isNotNull);
     expect(savedTask!.type, OfflineTaskType.createTransaction);
-    expect(savedTask!.status, OfflineTaskStatus.pending);
 
     final payload = jsonDecode(savedTask!.payloadJson) as Map<String, dynamic>;
     expect(payload['client_record_id'], transaction.clientRecordId);
@@ -52,4 +48,30 @@ void main() {
     expect(payload['category'], 'market');
     expect(payload['client_created_at'], '2026-08-05T10:00:00.000Z');
   });
+
+  test('misafir kaydı offline sync kuyruğuna eklenmez', () async {
+    var localSaveCount = 0;
+    var atomicSaveCount = 0;
+    final writer = OfflineFirstTransactionWriter(
+      saveTransaction: (_) async => localSaveCount++,
+      saveTransactionWithOfflineTask: (_, _) async => atomicSaveCount++,
+      random: Random(7),
+    );
+    final transaction = _transaction();
+
+    await writer.save(transaction, authenticatedUserId: null);
+
+    expect(localSaveCount, 1);
+    expect(atomicSaveCount, 0);
+    expect(transaction.syncState, SyncState.localOnly);
+    expect(transaction.clientRecordId, isNull);
+  });
 }
+
+TransactionEntity _transaction() => TransactionEntity()
+  ..transactionType = TransactionType.expense
+  ..amountInMinor = 2500
+  ..category = TransactionCategory.market
+  ..date = DateTime.utc(2026, 8, 5)
+  ..merchantName = 'Market'
+  ..source = TransactionSource.manual;
