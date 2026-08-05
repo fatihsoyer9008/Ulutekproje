@@ -333,14 +333,25 @@ void main() {
     await tester.tap(find.text('Aç'));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('add_receipt_item_button')), findsNothing);
-    expect(find.byKey(const Key('receipt_items_description')), findsNothing);
-    expect(
-      find.byKey(const Key('receipt_total_mismatch_warning')),
-      findsNothing,
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('receipt_items_summary_count')),
+      300,
+      scrollable: find.byType(Scrollable).first,
     );
+    expect(
+      find.byKey(const Key('receipt_items_summary_count')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('view_receipt_items_button')), findsOneWidget);
     expect(find.text('Süt'), findsNothing);
     expect(find.text('Ekmek'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('view_receipt_items_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Süt'), findsOneWidget);
+    expect(find.text('Ekmek'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('apply_receipt_items_button')));
+    await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.byKey(const Key('confirm_draft_button')));
     await tester.tap(find.byKey(const Key('confirm_draft_button')));
@@ -349,6 +360,65 @@ void main() {
     expect(result?.receiptItems.map((item) => item.name), ['Süt', 'Ekmek']);
     expect(result?.receiptItems.first.priceMinor, 2000);
     expect(result?.receiptItems.last.priceMinor, 1500);
+  });
+
+  testWidgets('onaylanan ürün toplamını ana taslağa açıkça uygular', (
+    tester,
+  ) async {
+    TransactionDraft? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => FilledButton(
+            onPressed: () async {
+              result = await Navigator.of(context).push<TransactionDraft>(
+                MaterialPageRoute(
+                  builder: (_) => TransactionDraftPage(
+                    initialDraft: TransactionDraft(
+                      institutionName: 'Market',
+                      category: 'Market',
+                      amountInMinor: 2500,
+                      transactionDate: DateTime(2026, 8, 4),
+                      receiptItems: const [
+                        ReceiptItem(
+                          name: 'Kahve',
+                          totalAmountInMinor: 3000,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+            child: const Text('Aç'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Aç'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('view_receipt_items_button')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const Key('view_receipt_items_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('use_receipt_items_total_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm_use_items_total_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('apply_receipt_items_button')));
+    await tester.pumpAndSettle();
+
+    final amountField = tester.widget<TextFormField>(
+      find.byKey(const Key('amount_field')),
+    );
+    expect(amountField.controller?.text, '30,00');
+    await tester.tap(find.byKey(const Key('confirm_draft_button')));
+    await tester.pumpAndSettle();
+    expect(result?.amountInMinor, 3000);
+    expect(result?.receiptItems.single.name, 'Kahve');
   });
 }
 
