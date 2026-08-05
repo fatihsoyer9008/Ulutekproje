@@ -75,4 +75,37 @@ void main() {
     expect(await repository.delete(id), isTrue);
     expect(await repository.getById(id), isNull);
   });
+
+  test('conflict görevini pending kuyruğundan çıkarır', () async {
+    final id = await repository.add(task('task-conflict'));
+
+    await repository.markConflict(id, 'server has a newer value');
+
+    final stored = (await repository.getById(id))!;
+    expect(stored.status, OfflineTaskStatus.conflict);
+    expect(stored.lastError, 'server has a newer value');
+    expect(await repository.getPendingTasks(), isEmpty);
+  });
+
+  test('yalnızca cutoff öncesindeki synced görevleri temizler', () async {
+    final oldId = await repository.add(task('task-old'));
+    final recentId = await repository.add(task('task-recent'));
+    await repository.markAsSynced(oldId);
+    await repository.markAsSynced(recentId);
+    await isar.writeTxn(() async {
+      final old = (await isar.offlineTasks.get(oldId))!
+        ..updatedAt = DateTime.utc(2026, 7, 1);
+      final recent = (await isar.offlineTasks.get(recentId))!
+        ..updatedAt = DateTime.utc(2026, 8, 1);
+      await isar.offlineTasks.putAll([old, recent]);
+    });
+
+    final deleted = await repository.deleteSyncedBefore(
+      DateTime.utc(2026, 7, 29),
+    );
+
+    expect(deleted, 1);
+    expect(await repository.getById(oldId), isNull);
+    expect(await repository.getById(recentId), isNotNull);
+  });
 }
