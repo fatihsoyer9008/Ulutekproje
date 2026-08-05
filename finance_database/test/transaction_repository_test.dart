@@ -24,6 +24,7 @@ void main() {
         TransactionEntitySchema,
         ReceiptEntitySchema,
         ReceiptLineItemEntitySchema,
+        OfflineTaskSchema,
       ],
       directory: tempDir.path,
       name: 'transaction_repository_test',
@@ -83,6 +84,60 @@ void main() {
 
       expect(transaction.syncState, SyncState.localOnly);
     });
+
+    test('transaction ve offline task atomik olarak kaydedilir', () async {
+      final transaction = TransactionEntity()
+        ..amountInMinor = 2500
+        ..category = TransactionCategory.market
+        ..date = DateTime(2026, 8, 5)
+        ..source = TransactionSource.manual
+        ..clientRecordId = 'd9ca5a3e-599d-497c-8c96-c68c0e5b90d1'
+        ..ownerKey = 'user:test-user'
+        ..syncState = SyncState.pending;
+
+      final id = await repository.addTransactionWithOfflineTask(
+        transaction,
+        buildOfflineTask: (_) => OfflineTask()
+          ..clientTaskId = 'operation-atomic-success'
+          ..payloadJson = '{}',
+      );
+
+      expect(await repository.getTransactionById(id), isNotNull);
+      final tasks = await isar.offlineTasks.where().findAll();
+      expect(tasks, hasLength(1));
+      expect(tasks.single.clientTaskId, 'operation-atomic-success');
+      expect(tasks.single.createdAt, transaction.createdAt);
+    });
+
+    test(
+      'offline task yazımı hata verirse transaction rollback edilir',
+      () async {
+        final existingTask = OfflineTask()
+          ..clientTaskId = 'duplicate-operation-id'
+          ..payloadJson = '{}'
+          ..createdAt = DateTime(2026, 8, 5)
+          ..updatedAt = DateTime(2026, 8, 5);
+        await isar.writeTxn(() => isar.offlineTasks.put(existingTask));
+        final transaction = TransactionEntity()
+          ..amountInMinor = 2500
+          ..category = TransactionCategory.market
+          ..date = DateTime(2026, 8, 5)
+          ..source = TransactionSource.manual;
+
+        await expectLater(
+          repository.addTransactionWithOfflineTask(
+            transaction,
+            buildOfflineTask: (_) => OfflineTask()
+              ..clientTaskId = 'duplicate-operation-id'
+              ..payloadJson = '{}',
+          ),
+          throwsA(anything),
+        );
+
+        expect(await isar.transactionEntitys.count(), 0);
+        expect(await isar.offlineTasks.count(), 1);
+      },
+    );
 
     test('eski metadata alanları null olan kaydı sorunsuz okur', () async {
       final legacyTransaction = TransactionEntity()

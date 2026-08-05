@@ -16,6 +16,7 @@ typedef Clock = DateTime Function();
 
 abstract interface class SyncTaskRepository {
   Future<List<OfflineTask>> getPendingTasks({int limit = 50});
+  Future<Set<Id>> requeueFailedAndConflicted();
   Future<void> markAsSynced(Id id);
   Future<void> updateTaskError(Id id, String error);
   Future<void> markPermanentlyFailed(Id id, String error);
@@ -31,6 +32,10 @@ class IsarSyncTaskRepository implements SyncTaskRepository {
   @override
   Future<List<OfflineTask>> getPendingTasks({int limit = 50}) =>
       repository.getPendingTasks(limit: limit);
+
+  @override
+  Future<Set<Id>> requeueFailedAndConflicted() =>
+      repository.requeueFailedAndConflicted();
 
   @override
   Future<void> markAsSynced(Id id) => repository.markAsSynced(id);
@@ -96,20 +101,29 @@ class SyncCoordinator extends Notifier<SyncState> {
   @override
   SyncState build() => const SyncState();
 
-  Future<void> syncPendingTasks() {
+  Future<void> syncPendingTasks() => _startSync(requeueRetryable: false);
+
+  Future<void> retryFailedAndConflicted() => _startSync(requeueRetryable: true);
+
+  Future<void> _startSync({required bool requeueRetryable}) {
     final running = _activeSync;
     if (running != null) return running;
 
-    final operation = _runSyncSafely();
+    final operation = _runSyncSafely(requeueRetryable: requeueRetryable);
     _activeSync = operation;
     return operation.whenComplete(() {
       if (identical(_activeSync, operation)) _activeSync = null;
     });
   }
 
-  Future<void> _runSyncSafely() async {
+  Future<void> _runSyncSafely({required bool requeueRetryable}) async {
     try {
-      await _sync();
+      final freshRetryTaskIds = requeueRetryable
+          ? await ref
+                .read(syncTaskRepositoryProvider)
+                .requeueFailedAndConflicted()
+          : const <Id>{};
+      await _sync(freshRetryTaskIds: freshRetryTaskIds);
     } on Object catch (error) {
       state = SyncState(
         status: SyncStatus.error,
@@ -121,7 +135,7 @@ class SyncCoordinator extends Notifier<SyncState> {
     }
   }
 
-  Future<void> _sync() async {
+  Future<void> _sync({Set<Id> freshRetryTaskIds = const <Id>{}}) async {
     final repository = ref.read(syncTaskRepositoryProvider);
     final gateway = ref.read(pendingTaskSyncGatewayProvider);
     var completed = 0;
@@ -136,7 +150,12 @@ class SyncCoordinator extends Notifier<SyncState> {
       total += tasks.length;
 
       for (final task in tasks) {
-        final outcome = await _sendWithRetry(task, repository, gateway);
+        final outcome = await _sendWithRetry(
+          task,
+          repository,
+          gateway,
+          freshRetryBudget: freshRetryTaskIds.contains(task.id),
+        );
         switch (outcome) {
           case _TaskSuccess():
             break;
@@ -178,9 +197,12 @@ class SyncCoordinator extends Notifier<SyncState> {
   Future<_TaskOutcome> _sendWithRetry(
     OfflineTask task,
     SyncTaskRepository repository,
-    PendingTaskSyncGateway gateway,
-  ) async {
-    var attempt = task.retryCount;
+    PendingTaskSyncGateway gateway, {
+    required bool freshRetryBudget,
+  }) async {
+    // Manuel retry'da kalıcı retryCount audit için korunur; bu çalıştırmaya
+    // ayrı ve taze bir deneme bütçesi verilir.
+    var attempt = freshRetryBudget ? 0 : task.retryCount;
     while (attempt < maxRetries) {
       try {
         await gateway.send(task);

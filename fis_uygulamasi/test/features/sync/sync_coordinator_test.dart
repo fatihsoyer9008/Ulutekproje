@@ -140,6 +140,32 @@ void main() {
     expect(repository.syncedIds, isEmpty);
   });
 
+  for (final retryStatus in [
+    OfflineTaskStatus.failed,
+    OfflineTaskStatus.conflict,
+  ]) {
+    test(
+      '$retryStatus manuel retry ile pending yapılıp gatewaye gönderilir',
+      () async {
+        final retryTask = task(1, retryCount: 5)
+          ..status = retryStatus
+          ..lastError = 'previous error';
+        final repository = _FakeSyncTaskRepository([])..addRetryable(retryTask);
+        final gateway = _FakeGateway((_) async {});
+        final scope = container(repository: repository, gateway: gateway);
+
+        await scope
+            .read(syncCoordinatorProvider.notifier)
+            .retryFailedAndConflicted();
+
+        expect(repository.requeueCalls, 1);
+        expect(gateway.calls, 1);
+        expect(repository.syncedIds, [1]);
+        expect(scope.read(syncCoordinatorProvider).status, SyncStatus.success);
+      },
+    );
+  }
+
   test('eş zamanlı çağrılar aynı gönderimi paylaşır', () async {
     final repository = _FakeSyncTaskRepository([task(1)]);
     final release = Completer<void>();
@@ -213,6 +239,7 @@ class _FakeSyncTaskRepository implements SyncTaskRepository {
     : _pending = {for (final task in tasks) task.id: task};
 
   final Map<Id, OfflineTask> _pending;
+  final Map<Id, OfflineTask> _retryable = {};
   final syncedIds = <Id>[];
   final failedIds = <Id>[];
   final conflictIds = <Id>[];
@@ -220,11 +247,26 @@ class _FakeSyncTaskRepository implements SyncTaskRepository {
   final cleanupCutoffs = <DateTime>[];
   final cleanupResults = <int>[];
   int errorUpdates = 0;
+  int requeueCalls = 0;
+
+  void addRetryable(OfflineTask task) => _retryable[task.id] = task;
 
   @override
   Future<List<OfflineTask>> getPendingTasks({int limit = 50}) async {
     requestedLimits.add(limit);
     return _pending.values.take(limit).toList();
+  }
+
+  @override
+  Future<Set<Id>> requeueFailedAndConflicted() async {
+    requeueCalls += 1;
+    final ids = _retryable.keys.toSet();
+    for (final task in _retryable.values) {
+      task.status = OfflineTaskStatus.pending;
+      _pending[task.id] = task;
+    }
+    _retryable.clear();
+    return ids;
   }
 
   @override
