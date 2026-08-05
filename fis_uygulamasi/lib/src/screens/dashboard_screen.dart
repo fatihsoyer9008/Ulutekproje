@@ -13,6 +13,7 @@ class DashboardScreen extends StatelessWidget {
     this.saveTransaction,
     this.scanReceipt,
     this.parseReceipt,
+    this.onAiAssistantPressed,
     super.key,
   });
 
@@ -20,6 +21,7 @@ class DashboardScreen extends StatelessWidget {
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
+  final VoidCallback? onAiAssistantPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +69,43 @@ class DashboardScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 28),
+        Text(
+          'AI Finans Asistanı',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: 12),
+        AppCard(
+          onTap: onAiAssistantPressed,
+          color: isDark ? scheme.surfaceContainerHigh : AppColors.mintLight,
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: scheme.primary,
+                foregroundColor: scheme.onPrimary,
+                child: const Icon(Icons.auto_awesome_rounded),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Finansını birlikte yorumlayalım',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Harcamalarını sor, anında kişisel içgörüler al.',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.arrow_forward_rounded, color: AppColors.primary),
+            ],
+          ),
         ),
         const SizedBox(height: 28),
         Text('Hatırlatıcı', style: Theme.of(context).textTheme.titleLarge),

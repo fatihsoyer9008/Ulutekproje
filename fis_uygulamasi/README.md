@@ -7,7 +7,7 @@ Android emülatöründe backend varsayılan olarak
 backend ile çalışırken API adresini `dart-define` ile verin:
 
 ```powershell
-flutter run --dart-define=RECEIPT_API_BASE_URL=https://api-adresiniz
+flutter run --dart-define=API_BASE_URL=https://api-adresiniz
 ```
 
 Akış: kamera ile fiş tarama → cihaz içi OCR → FastAPI ayrıştırma → kullanıcı

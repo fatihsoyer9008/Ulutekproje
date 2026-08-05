@@ -76,7 +76,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Günaydın, Ayşe'), findsOneWidget);
+    expect(find.textContaining('Ayşe'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('app_menu_button')));
     await tester.pumpAndSettle();

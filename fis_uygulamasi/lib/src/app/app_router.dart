@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/notifications/notification_navigation_controller.dart';
+import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
 import '../../features/categories/presentation/category_management_page.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/auth/presentation/views/forgot_password_page.dart';
@@ -26,6 +27,7 @@ GoRouter createAppRouter({
   saveTransaction,
   required ReceiptScanLauncher? scanReceipt,
   TransactionJsonImportService? transactionImportService,
+  AiAssistantMessageStream? aiAssistantMessageStream,
 }) {
   return GoRouter(
     initialLocation: '/startup',
@@ -93,6 +95,7 @@ GoRouter createAppRouter({
             saveTransaction: saveTransaction,
             scanReceipt: scanReceipt,
             parseReceipt: parser.parse,
+            aiAssistantMessageStream: aiAssistantMessageStream,
           );
         },
       ),
@@ -130,12 +133,14 @@ class _FinanceDataHost extends ConsumerStatefulWidget {
     required this.saveTransaction,
     required this.scanReceipt,
     required this.parseReceipt,
+    this.aiAssistantMessageStream,
   });
 
   final Stream<List<TransactionEntity>> Function() transactionStreamFactory;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler parseReceipt;
+  final AiAssistantMessageStream? aiAssistantMessageStream;
 
   @override
   ConsumerState<_FinanceDataHost> createState() => _FinanceDataHostState();
@@ -184,6 +189,7 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
           onProfilePressed: () => context.push('/profile'),
           pendingOfflineTaskCount: pendingTaskCount,
           enableAccountMenu: true,
+          aiAssistantMessageStream: widget.aiAssistantMessageStream,
         );
       },
     );
