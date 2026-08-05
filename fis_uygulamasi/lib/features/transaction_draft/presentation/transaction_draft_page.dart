@@ -7,6 +7,7 @@ import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 import '../model/turkish_money.dart';
 import 'receipt_items_review_page.dart';
 import 'widgets/receipt_items_summary_card.dart';
+import '../data/receipt_parser_client.dart';
 
 enum TransactionDraftPageMode { manual, ocrReview, income }
 
@@ -29,7 +30,7 @@ class TransactionDraftPage extends StatefulWidget {
   final String? normalizedOcrText;
   final double? confidenceScore;
   final bool isParseSuccessful;
-  final VoidCallback? onSecureAnalysisRequested;
+  final Future<ReceiptParseResult?> Function()? onSecureAnalysisRequested;
   final TransactionDraftPageMode mode;
   final List<CategoryEntity>? categories;
 
@@ -48,6 +49,7 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
   late List<ReceiptItem> _receiptItems;
   bool _showDateRequiredError = false;
   bool _isConfirming = false;
+  bool _isSecureAnalysisRunning = false;
 
   bool get _shouldOfferSecureAnalysis =>
       widget.mode == TransactionDraftPageMode.ocrReview &&
@@ -173,6 +175,62 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
     });
   }
 
+  Future<void> _requestSecureAnalysis() async {
+    final request = widget.onSecureAnalysisRequested;
+    if (request == null || _isSecureAnalysisRunning) return;
+
+    setState(() => _isSecureAnalysisRunning = true);
+
+    try {
+      final result = await request();
+      if (result == null || !mounted) return;
+
+      final draft = result.draft;
+      final matchingCategory = _matchingCategoryName(
+        _categories,
+        draft.category,
+      );
+
+      setState(() {
+        _institutionController.text = draft.institutionName;
+        _amountController.text = draft.amountInMinor == null
+            ? ''
+            : formatMinorAsTurkishLira(draft.amountInMinor!);
+        _transactionDate = draft.transactionDate;
+        _dateController.text = _formatTransactionDate(_transactionDate);
+        _receiptItems = [...draft.receiptItems];
+
+        if (matchingCategory != null) {
+          _selectedCategory = matchingCategory;
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Görsel güvenli analiz ile yeniden ayrıştırıldı.'),
+        ),
+      );
+    } on ReceiptParserException catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } on Exception {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Fiş görseli analiz edilemedi. Lütfen tekrar deneyin.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSecureAnalysisRunning = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -210,7 +268,11 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                     width: double.infinity,
                     child: FilledButton.tonalIcon(
                       key: const Key('secure_analysis_button'),
-                      onPressed: widget.onSecureAnalysisRequested,
+                      onPressed:
+                          _isSecureAnalysisRunning ||
+                              widget.onSecureAnalysisRequested == null
+                          ? null
+                          : _requestSecureAnalysis,
                       icon: const Icon(Icons.cloud_upload_outlined),
                       label: const Text('Görseli güvenli analiz için gönder'),
                     ),

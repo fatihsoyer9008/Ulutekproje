@@ -114,7 +114,7 @@ class ReceiptImageUploadController
 }
 
 final receiptImageUploadProvider =
-    StateNotifierProvider.autoDispose<
+    StateNotifierProvider<
       ReceiptImageUploadController,
       ReceiptImageUploadState
     >((ref) => ReceiptImageUploadController());

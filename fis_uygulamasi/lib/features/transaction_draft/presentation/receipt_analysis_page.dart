@@ -4,9 +4,6 @@ import 'dart:math' as math;
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import 'controllers/receipt_image_upload_controller.dart';
 import 'widgets/receipt_image_upload_status_panel.dart';
 
 class ReceiptAnalysisPage extends StatefulWidget {
@@ -53,74 +50,65 @@ class _ReceiptAnalysisPageState extends State<ReceiptAnalysisPage>
   }
 
   @override
-  Widget build(BuildContext context) => ProviderScope(
-    child: PopScope(
-      canPop: false,
-      child: Scaffold(
-        key: const Key('receipt_analysis_page'),
-        backgroundColor: AppColors.canvas,
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _ReceiptScanAnimation(animation: _animationController),
-                    const SizedBox(height: 32),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 450),
-                      transitionBuilder: (child, animation) => FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: const Offset(0, 0.18),
-                            end: Offset.zero,
-                          ).animate(animation),
-                          child: child,
-                        ),
-                      ),
-                      child: Text(
-                        _messages[_messageIndex],
-                        key: ValueKey(_messageIndex),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              color: AppColors.ink,
-                              fontWeight: FontWeight.w800,
-                            ),
+  Widget build(BuildContext context) => PopScope(
+    canPop: false,
+    child: Scaffold(
+      key: const Key('receipt_analysis_page'),
+      backgroundColor: AppColors.canvas,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ReceiptScanAnimation(animation: _animationController),
+                  const SizedBox(height: 32),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 450),
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.18),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Yapay zekâ fiş detaylarını sizin için hazırlıyor.',
+                    child: Text(
+                      _messages[_messageIndex],
+                      key: ValueKey(_messageIndex),
                       textAlign: TextAlign.center,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodyLarge?.copyWith(color: AppColors.muted),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: AppColors.ink,
+                            fontWeight: FontWeight.w800,
+                          ),
                     ),
-                    const SizedBox(height: 22),
-                    const _AnimatedDots(),
-                    const ReceiptImageUploadStatusPanel(),
-                    if (widget.onCancel != null) ...[
-                      const SizedBox(height: 24),
-                      Consumer(
-                        builder: (context, ref, _) => TextButton(
-                          key: const Key('cancel_receipt_analysis_button'),
-                          onPressed: () {
-                            ref
-                                .read(receiptImageUploadProvider.notifier)
-                                .cancel();
-                            widget.onCancel?.call();
-                          },
-                          child: const Text('İptal Et'),
-                        ),
-                      ),
-                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Yapay zekâ fiş detaylarını sizin için hazırlıyor.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.copyWith(color: AppColors.muted),
+                  ),
+                  const SizedBox(height: 22),
+                  const _AnimatedDots(),
+                  const ReceiptImageUploadStatusPanel(),
+                  if (widget.onCancel != null) ...[
+                    const SizedBox(height: 24),
+                    TextButton(
+                      key: const Key('cancel_receipt_analysis_button'),
+                      onPressed: widget.onCancel,
+                      child: const Text('İptal Et'),
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
           ),

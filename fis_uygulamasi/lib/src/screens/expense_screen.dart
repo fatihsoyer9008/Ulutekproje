@@ -12,12 +12,20 @@ import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../../features/transaction_draft/presentation/receipt_analysis_page.dart';
 import '../../features/transaction_draft/presentation/transaction_draft_page.dart';
 import '../../core/database/database_providers.dart';
+import 'package:flutter/foundation.dart';
+import '../../features/transaction_draft/presentation/controllers/receipt_image_upload_controller.dart';
 
 typedef ReceiptScanLauncher = Future<String?> Function(BuildContext context);
 typedef ReceiptParseHandler =
     Future<ReceiptParseResult> Function(
       String text, {
       CancelToken? cancelToken,
+    });
+typedef ReceiptImageParseHandler =
+    Future<ReceiptParseResult> Function(
+      ReceiptUploadImage image, {
+      CancelToken? cancelToken,
+      ProgressCallback? onSendProgress,
     });
 
 class ExpenseScreen extends StatefulWidget {
@@ -28,6 +36,7 @@ class ExpenseScreen extends StatefulWidget {
     this.parseReceipt,
     this.saveTransaction,
     this.openScannerOnStart = false,
+    this.parseReceiptImage,
   });
 
   final ReceiptScanLauncher? scanReceipt;
@@ -35,6 +44,7 @@ class ExpenseScreen extends StatefulWidget {
   final ReceiptParseHandler? parseReceipt;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final bool openScannerOnStart;
+  final ReceiptImageParseHandler? parseReceiptImage;
 
   @override
   State<ExpenseScreen> createState() => _ExpenseScreenState();
@@ -120,6 +130,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
   bool _initialScannerOpened = false;
   bool _isFlowActive = false;
   bool _isSaving = false;
+  Uint8List? _lastReceiptImageBytes;
 
   @override
   void initState() {
@@ -232,6 +243,9 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
   }) async {
     if (_isFlowActive) return;
     setState(() => _isFlowActive = true);
+    if (retryOcrText == null) {
+      _lastReceiptImageBytes = null;
+    }
 
     final rootNavigator = Navigator.of(context, rootNavigator: true);
     final cancelToken = CancelToken();
@@ -341,12 +355,87 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
           normalizedOcrText: result.normalizedOcrText,
           confidenceScore: result.confidenceScore,
           isParseSuccessful: result.isParseSuccessful,
+          onSecureAnalysisRequested:
+              _lastReceiptImageBytes == null || widget.parseReceiptImage == null
+              ? null
+              : () => _runSecureImageAnalysis(context),
           categories: categories,
         ),
       ),
     );
     if (!context.mounted) return;
     await _saveDraft(context, confirmedDraft, source: TransactionSource.ocrLlm);
+  }
+
+  Future<ReceiptParseResult?> _runSecureImageAnalysis(
+    BuildContext context,
+  ) async {
+    final imageBytes = _lastReceiptImageBytes;
+    final parseImage = widget.parseReceiptImage;
+
+    if (imageBytes == null || parseImage == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gönderilecek fiş görseli bulunamadı.')),
+        );
+      }
+      return null;
+    }
+
+    final container = ProviderScope.containerOf(context, listen: false);
+    final uploadController = container.read(
+      receiptImageUploadProvider.notifier,
+    );
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+    MaterialPageRoute<void>? analysisRoute;
+
+    uploadController.beginPreparing();
+
+    analysisRoute = MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => ReceiptAnalysisPage(onCancel: uploadController.cancel),
+    );
+    unawaited(rootNavigator.push<void>(analysisRoute));
+
+    try {
+      final optimizedImage = await compute(
+        prepareReceiptImageForUpload,
+        imageBytes,
+      );
+
+      final uploadState = container.read(receiptImageUploadProvider);
+
+      if (uploadState.status == ReceiptImageUploadStatus.cancelled) {
+        return null;
+      }
+
+      final cancelToken = uploadController.beginUpload();
+
+      final result = await parseImage(
+        optimizedImage,
+        cancelToken: cancelToken,
+        onSendProgress: uploadController.updateProgress,
+      );
+
+      if (cancelToken.isCancelled) return null;
+
+      uploadController.complete();
+      return result;
+    } on ReceiptParserException catch (error) {
+      if (error.isCancelled) {
+        uploadController.cancel();
+      } else {
+        uploadController.fail(error.message);
+      }
+      rethrow;
+    } on Exception {
+      uploadController.fail(
+        'Görsel yükleme sırasında beklenmeyen bir hata oluştu.',
+      );
+      rethrow;
+    } finally {
+      _removeRouteIfMounted(rootNavigator, analysisRoute);
+    }
   }
 
   void _setFlowActive(bool value) {
@@ -384,10 +473,13 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     if (route?.navigator != null) navigator.removeRoute(route!);
   }
 
-  Future<String?> _launchReceiptScanner(BuildContext context) {
-    return Navigator.of(context).push<String>(
+  Future<String?> _launchReceiptScanner(BuildContext context) async {
+    final result = await Navigator.of(context).push<ReceiptScanResult>(
       MaterialPageRoute(builder: (_) => const ReceiptScannerScreen()),
     );
+
+    _lastReceiptImageBytes = result?.imageBytes;
+    return result?.rawOcrText;
   }
 
   Future<String?> _pickReceiptFromGallery(BuildContext context) async {
@@ -399,6 +491,8 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       acceptedTypeGroups: const <XTypeGroup>[imageTypes],
     );
     if (image == null) return null;
+
+    _lastReceiptImageBytes = await image.readAsBytes();
     return recognizeReceiptImage(image.path);
   }
 

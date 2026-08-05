@@ -8,3 +8,4 @@ export 'src/receipt_image_preprocessor.dart';
 export 'src/receipt_image_recognizer.dart';
 export 'src/receipt_image_validator.dart';
 export 'src/camera_failure.dart';
+export 'src/receipt_scan_result.dart';

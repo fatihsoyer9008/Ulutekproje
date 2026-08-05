@@ -13,6 +13,7 @@ class DashboardScreen extends StatelessWidget {
     this.saveTransaction,
     this.scanReceipt,
     this.parseReceipt,
+    this.parseReceiptImage,
     super.key,
   });
 
@@ -20,6 +21,7 @@ class DashboardScreen extends StatelessWidget {
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
+  final ReceiptImageParseHandler? parseReceiptImage;
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +64,7 @@ class DashboardScreen extends StatelessWidget {
                     saveTransaction: saveTransaction,
                     scanReceipt: scanReceipt,
                     parseReceipt: parseReceipt,
+                    parseReceiptImage: parseReceiptImage,
                   ),
                 ),
               ),

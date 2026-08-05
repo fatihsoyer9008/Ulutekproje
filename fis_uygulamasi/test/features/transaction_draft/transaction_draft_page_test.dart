@@ -2,6 +2,7 @@ import 'package:app_main/features/transaction_draft/presentation/transaction_dra
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
 
 void main() {
   group('güvenli analiz butonu', () {
@@ -10,7 +11,7 @@ void main() {
       TransactionDraftPageMode mode = TransactionDraftPageMode.ocrReview,
       double? confidenceScore,
       bool isParseSuccessful = true,
-      VoidCallback? onSecureAnalysisRequested,
+      Future<ReceiptParseResult?> Function()? onSecureAnalysisRequested,
     }) => tester.pumpWidget(
       MaterialApp(
         home: TransactionDraftPage(
@@ -75,7 +76,10 @@ void main() {
       await pumpSubject(
         tester,
         confidenceScore: .20,
-        onSecureAnalysisRequested: () => requestCount++,
+        onSecureAnalysisRequested: () async {
+          requestCount++;
+          return null;
+        },
       );
 
       final button = tester.widget<FilledButton>(
@@ -380,10 +384,7 @@ void main() {
                       amountInMinor: 2500,
                       transactionDate: DateTime(2026, 8, 4),
                       receiptItems: const [
-                        ReceiptItem(
-                          name: 'Kahve',
-                          totalAmountInMinor: 3000,
-                        ),
+                        ReceiptItem(name: 'Kahve', totalAmountInMinor: 3000),
                       ],
                     ),
                   ),
