@@ -8,6 +8,8 @@ enum TransactionSource { ocrRegex, ocrLlm, manual }
 
 enum TransactionType { expense, income }
 
+enum SyncState { localOnly, pending, synced, failed, pendingDelete }
+
 enum TransactionCategory {
   market,
   ulasim,
@@ -41,6 +43,18 @@ class TransactionEntity {
   @Enumerated(EnumType.name)
   late TransactionSource source;
 
+  /// Cihazlar arasında işlemi tekil olarak tanımlayan UUID.
+  @Index()
+  String? clientRecordId;
+
+  /// Kaydın yerel sahibi: `guest:installation-id` veya `user:user-id`.
+  @Index()
+  String? ownerKey;
+
+  /// Kaydın bulut senkronizasyonundaki güncel durumu.
+  @Enumerated(EnumType.name)
+  SyncState syncState = SyncState.localOnly;
+
   /// Ham OCR metni — kullanıcı gizlilik ayarından kapatılabilir.
   String? rawOcrText;
 
@@ -67,6 +81,9 @@ class TransactionEntity {
       'date': date.toIso8601String(),
       'merchantName': merchantName,
       'source': source.name,
+      'clientRecordId': clientRecordId,
+      'ownerKey': ownerKey,
+      'syncState': syncState.name,
       'rawOcrText': rawOcrText,
       'note': note,
       'createdAt': createdAt.toIso8601String(),

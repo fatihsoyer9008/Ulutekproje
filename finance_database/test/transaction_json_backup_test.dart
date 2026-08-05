@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:isar/isar.dart';
@@ -63,6 +65,70 @@ void main() {
       expect(transactions.single.amountInMinor, 500000);
       expect(transactions.single.merchantName, 'Maaş');
       expect(transactions.single.categoryName, 'Serbest Meslek');
+    });
+
+    test('senkronizasyon metadata alanlarını JSON turunda korur', () {
+      final original = TransactionEntity()
+        ..transactionType = TransactionType.expense
+        ..amountInMinor = 3490
+        ..category = TransactionCategory.market
+        ..date = DateTime.parse('2026-08-05T10:00:00Z')
+        ..source = TransactionSource.ocrLlm
+        ..clientRecordId = '13f3b27e-554f-41c3-a1cf-05acae28d842'
+        ..ownerKey = 'guest:test-installation'
+        ..syncState = SyncState.pending
+        ..createdAt = DateTime.parse('2026-08-05T10:01:00Z')
+        ..updatedAt = DateTime.parse('2026-08-05T10:02:00Z');
+
+      final decoded = TransactionJsonBackup.decode(
+        jsonEncode({
+          'schemaVersion': TransactionJsonBackup.supportedSchemaVersion,
+          'transactions': [original.toJson()],
+        }),
+      ).single;
+
+      expect(decoded.clientRecordId, '13f3b27e-554f-41c3-a1cf-05acae28d842');
+      expect(decoded.ownerKey, 'guest:test-installation');
+      expect(decoded.syncState, SyncState.pending);
+    });
+
+    test(
+      'eski JSON yedeğinde eksik metadata güvenli varsayılanları kullanır',
+      () {
+        final transaction = TransactionJsonBackup.decode('''
+[
+  {
+    "transactionType": "expense",
+    "amountInMinor": 1000,
+    "category": "diger",
+    "date": "2026-08-05T10:00:00Z",
+    "source": "manual"
+  }
+]
+''').single;
+
+        expect(transaction.clientRecordId, isNull);
+        expect(transaction.ownerKey, isNull);
+        expect(transaction.syncState, SyncState.localOnly);
+      },
+    );
+
+    test('geçersiz syncState değerini reddeder', () {
+      expect(
+        () => TransactionJsonBackup.decode('''
+[
+  {
+    "transactionType": "expense",
+    "amountInMinor": 1000,
+    "category": "diger",
+    "date": "2026-08-05T10:00:00Z",
+    "source": "manual",
+    "syncState": "unknown"
+  }
+]
+'''),
+        throwsA(isA<TransactionJsonImportException>()),
+      );
     });
 
     test('sürüm 2 JSON yedeğindeki fiş ürünlerini çözümler', () {
