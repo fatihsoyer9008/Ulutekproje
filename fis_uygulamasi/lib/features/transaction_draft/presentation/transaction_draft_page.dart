@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
 import '../model/turkish_money.dart';
+import 'receipt_items_review_page.dart';
+import 'widgets/receipt_items_summary_card.dart';
 
 enum TransactionDraftPageMode { manual, ocrReview, income }
 
@@ -150,6 +152,25 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
         receiptItems: List.unmodifiable(_receiptItems),
       ),
     );
+  }
+
+  Future<void> _reviewReceiptItems() async {
+    final result = await Navigator.of(context).push<ReceiptItemsReviewResult>(
+      MaterialPageRoute(
+        builder: (_) => ReceiptItemsReviewPage(
+          initialItems: _receiptItems,
+          receiptTotalInMinor: parseTurkishLiraToMinor(_amountController.text),
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _receiptItems = [...result.items];
+      final updatedTotal = result.updatedReceiptTotalInMinor;
+      if (updatedTotal != null) {
+        _amountController.text = formatMinorAsTurkishLira(updatedTotal);
+      }
+    });
   }
 
   @override
@@ -316,6 +337,13 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
                   ],
                 ),
               ),
+              if (widget.mode == TransactionDraftPageMode.ocrReview) ...[
+                const SizedBox(height: 16),
+                ReceiptItemsSummaryCard(
+                  itemCount: _receiptItems.length,
+                  onViewItems: _reviewReceiptItems,
+                ),
+              ],
               if (widget.mode == TransactionDraftPageMode.ocrReview &&
                   widget.normalizedOcrText?.trim().isNotEmpty == true) ...[
                 const SizedBox(height: 16),

@@ -336,6 +336,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
             amountInMinor: result.draft.amountInMinor,
             transactionDate: result.draft.transactionDate,
             rawOcrText: rawText,
+            receiptItems: result.draft.receiptItems,
           ),
           normalizedOcrText: result.normalizedOcrText,
           confidenceScore: result.confidenceScore,
