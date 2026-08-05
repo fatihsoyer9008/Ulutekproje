@@ -51,6 +51,12 @@ def _image_too_large(detail: str) -> HTTPException:
     )
 
 
+def _remove_image_metadata(image: Image.Image) -> None:
+    """Remove metadata from the decoded image before it is re-encoded."""
+    image.info.clear()
+    image.getexif().clear()
+
+
 def _normalize_image(
     data: bytes,
     *,
@@ -79,6 +85,7 @@ def _normalize_image(
                 normalized = ImageOps.exif_transpose(image)
                 try:
                     normalized.load()
+                    _remove_image_metadata(normalized)
                     output = BytesIO()
 
                     if expected_mime_type == "image/jpeg":
@@ -144,6 +151,7 @@ async def _normalize_image_in_worker(
 async def read_validated_receipt_image(
     upload: UploadFile,
 ) -> ValidatedReceiptImage:
+    """Validate and sanitize an upload, then release its temporary storage."""
     try:
         declared_mime = (upload.content_type or "").partition(";")[0].strip().casefold()
         if declared_mime not in _ALLOWED_EXTENSIONS:
@@ -186,4 +194,7 @@ async def read_validated_receipt_image(
             mime_type=signature_mime_type,
         )
     finally:
+        # Starlette stores multipart uploads in a SpooledTemporaryFile. Closing
+        # the UploadFile here also deletes any on-disk temporary file, on both
+        # successful and failed processing paths.
         await upload.close()

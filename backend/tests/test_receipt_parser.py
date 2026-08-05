@@ -275,6 +275,24 @@ def test_receipt_item_accepts_optional_pricing_and_tax_fields() -> None:
     assert item.tax_amount_in_minor == 400
 
 
+def test_receipt_item_keeps_name_when_price_and_category_are_unknown() -> None:
+    result = ReceiptParserResponse.model_validate(
+        {
+            "normalized_ocr_text": "KISMEN OKUNAN URUN",
+            "merchant": None,
+            "total_amount_minor": None,
+            "items": [{"name": "Kısmen Okunan Ürün"}],
+            "is_parse_successful": False,
+            "confidence_score": 0.3,
+        }
+    )
+
+    item = result.items[0]
+    assert item.name == "Kısmen Okunan Ürün"
+    assert item.price_minor is None
+    assert item.category is None
+
+
 def test_normalized_ocr_text_cannot_be_blank() -> None:
     with pytest.raises(ValidationError):
         ReceiptParserResponse(

@@ -203,7 +203,7 @@ class StatisticsContent extends StatelessWidget {
           if (categories.isEmpty)
             StatisticsCard(
               child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
+                padding: const EdgeInsets.symmetric(vertical: 18),
                 child: Center(
                   child: Text(
                     'Henüz kategori verisi bulunmuyor.',
@@ -370,7 +370,7 @@ class StatisticsChart extends StatelessWidget {
       );
     }
     final values = spending
-        .map((item) => item.amountInMinor / 100)
+        .map((item) => math.max(0, item.amountInMinor) / 100)
         .toList(growable: false);
     final highest = values.fold<double>(0, math.max);
     final maxY = highest <= 0 ? 10.0 : highest * 1.2;
@@ -453,6 +453,7 @@ class StatisticsChart extends StatelessWidget {
             ],
             isCurved: true,
             curveSmoothness: .25,
+            preventCurveOverShooting: true,
             color: AppColors.primary,
             barWidth: 4,
             isStrokeCapRound: true,

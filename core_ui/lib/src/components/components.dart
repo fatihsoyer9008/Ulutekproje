@@ -149,9 +149,14 @@ class PrimaryActionButton extends StatelessWidget {
   final bool isPrimary;
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final style = FilledButton.styleFrom(
       minimumSize: const Size.fromHeight(58),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      backgroundColor: isPrimary ? scheme.primary : scheme.secondaryContainer,
+      foregroundColor: isPrimary
+          ? scheme.onPrimary
+          : scheme.onSecondaryContainer,
     );
     return isPrimary
         ? FilledButton.icon(
