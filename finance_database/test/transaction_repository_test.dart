@@ -78,6 +78,28 @@ void main() {
       expect(fetched?.syncState, SyncState.pending);
     });
 
+    test('yeni işlem varsayılan olarak localOnly durumundadır', () {
+      final transaction = TransactionEntity();
+
+      expect(transaction.syncState, SyncState.localOnly);
+    });
+
+    test('eski metadata alanları null olan kaydı sorunsuz okur', () async {
+      final legacyTransaction = TransactionEntity()
+        ..amountInMinor = 9900
+        ..category = TransactionCategory.diger
+        ..date = DateTime(2026, 8, 5)
+        ..source = TransactionSource.manual;
+
+      final id = await repository.addTransaction(legacyTransaction);
+      final fetched = await repository.getTransactionById(id);
+
+      expect(fetched, isNotNull);
+      expect(fetched?.clientRecordId, isNull);
+      expect(fetched?.ownerKey, isNull);
+      expect(fetched?.syncState, SyncState.localOnly);
+    });
+
     // Test 2: Tüm Kayıtları Getirme
     test('Tüm transaction kayıtlarını getirme senaryosu', () async {
       final t1 = TransactionEntity()
