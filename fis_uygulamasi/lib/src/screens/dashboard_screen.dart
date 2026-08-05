@@ -40,6 +40,7 @@ class DashboardScreen extends StatelessWidget {
           children: [
             Expanded(
               child: PrimaryActionButton(
+                key: const Key('dashboard_income_action'),
                 label: 'Gelir Gir',
                 icon: Icons.south_west_rounded,
                 onPressed: () => _open(
@@ -51,6 +52,7 @@ class DashboardScreen extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: PrimaryActionButton(
+                key: const Key('dashboard_expense_action'),
                 label: 'Gider Gir',
                 icon: Icons.north_east_rounded,
                 isPrimary: false,

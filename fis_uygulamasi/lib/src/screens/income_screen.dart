@@ -10,42 +10,70 @@ class IncomeScreen extends StatelessWidget {
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Gelir Ekle')),
-    body: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text('Yeni Gelir', style: Theme.of(context).textTheme.headlineMedium),
-        const Text(
-          'Maaş, freelance veya diğer gelirlerini buradan ekleyebilirsin.',
-        ),
-        const SizedBox(height: 24),
-        const AppCard(
-          color: AppColors.mintLight,
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: AppColors.mint,
-                child: Icon(Icons.south_west_rounded, color: AppColors.income),
-              ),
-              SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  'Kaydettiğin gelir anında bakiyene ve hesap hareketlerine yansır.',
-                ),
-              ),
-            ],
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Gelir Ekle')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text(
+            'Yeni Gelir',
+            style: theme.textTheme.headlineMedium?.copyWith(
+              color: theme.colorScheme.onSurface,
+            ),
           ),
-        ),
-      ],
-    ),
-    floatingActionButton: FloatingActionButton.extended(
-      key: const Key('add_income_button'),
-      onPressed: () => _openIncomeEntry(context),
-      icon: const Icon(Icons.add),
-      label: const Text('Yeni gelir'),
-    ),
-  );
+          const SizedBox(height: 8),
+          Text(
+            'Maaş, freelance veya diğer gelirlerini buradan ekleyebilirsin.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 24),
+          AppCard(
+            color: isDark
+                ? theme.colorScheme.surfaceContainerHigh
+                : AppColors.mintLight,
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: isDark
+                      ? theme.colorScheme.primaryContainer
+                      : AppColors.mint,
+                  child: Icon(
+                    Icons.south_west_rounded,
+                    color: isDark
+                        ? theme.colorScheme.onPrimaryContainer
+                        : AppColors.income,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    'Kaydettiğin gelir anında bakiyene ve hesap hareketlerine yansır.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: isDark
+                          ? theme.colorScheme.onSurface
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        key: const Key('add_income_button'),
+        onPressed: () => _openIncomeEntry(context),
+        icon: const Icon(Icons.add),
+        label: const Text('Yeni gelir'),
+      ),
+    );
+  }
 
   Future<void> _openIncomeEntry(BuildContext context) async {
     final draft = await Navigator.of(context).push<TransactionDraft>(
