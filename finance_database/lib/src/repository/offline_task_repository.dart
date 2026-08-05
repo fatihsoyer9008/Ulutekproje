@@ -31,6 +31,10 @@ class OfflineTaskRepository {
         .findAll();
   }
 
+  /// Sync katmanının kullandığı açık isimli API.
+  Future<List<OfflineTask>> getPendingTasks({int limit = 50}) =>
+      getPending(limit: limit);
+
   Stream<List<OfflineTask>> watchPending() => _isar.offlineTasks
       .filter()
       .statusEqualTo(OfflineTaskStatus.pending)
@@ -57,6 +61,52 @@ class OfflineTaskRepository {
     });
   }
 
+  Future<void> markAsSynced(Id id) async {
+    await _isar.writeTxn(() async {
+      final task = await _isar.offlineTasks.get(id);
+      if (task == null) return;
+
+      task
+        ..status = OfflineTaskStatus.synced
+        ..lastError = null
+        ..lastAttemptAt = DateTime.now()
+        ..updatedAt = DateTime.now();
+      await _isar.offlineTasks.put(task);
+    });
+  }
+
+  /// Görevi kuyrukta tutarak hata ve deneme sayısını atomik günceller.
+  Future<void> updateTaskError(Id id, String error) async {
+    await _isar.writeTxn(() async {
+      final task = await _isar.offlineTasks.get(id);
+      if (task == null) return;
+
+      task
+        ..status = OfflineTaskStatus.pending
+        ..retryCount += 1
+        ..lastError = error
+        ..lastAttemptAt = DateTime.now()
+        ..updatedAt = DateTime.now();
+      await _isar.offlineTasks.put(task);
+    });
+  }
+
+  Future<void> markPermanentlyFailed(Id id, String error) async {
+    await _isar.writeTxn(() async {
+      final task = await _isar.offlineTasks.get(id);
+      if (task == null) return;
+
+      task
+        ..status = OfflineTaskStatus.failed
+        ..lastError = error
+        ..lastAttemptAt = DateTime.now()
+        ..updatedAt = DateTime.now();
+      await _isar.offlineTasks.put(task);
+    });
+  }
+
   Future<bool> delete(Id id) =>
       _isar.writeTxn(() => _isar.offlineTasks.delete(id));
 }
+
+typedef PendingTaskRepository = OfflineTaskRepository;

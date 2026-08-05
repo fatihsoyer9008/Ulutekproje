@@ -191,11 +191,13 @@ const _OfflineTaskstatusEnumValueMap = {
   r'pending': r'pending',
   r'processing': r'processing',
   r'failed': r'failed',
+  r'synced': r'synced',
 };
 const _OfflineTaskstatusValueEnumMap = {
   r'pending': OfflineTaskStatus.pending,
   r'processing': OfflineTaskStatus.processing,
   r'failed': OfflineTaskStatus.failed,
+  r'synced': OfflineTaskStatus.synced,
 };
 const _OfflineTasktypeEnumValueMap = {
   r'createTransaction': r'createTransaction',
