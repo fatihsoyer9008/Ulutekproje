@@ -61,6 +61,10 @@ class CloudTransactionRepository:
             )
             .values(**values)
             .returning(CloudTransaction)
+            .execution_options(
+                synchronize_session=False,
+                populate_existing=True,
+            )
         )
         return await self.session.scalar(statement)
 
@@ -85,6 +89,10 @@ class CloudTransactionRepository:
                 updated_at=deleted_at,
             )
             .returning(CloudTransaction)
+            .execution_options(
+                synchronize_session=False,
+                populate_existing=True,
+            )
         )
         return await self.session.scalar(statement)
 
