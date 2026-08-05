@@ -8,11 +8,13 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'application/service/isar_service.dart';
 import 'core/database/database_providers.dart';
+import 'features/auth/presentation/controllers/auth_session_controller.dart';
 import 'features/backup/data/transaction_json_import_service.dart';
 import 'features/notifications/daily_budget_reminder_service.dart';
 import 'features/notifications/notification_navigation_controller.dart';
 import 'features/notifications/notification_preferences.dart';
 import 'features/notifications/notification_providers.dart';
+import 'features/sync/application/offline_first_transaction_writer.dart';
 import 'src/app/finance_app.dart';
 
 Future<void> main() async {
@@ -96,6 +98,15 @@ class _AppBootstrap extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final transactionRepository = ref.watch(transactionRepositoryProvider);
+    final offlineTaskRepository = ref.watch(offlineTaskRepositoryProvider);
+    final offlineFirstWriter = OfflineFirstTransactionWriter(
+      saveTransaction: (transaction) async {
+        await transactionRepository.addTransaction(transaction);
+      },
+      addOfflineTask: (task) async {
+        await offlineTaskRepository.add(task);
+      },
+    );
     final transactionImportService = TransactionJsonImportService(
       importTransactions: transactionRepository.importTransactions,
     );
@@ -105,7 +116,15 @@ class _AppBootstrap extends ConsumerWidget {
       enableStartupSync: true,
       notificationNavigationController: notificationNavigationController,
       transactionStreamFactory: transactionRepository.watchAllTransactions,
-      saveTransaction: transactionRepository.addTransaction,
+      saveTransaction: (transaction) async {
+        final auth = ref.read(authSessionControllerProvider);
+        final userId = auth.user?.id;
+        if (auth.status != AuthStatus.authenticated || userId == null) {
+          await transactionRepository.addTransaction(transaction);
+          return;
+        }
+        await offlineFirstWriter.save(transaction, ownerKey: 'user:$userId');
+      },
       transactionImportService: transactionImportService,
     );
   }
