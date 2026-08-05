@@ -1,11 +1,86 @@
 import asyncio
 import threading
 import time
+from io import BytesIO
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import pytest
+from fastapi import HTTPException, UploadFile
+from PIL import ExifTags, Image
+from starlette.datastructures import Headers
 
 import app.core.receipt_image_security as image_security
 from app.core.config import settings
+
+
+def create_jpeg_bytes_with_exif() -> bytes:
+    output = BytesIO()
+    image = Image.new("RGB", (2, 3), color="white")
+    exif = Image.Exif()
+    exif[0x010E] = "private receipt location"
+    exif[0x0112] = 6
+    exif[ExifTags.IFD.GPSInfo] = {
+        ExifTags.GPS.GPSLatitudeRef: "N",
+        ExifTags.GPS.GPSLatitude: (40.0, 0.0, 0.0),
+        ExifTags.GPS.GPSLongitudeRef: "E",
+        ExifTags.GPS.GPSLongitude: (29.0, 0.0, 0.0),
+    }
+    image.save(output, format="JPEG", exif=exif)
+    image.close()
+    return output.getvalue()
+
+
+def temporary_upload(contents: bytes) -> tuple[UploadFile, Path]:
+    temporary_file = NamedTemporaryFile(suffix=".jpg", delete=True)
+    temporary_file.write(contents)
+    temporary_file.flush()
+    temporary_file.seek(0)
+    path = Path(temporary_file.name)
+    upload = UploadFile(
+        file=temporary_file,
+        filename="receipt.jpg",
+        size=len(contents),
+        headers=Headers({"content-type": "image/jpeg"}),
+    )
+    return upload, path
+
+
+def test_image_normalization_removes_all_exif_metadata() -> None:
+    original_bytes = create_jpeg_bytes_with_exif()
+    with Image.open(BytesIO(original_bytes)) as original_image:
+        assert original_image.getexif().get_ifd(ExifTags.IFD.GPSInfo)
+
+    normalized_bytes = image_security._normalize_image(
+        original_bytes,
+        expected_mime_type="image/jpeg",
+    )
+
+    with Image.open(BytesIO(normalized_bytes)) as normalized_image:
+        assert dict(normalized_image.getexif()) == {}
+        assert "exif" not in normalized_image.info
+        assert normalized_image.size == (3, 2)
+
+
+@pytest.mark.asyncio
+async def test_temporary_upload_is_deleted_after_success() -> None:
+    upload, temporary_path = temporary_upload(create_jpeg_bytes_with_exif())
+
+    await image_security.read_validated_receipt_image(upload)
+
+    assert upload.file.closed
+    assert not temporary_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_temporary_upload_is_deleted_after_validation_error() -> None:
+    upload, temporary_path = temporary_upload(b"not-an-image")
+
+    with pytest.raises(HTTPException):
+        await image_security.read_validated_receipt_image(upload)
+
+    assert upload.file.closed
+    assert not temporary_path.exists()
 
 
 @pytest.mark.asyncio
