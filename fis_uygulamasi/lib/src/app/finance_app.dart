@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/theme_mode_provider.dart';
+import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/backup/data/transaction_json_import_service.dart';
 import '../../features/notifications/notification_navigation_controller.dart';
@@ -28,6 +29,7 @@ class FinanceApp extends ConsumerStatefulWidget {
     this.scanReceipt,
     this.parseReceipt,
     this.transactionImportService,
+    this.aiAssistantMessageStream,
   });
 
   final bool enableAuth;
@@ -39,6 +41,7 @@ class FinanceApp extends ConsumerStatefulWidget {
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
   final TransactionJsonImportService? transactionImportService;
+  final AiAssistantMessageStream? aiAssistantMessageStream;
 
   @override
   ConsumerState<FinanceApp> createState() => _FinanceAppState();
@@ -74,6 +77,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
         transactionImportService: widget.transactionImportService,
+        aiAssistantMessageStream: widget.aiAssistantMessageStream,
       );
 
       final router = _router;
@@ -169,6 +173,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
             saveTransaction: widget.saveTransaction,
             scanReceipt: widget.scanReceipt,
             parseReceipt: widget.parseReceipt,
+            aiAssistantMessageStream: widget.aiAssistantMessageStream,
           );
         },
       ),
