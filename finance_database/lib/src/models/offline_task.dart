@@ -4,7 +4,7 @@ part 'offline_task.g.dart';
 
 enum OfflineTaskType { createTransaction, updateTransaction, deleteTransaction }
 
-enum OfflineTaskStatus { pending, processing, failed, synced }
+enum OfflineTaskStatus { pending, processing, failed, conflict, synced }
 
 /// Bulut senkronizasyonu sırasında çevrimdışı kalan işlemleri kalıcı olarak
 /// kuyrukta tutar. JSON payload domain modelinden bağımsız saklandığı için

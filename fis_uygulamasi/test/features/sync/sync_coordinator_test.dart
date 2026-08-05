@@ -1,0 +1,260 @@
+import 'dart:async';
+import 'dart:math';
+
+import 'package:app_main/features/sync/application/sync_coordinator.dart';
+import 'package:app_main/features/sync/data/pending_task_sync_gateway.dart';
+import 'package:app_main/features/sync/domain/sync_state.dart';
+import 'package:dio/dio.dart';
+import 'package:finance_database/finance_database.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:isar/isar.dart';
+
+void main() {
+  OfflineTask task(int id, {int retryCount = 0}) => OfflineTask()
+    ..id = id
+    ..clientTaskId = 'operation-$id'
+    ..payloadJson = '{}'
+    ..retryCount = retryCount
+    ..createdAt = DateTime(2026)
+    ..updatedAt = DateTime(2026);
+
+  ProviderContainer container({
+    required _FakeSyncTaskRepository repository,
+    required PendingTaskSyncGateway gateway,
+    int maxRetries = 3,
+    List<Duration>? delays,
+  }) {
+    final result = ProviderContainer(
+      overrides: [
+        syncTaskRepositoryProvider.overrideWithValue(repository),
+        pendingTaskSyncGatewayProvider.overrideWithValue(gateway),
+        syncCoordinatorProvider.overrideWith(
+          () => SyncCoordinator(
+            maxRetries: maxRetries,
+            initialDelay: const Duration(milliseconds: 100),
+            random: Random(1),
+            delay: (duration) async => delays?.add(duration),
+            clock: () => DateTime.utc(2026, 8, 5),
+          ),
+        ),
+      ],
+    );
+    addTearDown(result.dispose);
+    return result;
+  }
+
+  test('başarılı gönderimi synced işaretler', () async {
+    final repository = _FakeSyncTaskRepository([task(1)]);
+    final scope = container(
+      repository: repository,
+      gateway: _FakeGateway((_) async {}),
+    );
+
+    await scope.read(syncCoordinatorProvider.notifier).syncPendingTasks();
+
+    expect(repository.syncedIds, [1]);
+    expect(scope.read(syncCoordinatorProvider).status, SyncStatus.success);
+  });
+
+  test('geçici hatadan sonra backoff ile tekrar dener', () async {
+    final repository = _FakeSyncTaskRepository([task(1)]);
+    final delays = <Duration>[];
+    var attempts = 0;
+    final scope = container(
+      repository: repository,
+      delays: delays,
+      gateway: _FakeGateway((_) async {
+        attempts += 1;
+        if (attempts == 1) throw Exception('temporary');
+      }),
+    );
+
+    await scope.read(syncCoordinatorProvider.notifier).syncPendingTasks();
+
+    expect(attempts, 2);
+    expect(delays, hasLength(1));
+    expect(
+      delays.single,
+      greaterThanOrEqualTo(const Duration(milliseconds: 100)),
+    );
+    expect(repository.errorUpdates, 1);
+    expect(repository.syncedIds, [1]);
+  });
+
+  test('maksimum retry sonunda görevi failed işaretler', () async {
+    final repository = _FakeSyncTaskRepository([task(1)]);
+    var attempts = 0;
+    final scope = container(
+      repository: repository,
+      gateway: _FakeGateway((_) async {
+        attempts += 1;
+        throw Exception('offline');
+      }),
+    );
+
+    await scope.read(syncCoordinatorProvider.notifier).syncPendingTasks();
+
+    expect(attempts, 3);
+    expect(repository.failedIds, [1]);
+    expect(scope.read(syncCoordinatorProvider).status, SyncStatus.error);
+  });
+
+  test('kalıcı 4xx hatasını retry etmez', () async {
+    final repository = _FakeSyncTaskRepository([task(1)]);
+    var attempts = 0;
+    final scope = container(
+      repository: repository,
+      gateway: _FakeGateway((_) async {
+        attempts += 1;
+        final request = RequestOptions(path: '/api/v1/sync/push');
+        throw DioException(
+          requestOptions: request,
+          response: Response<void>(requestOptions: request, statusCode: 422),
+        );
+      }),
+    );
+
+    await scope.read(syncCoordinatorProvider.notifier).syncPendingTasks();
+
+    expect(attempts, 1);
+    expect(repository.failedIds, [1]);
+    expect(repository.errorUpdates, 0);
+  });
+
+  test('HTTP 200 conflict sonucunu ayrı state olarak tutar', () async {
+    final repository = _FakeSyncTaskRepository([task(1)]);
+    final scope = container(
+      repository: repository,
+      gateway: _FakeGateway(
+        (_) async => throw const SyncConflictException('conflict'),
+      ),
+    );
+
+    await scope.read(syncCoordinatorProvider.notifier).syncPendingTasks();
+
+    final state = scope.read(syncCoordinatorProvider);
+    expect(state.status, SyncStatus.conflict);
+    expect(state.conflictCount, 1);
+    expect(repository.conflictIds, [1]);
+    expect(repository.syncedIds, isEmpty);
+  });
+
+  test('eş zamanlı çağrılar aynı gönderimi paylaşır', () async {
+    final repository = _FakeSyncTaskRepository([task(1)]);
+    final release = Completer<void>();
+    var calls = 0;
+    final scope = container(
+      repository: repository,
+      gateway: _FakeGateway((_) async {
+        calls += 1;
+        await release.future;
+      }),
+    );
+    final coordinator = scope.read(syncCoordinatorProvider.notifier);
+
+    final first = coordinator.syncPendingTasks();
+    final second = coordinator.syncPendingTasks();
+    await Future<void>.delayed(Duration.zero);
+    release.complete();
+    await Future.wait([first, second]);
+
+    expect(calls, 1);
+    expect(repository.syncedIds, [1]);
+  });
+
+  test('50 üzerindeki görevleri kuyruk boşalana kadar batch işler', () async {
+    final repository = _FakeSyncTaskRepository(
+      List.generate(105, (index) => task(index + 1)),
+    );
+    final gateway = _FakeGateway((_) async {});
+    final scope = container(repository: repository, gateway: gateway);
+
+    await scope.read(syncCoordinatorProvider.notifier).syncPendingTasks();
+
+    expect(gateway.calls, 105);
+    expect(repository.requestedLimits, [50, 50, 50, 50]);
+    expect(repository.syncedIds, hasLength(105));
+    expect(scope.read(syncCoordinatorProvider).totalCount, 105);
+  });
+
+  test('her çalışmada yedi günden eski synced kayıtları temizler', () async {
+    final repository = _FakeSyncTaskRepository([])
+      ..cleanupResults.addAll([100, 2]);
+    final scope = container(
+      repository: repository,
+      gateway: _FakeGateway((_) async {}),
+    );
+
+    await scope.read(syncCoordinatorProvider.notifier).syncPendingTasks();
+
+    expect(repository.cleanupCutoffs, [
+      DateTime.utc(2026, 7, 29),
+      DateTime.utc(2026, 7, 29),
+    ]);
+  });
+}
+
+class _FakeGateway implements PendingTaskSyncGateway {
+  _FakeGateway(this.handler);
+
+  final Future<void> Function(OfflineTask task) handler;
+  int calls = 0;
+
+  @override
+  Future<void> send(OfflineTask task) {
+    calls += 1;
+    return handler(task);
+  }
+}
+
+class _FakeSyncTaskRepository implements SyncTaskRepository {
+  _FakeSyncTaskRepository(List<OfflineTask> tasks)
+    : _pending = {for (final task in tasks) task.id: task};
+
+  final Map<Id, OfflineTask> _pending;
+  final syncedIds = <Id>[];
+  final failedIds = <Id>[];
+  final conflictIds = <Id>[];
+  final requestedLimits = <int>[];
+  final cleanupCutoffs = <DateTime>[];
+  final cleanupResults = <int>[];
+  int errorUpdates = 0;
+
+  @override
+  Future<List<OfflineTask>> getPendingTasks({int limit = 50}) async {
+    requestedLimits.add(limit);
+    return _pending.values.take(limit).toList();
+  }
+
+  @override
+  Future<void> markAsSynced(Id id) async {
+    _pending.remove(id);
+    syncedIds.add(id);
+  }
+
+  @override
+  Future<void> markPermanentlyFailed(Id id, String error) async {
+    _pending.remove(id);
+    failedIds.add(id);
+  }
+
+  @override
+  Future<void> markConflict(Id id, String error) async {
+    _pending.remove(id);
+    conflictIds.add(id);
+  }
+
+  @override
+  Future<void> updateTaskError(Id id, String error) async {
+    errorUpdates += 1;
+    final task = _pending[id];
+    if (task != null) task.retryCount += 1;
+  }
+
+  @override
+  Future<int> deleteSyncedBefore(DateTime cutoff, {int limit = 100}) async {
+    cleanupCutoffs.add(cutoff);
+    return cleanupResults.isEmpty ? 0 : cleanupResults.removeAt(0);
+  }
+}

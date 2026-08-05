@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:finance_database/finance_database.dart';
+import 'package:finance_database/finance_database.dart' hide SyncState;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:isar/isar.dart';
 
 import '../../../core/database/database_providers.dart';
 import '../../../core/storage/installation_id_provider.dart';
@@ -11,6 +12,45 @@ import '../data/pending_task_sync_gateway.dart';
 import '../domain/sync_state.dart';
 
 typedef Delay = Future<void> Function(Duration duration);
+typedef Clock = DateTime Function();
+
+abstract interface class SyncTaskRepository {
+  Future<List<OfflineTask>> getPendingTasks({int limit = 50});
+  Future<void> markAsSynced(Id id);
+  Future<void> updateTaskError(Id id, String error);
+  Future<void> markPermanentlyFailed(Id id, String error);
+  Future<void> markConflict(Id id, String error);
+  Future<int> deleteSyncedBefore(DateTime cutoff, {int limit = 100});
+}
+
+class IsarSyncTaskRepository implements SyncTaskRepository {
+  const IsarSyncTaskRepository(this.repository);
+
+  final OfflineTaskRepository repository;
+
+  @override
+  Future<List<OfflineTask>> getPendingTasks({int limit = 50}) =>
+      repository.getPendingTasks(limit: limit);
+
+  @override
+  Future<void> markAsSynced(Id id) => repository.markAsSynced(id);
+
+  @override
+  Future<void> updateTaskError(Id id, String error) =>
+      repository.updateTaskError(id, error);
+
+  @override
+  Future<void> markPermanentlyFailed(Id id, String error) =>
+      repository.markPermanentlyFailed(id, error);
+
+  @override
+  Future<void> markConflict(Id id, String error) =>
+      repository.markConflict(id, error);
+
+  @override
+  Future<int> deleteSyncedBefore(DateTime cutoff, {int limit = 100}) =>
+      repository.deleteSyncedBefore(cutoff, limit: limit);
+}
 
 final installationIdProvider = Provider<InstallationIdProvider>(
   (ref) => PersistentInstallationIdProvider(),
@@ -23,6 +63,10 @@ final pendingTaskSyncGatewayProvider = Provider<PendingTaskSyncGateway>(
   ),
 );
 
+final syncTaskRepositoryProvider = Provider<SyncTaskRepository>(
+  (ref) => IsarSyncTaskRepository(ref.watch(offlineTaskRepositoryProvider)),
+);
+
 final syncCoordinatorProvider = NotifierProvider<SyncCoordinator, SyncState>(
   SyncCoordinator.new,
 );
@@ -33,13 +77,20 @@ class SyncCoordinator extends Notifier<SyncState> {
     this.initialDelay = const Duration(seconds: 1),
     Random? random,
     Delay? delay,
+    Clock? clock,
   }) : _random = random ?? Random.secure(),
-       _delay = delay ?? Future<void>.delayed;
+       _delay = delay ?? Future<void>.delayed,
+       _clock = clock ?? DateTime.now;
+
+  static const batchSize = 50;
+  static const syncedRetention = Duration(days: 7);
+  static const cleanupBatchSize = 100;
 
   final int maxRetries;
   final Duration initialDelay;
   final Random _random;
   final Delay _delay;
+  final Clock _clock;
   Future<void>? _activeSync;
 
   @override
@@ -64,43 +115,69 @@ class SyncCoordinator extends Notifier<SyncState> {
         status: SyncStatus.error,
         completedCount: state.completedCount,
         totalCount: state.totalCount,
+        conflictCount: state.conflictCount,
         errorMessage: 'Senkronizasyon başlatılamadı: ${_safeError(error)}',
       );
     }
   }
 
   Future<void> _sync() async {
-    final repository = ref.read(offlineTaskRepositoryProvider);
+    final repository = ref.read(syncTaskRepositoryProvider);
     final gateway = ref.read(pendingTaskSyncGatewayProvider);
-    final tasks = await repository.getPendingTasks();
-    state = SyncState(status: SyncStatus.syncing, totalCount: tasks.length);
-
     var completed = 0;
+    var total = 0;
+    var conflictCount = 0;
     final failures = <String>[];
-    for (final task in tasks) {
-      final error = await _sendWithRetry(task, repository, gateway);
-      if (error != null) failures.add(error);
-      completed += 1;
-      state = SyncState(
-        status: SyncStatus.syncing,
-        completedCount: completed,
-        totalCount: tasks.length,
-      );
+    state = const SyncState(status: SyncStatus.syncing);
+
+    while (true) {
+      final tasks = await repository.getPendingTasks(limit: batchSize);
+      if (tasks.isEmpty) break;
+      total += tasks.length;
+
+      for (final task in tasks) {
+        final outcome = await _sendWithRetry(task, repository, gateway);
+        switch (outcome) {
+          case _TaskSuccess():
+            break;
+          case _TaskConflict():
+            conflictCount += 1;
+          case _TaskFailure(:final message):
+            failures.add(message);
+        }
+        completed += 1;
+        state = SyncState(
+          status: SyncStatus.syncing,
+          completedCount: completed,
+          totalCount: total,
+          conflictCount: conflictCount,
+        );
+      }
     }
 
+    await _cleanupSynced(repository);
+    final status = failures.isNotEmpty
+        ? SyncStatus.error
+        : conflictCount > 0
+        ? SyncStatus.conflict
+        : SyncStatus.success;
+    final message = failures.isNotEmpty
+        ? '${failures.length} işlem senkronize edilemedi: ${failures.first}'
+        : conflictCount > 0
+        ? '$conflictCount işlemde sunucu çakışması oluştu.'
+        : null;
     state = SyncState(
-      status: failures.isEmpty ? SyncStatus.success : SyncStatus.error,
+      status: status,
       completedCount: completed,
-      totalCount: tasks.length,
-      errorMessage: failures.isEmpty
-          ? null
-          : '${failures.length} işlem senkronize edilemedi: ${failures.first}',
+      totalCount: total,
+      conflictCount: conflictCount,
+      errorMessage: message,
     );
   }
 
-  Future<String?> _sendWithRetry(
+  Future<_TaskOutcome> _sendWithRetry(
     OfflineTask task,
-    OfflineTaskRepository repository,
+    SyncTaskRepository repository,
     PendingTaskSyncGateway gateway,
   ) async {
     var attempt = task.retryCount;
@@ -108,19 +185,23 @@ class SyncCoordinator extends Notifier<SyncState> {
       try {
         await gateway.send(task);
         await repository.markAsSynced(task.id);
-        return null;
+        return const _TaskSuccess();
       } on Object catch (error) {
         final message = _safeError(error);
+        if (error is SyncConflictException) {
+          await repository.markConflict(task.id, message);
+          return const _TaskConflict();
+        }
         if (isUnrecoverableSyncError(error)) {
           await repository.markPermanentlyFailed(task.id, message);
-          return message;
+          return _TaskFailure(message);
         }
 
         attempt += 1;
         await repository.updateTaskError(task.id, message);
         if (attempt >= maxRetries) {
           await repository.markPermanentlyFailed(task.id, message);
-          return message;
+          return _TaskFailure(message);
         }
         await _delay(_backoff(attempt));
       }
@@ -128,7 +209,18 @@ class SyncCoordinator extends Notifier<SyncState> {
 
     const message = 'Maksimum yeniden deneme sayısına ulaşıldı.';
     await repository.markPermanentlyFailed(task.id, message);
-    return message;
+    return const _TaskFailure(message);
+  }
+
+  Future<void> _cleanupSynced(SyncTaskRepository repository) async {
+    final cutoff = _clock().subtract(syncedRetention);
+    int deleted;
+    do {
+      deleted = await repository.deleteSyncedBefore(
+        cutoff,
+        limit: cleanupBatchSize,
+      );
+    } while (deleted == cleanupBatchSize);
   }
 
   Duration _backoff(int attempt) {
@@ -139,4 +231,22 @@ class SyncCoordinator extends Notifier<SyncState> {
 
   String _safeError(Object error) =>
       error.toString().replaceFirst('Exception: ', '');
+}
+
+sealed class _TaskOutcome {
+  const _TaskOutcome();
+}
+
+final class _TaskSuccess extends _TaskOutcome {
+  const _TaskSuccess();
+}
+
+final class _TaskConflict extends _TaskOutcome {
+  const _TaskConflict();
+}
+
+final class _TaskFailure extends _TaskOutcome {
+  const _TaskFailure(this.message);
+
+  final String message;
 }

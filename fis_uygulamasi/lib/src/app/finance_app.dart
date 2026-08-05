@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:core_ui/core_ui.dart';
-import 'package:finance_database/finance_database.dart';
+import 'package:finance_database/finance_database.dart' hide SyncState;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -194,7 +194,8 @@ class _SyncStatusOverlay extends StatelessWidget {
             right: 0,
             child: LinearProgressIndicator(value: state.progress),
           ),
-        if (state.status == SyncStatus.error)
+        if (state.status == SyncStatus.error ||
+            state.status == SyncStatus.conflict)
           Positioned(
             left: 16,
             right: 16,
