@@ -129,7 +129,11 @@ void main() {
     await tester.tap(find.byKey(const Key('drawer_profile_tile')));
     await tester.pumpAndSettle();
     final logoutButton = find.byKey(const Key('logout_button'));
-    await tester.ensureVisible(logoutButton);
+    await tester.scrollUntilVisible(
+      logoutButton,
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.pumpAndSettle();
     await tester.tap(logoutButton);
     await tester.pumpAndSettle();
