@@ -4,7 +4,7 @@ part 'offline_task.g.dart';
 
 enum OfflineTaskType { createTransaction, updateTransaction, deleteTransaction }
 
-enum OfflineTaskStatus { pending, processing, failed }
+enum OfflineTaskStatus { pending, processing, failed, conflict, synced }
 
 /// Bulut senkronizasyonu sırasında çevrimdışı kalan işlemleri kalıcı olarak
 /// kuyrukta tutar. JSON payload domain modelinden bağımsız saklandığı için
@@ -33,4 +33,14 @@ class OfflineTask {
   late DateTime createdAt;
 
   late DateTime updatedAt;
+
+  /// Sync sözleşmesinde kullanılan okunabilir alan adları.
+  @ignore
+  String get actionType => type.name;
+  @ignore
+  bool get isSynced => status == OfflineTaskStatus.synced;
 }
+
+/// Yeni kodun pending-transaction terminolojisini kullanabilmesini sağlarken
+/// mevcut Isar collection ve verileriyle geriye uyumluluğu korur.
+typedef PendingTransactionEntity = OfflineTask;
