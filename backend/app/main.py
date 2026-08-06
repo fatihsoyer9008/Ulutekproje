@@ -43,13 +43,13 @@ def _validate_production_settings() -> None:
 
     if settings.assistant_enabled:
         assistant_api_key = (
-            settings.gemini_api_key.get_secret_value().strip()
-            if settings.gemini_api_key is not None
+            settings.assistant_gemini_api_key.get_secret_value().strip()
+            if settings.assistant_gemini_api_key is not None
             else ""
         )
         if not assistant_api_key:
             raise RuntimeError(
-                "GEMINI_API_KEY is required when AI assistant is enabled"
+                "ASSISTANT_GEMINI_API_KEY is required when AI assistant is enabled"
             )
         if not settings.rate_limit_enabled:
             raise RuntimeError(

@@ -1,6 +1,7 @@
 import pytest
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app.api.dependencies import get_rate_limiter
 from app.api.routers.receipts import get_receipt_parser_service
@@ -191,6 +192,22 @@ def test_production_image_upload_requires_gemini_key(
     with pytest.raises(
         RuntimeError,
         match="GEMINI_API_KEY is required",
+    ):
+        _validate_production_settings()
+
+
+def test_production_assistant_requires_dedicated_gemini_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "receipt_image_upload_enabled", False)
+    monkeypatch.setattr(settings, "assistant_enabled", True)
+    monkeypatch.setattr(settings, "assistant_gemini_api_key", None)
+    monkeypatch.setattr(settings, "gemini_api_key", SecretStr("receipt-only-key"))
+
+    with pytest.raises(
+        RuntimeError,
+        match="ASSISTANT_GEMINI_API_KEY is required",
     ):
         _validate_production_settings()
 

@@ -38,8 +38,8 @@ def get_assistant_model_service() -> AssistantModelService:
         )
 
     api_key = (
-        settings.gemini_api_key.get_secret_value().strip()
-        if settings.gemini_api_key is not None
+        settings.assistant_gemini_api_key.get_secret_value().strip()
+        if settings.assistant_gemini_api_key is not None
         else ""
     )
     if not api_key:

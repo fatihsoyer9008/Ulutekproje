@@ -81,6 +81,7 @@ class Settings(BaseSettings):
 
     assistant_enabled: bool = False
     assistant_model: str = "gemini-3.5-flash-lite"
+    assistant_gemini_api_key: SecretStr | None = None
     assistant_consent_version: str = Field(
         default="2026-08-01",
         min_length=1,

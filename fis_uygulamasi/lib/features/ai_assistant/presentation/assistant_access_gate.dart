@@ -7,6 +7,8 @@ import '../data/ai_assistant_client.dart';
 
 typedef AssistantSyncAction = Future<void> Function();
 typedef AssistantQueueReader = Future<OfflineQueueSummary> Function();
+typedef ClaimableTransactionCounter = Future<int> Function();
+typedef LocalTransactionClaimer = Future<int> Function();
 
 class AiAssistantAccessGate {
   const AiAssistantAccessGate({
@@ -16,6 +18,8 @@ class AiAssistantAccessGate {
     required this.syncPendingTasks,
     required this.retryFailedAndConflicted,
     required this.readQueueSummary,
+    required this.countClaimableTransactions,
+    required this.claimLocalTransactions,
   });
 
   final AiAssistantAccessClient client;
@@ -24,6 +28,8 @@ class AiAssistantAccessGate {
   final AssistantSyncAction syncPendingTasks;
   final AssistantSyncAction retryFailedAndConflicted;
   final AssistantQueueReader readQueueSummary;
+  final ClaimableTransactionCounter countClaimableTransactions;
+  final LocalTransactionClaimer claimLocalTransactions;
 
   Future<bool> ensureAccess(BuildContext context) async {
     if (authStatus != AuthStatus.authenticated) {
@@ -97,11 +103,48 @@ class AiAssistantAccessGate {
       }
     }
 
-    if (currentQueue.hasPending || currentQueue.retryableCount > 0) {
-      return _synchronizeBeforeOpening(context, currentQueue);
+    final claimableCount = await countClaimableTransactions();
+    if (!context.mounted) return false;
+    if (claimableCount > 0) {
+      final approved = await _requestLocalDataClaim(context, claimableCount);
+      if (!approved || !context.mounted) return false;
+      await claimLocalTransactions();
+      if (!context.mounted) return false;
+    }
+
+    final refreshedQueue = await readQueueSummary();
+    if (!context.mounted) return false;
+    if (refreshedQueue.hasPending || refreshedQueue.retryableCount > 0) {
+      return _synchronizeBeforeOpening(context, refreshedQueue);
     }
 
     return true;
+  }
+
+  Future<bool> _requestLocalDataClaim(BuildContext context, int count) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Yerel işlemleri eşitle'),
+        content: Text(
+          '$count yerel işlemin finans asistanı analizine dahil edilebilmesi '
+          'için hesabına güvenli biçimde aktarılacak. Devam edilsin mi?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Şimdi değil'),
+          ),
+          FilledButton(
+            key: const Key('assistant_local_claim_confirm_button'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Eşitle ve devam et'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   Future<bool> _synchronizeBeforeOpening(

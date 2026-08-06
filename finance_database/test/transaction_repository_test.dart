@@ -109,6 +109,35 @@ void main() {
       expect(tasks.single.createdAt, transaction.createdAt);
     });
 
+    test('localOnly kayıtları idempotent biçimde sync kuyruğuna alır', () async {
+      final transaction = TransactionEntity()
+        ..amountInMinor = 4200
+        ..category = TransactionCategory.market
+        ..date = DateTime(2026, 8, 6)
+        ..source = TransactionSource.manual;
+      await repository.addTransaction(transaction);
+
+      var recordSequence = 0;
+      var taskSequence = 0;
+      Future<int> claim() => repository.enqueueLocalOnlyTransactions(
+        ownerKey: 'user:test-user',
+        createClientRecordId: () => 'record-${recordSequence++}',
+        buildOfflineTask: (_) => OfflineTask()
+          ..clientTaskId = 'task-${taskSequence++}'
+          ..payloadJson = '{}',
+      );
+
+      expect(await repository.countLocalOnlyTransactions(), 1);
+      expect(await claim(), 1);
+      expect(await claim(), 0);
+
+      final stored = await repository.getTransactionById(transaction.id);
+      expect(stored?.ownerKey, 'user:test-user');
+      expect(stored?.clientRecordId, 'record-0');
+      expect(stored?.syncState, SyncState.pending);
+      expect(await isar.offlineTasks.count(), 1);
+    });
+
     test(
       'offline task yazımı hata verirse transaction rollback edilir',
       () async {

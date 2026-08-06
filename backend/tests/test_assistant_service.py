@@ -164,6 +164,7 @@ async def test_gemini_requests_are_bounded_and_labels_are_untrusted(
     }
 
     answer_payload = json.loads(clients[1].aio.models.calls[0]["contents"])
+    serialized_payload = json.dumps(answer_payload, ensure_ascii=False)
     category_entry = answer_payload["financial_context"]["expense_categories"][0]
     merchant_entry = answer_payload["financial_context"]["expense_merchants"][0]
 
@@ -179,3 +180,5 @@ async def test_gemini_requests_are_bounded_and_labels_are_untrusted(
     }
     assert "untrusted_category_label" in ASSISTANT_ANSWER_SYSTEM_INSTRUCTION
     assert "untrusted_merchant_label" in ASSISTANT_ANSWER_SYSTEM_INSTRUCTION
+    assert "raw_ocr_text" not in serialized_payload
+    assert "transactions" not in answer_payload["financial_context"]

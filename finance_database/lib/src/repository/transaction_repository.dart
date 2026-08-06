@@ -41,6 +41,45 @@ class TransactionRepository {
     return _persistTransaction(transaction, offlineTask: task);
   }
 
+  Future<int> countLocalOnlyTransactions() => _isar.transactionEntitys
+      .filter()
+      .syncStateEqualTo(SyncState.localOnly)
+      .count();
+
+  /// Eski yerel kayıtları kullanıcı onayından sonra atomik olarak
+  /// senkronizasyon kuyruğuna alır. Yalnızca [localOnly] kayıtlar seçildiği
+  /// için tekrar çalıştırmak aynı kayıt için ikinci görev oluşturmaz.
+  Future<int> enqueueLocalOnlyTransactions({
+    required String ownerKey,
+    required String Function() createClientRecordId,
+    required OfflineTask Function(TransactionEntity transaction)
+    buildOfflineTask,
+  }) async {
+    return _isar.writeTxn(() async {
+      final transactions = await _isar.transactionEntitys
+          .filter()
+          .syncStateEqualTo(SyncState.localOnly)
+          .findAll();
+
+      final now = DateTime.now();
+      for (final transaction in transactions) {
+        transaction
+          ..clientRecordId =
+              transaction.clientRecordId ?? createClientRecordId()
+          ..ownerKey = ownerKey
+          ..syncState = SyncState.pending
+          ..updatedAt = now;
+        await _isar.transactionEntitys.put(transaction);
+
+        final task = buildOfflineTask(transaction)
+          ..createdAt = now
+          ..updatedAt = now;
+        await _isar.offlineTasks.put(task);
+      }
+      return transactions.length;
+    });
+  }
+
   Future<Id> _persistTransaction(
     TransactionEntity transaction, {
     OfflineTask? offlineTask,
