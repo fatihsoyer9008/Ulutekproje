@@ -5,6 +5,7 @@ from time import perf_counter
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from app.api.routers.assistant import router as assistant_router
 from app.api.routers.auth import router as auth_router
 from app.api.routers.receipts import router as receipt_router
 from app.api.routers.sync import router as sync_router
@@ -40,6 +41,20 @@ def _validate_production_settings() -> None:
                 "GEMINI_API_KEY is required when receipt image upload is enabled"
             )
 
+    if settings.assistant_enabled:
+        assistant_api_key = (
+            settings.gemini_api_key.get_secret_value().strip()
+            if settings.gemini_api_key is not None
+            else ""
+        )
+        if not assistant_api_key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is required when AI assistant is enabled"
+            )
+        if not settings.rate_limit_enabled:
+            raise RuntimeError(
+                "RATE_LIMIT_ENABLED must be true when AI assistant is enabled"
+            )
     if not settings.use_dummy_parser and not settings.rate_limit_enabled:
         raise RuntimeError(
             "RATE_LIMIT_ENABLED must be true when Gemini parsing is enabled"
@@ -109,6 +124,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.add_middleware(ReceiptImageBodyLimitMiddleware)
+app.include_router(assistant_router)
 app.include_router(auth_router)
 app.include_router(receipt_router)
 app.include_router(sync_router)
@@ -162,12 +178,17 @@ async def log_request(
 
 
 @app.middleware("http")
-async def prevent_auth_response_caching(
+async def prevent_sensitive_response_caching(
     request: Request,
     call_next,
 ) -> Response:
     response = await call_next(request)
-    if request.url.path.startswith("/api/v1/auth/"):
+    if request.url.path.startswith(
+        (
+            "/api/v1/auth/",
+            "/api/v1/assistant/",
+        )
+    ):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
     return response

@@ -79,6 +79,17 @@ class Settings(BaseSettings):
         le=1_000_000,
     )
 
+    assistant_enabled: bool = False
+    assistant_model: str = "gemini-3.5-flash-lite"
+    assistant_provider_timeout_ms: int = Field(
+        default=20_000,
+        ge=1_000,
+        le=120_000,
+    )
+    assistant_user_burst_limit: int = Field(default=6, ge=1, le=1_000)
+    assistant_user_daily_limit: int = Field(default=100, ge=1, le=100_000)
+    assistant_max_period_days: int = Field(default=3660, ge=1, le=36500)
+
     google_oauth_client_ids: str = ""
     # Backwards-compatible name used by the existing local environment.
     google_web_client_id: str = ""
