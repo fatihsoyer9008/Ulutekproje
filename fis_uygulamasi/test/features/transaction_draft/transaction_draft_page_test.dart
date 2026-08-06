@@ -9,6 +9,8 @@ void main() {
     Future<void> pumpSubject(
       WidgetTester tester, {
       TransactionDraftPageMode mode = TransactionDraftPageMode.ocrReview,
+      TransactionDraft? initialDraft,
+      List<CategoryEntity>? categories,
       double? confidenceScore,
       bool isParseSuccessful = true,
       Future<ReceiptParseResult?> Function()? onSecureAnalysisRequested,
@@ -16,13 +18,20 @@ void main() {
       MaterialApp(
         home: TransactionDraftPage(
           mode: mode,
+          initialDraft:
+              initialDraft ??
+              const TransactionDraft(
+                institutionName: '',
+                category: '',
+                amountInMinor: 0,
+              ),
+          categories: categories ?? const <CategoryEntity>[],
           confidenceScore: confidenceScore,
           isParseSuccessful: isParseSuccessful,
           onSecureAnalysisRequested: onSecureAnalysisRequested,
         ),
       ),
     );
-
     testWidgets('yüzde 70 altındaki skorda gösterilir', (tester) async {
       await pumpSubject(tester, confidenceScore: .69);
 
@@ -115,6 +124,75 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets('güvenli analiz kullanıcının dolu alanlarını ezmez', (
+      tester,
+    ) async {
+      final userDate = DateTime(2026, 8, 6);
+
+      await pumpSubject(
+        tester,
+        confidenceScore: .20,
+        initialDraft: TransactionDraft(
+          institutionName: 'Elle Girilen Market',
+          category: 'Market',
+          amountInMinor: 1234,
+          transactionDate: userDate,
+          receiptItems: const [
+            ReceiptItem(name: 'Elle Eklenen Ürün', priceMinor: 1234),
+          ],
+        ),
+        categories: [_category('Market'), _category('Yeme İçme')],
+        onSecureAnalysisRequested: () async {
+          return ReceiptParseResult(
+            draft: TransactionDraft(
+              institutionName: 'Sunucudan Gelen Kurum',
+              category: 'Yeme İçme',
+              amountInMinor: 2550,
+              transactionDate: DateTime(2026, 8, 1),
+              receiptItems: const [
+                ReceiptItem(name: 'Sunucudan Gelen Ürün', priceMinor: 2550),
+              ],
+            ),
+            normalizedOcrText: 'SUNUCU OCR METNİ',
+            confidenceScore: .95,
+            isParseSuccessful: true,
+          );
+        },
+      );
+
+      await tester.tap(find.byKey(const Key('secure_analysis_button')));
+      await tester.pumpAndSettle();
+
+      final institutionField = tester.widget<TextFormField>(
+        find.byKey(const Key('institution_name_field')),
+      );
+      final amountField = tester.widget<TextFormField>(
+        find.byKey(const Key('amount_field')),
+      );
+      final dateField = tester.widget<TextFormField>(
+        find.byKey(const Key('transaction_date_field')),
+      );
+
+      expect(institutionField.controller?.text, 'Elle Girilen Market');
+      expect(amountField.controller?.text, '12,34');
+      expect(dateField.controller?.text, '06.08.2026');
+      expect(find.text('Market'), findsWidgets);
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('view_receipt_items_button')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      final viewItemsButton = tester.widget<TextButton>(
+        find.byKey(const Key('view_receipt_items_button')),
+      );
+      viewItemsButton.onPressed!.call();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Elle Eklenen Ürün'), findsOneWidget);
+      expect(find.text('Sunucudan Gelen Ürün'), findsNothing);
+    });
   });
 
   testWidgets(
@@ -133,6 +211,7 @@ void main() {
                   result = await Navigator.of(context).push<TransactionDraft>(
                     MaterialPageRoute(
                       builder: (_) => TransactionDraftPage(
+                        mode: TransactionDraftPageMode.ocrReview,
                         initialDraft: TransactionDraft(
                           institutionName: 'Migros',
                           category: 'Market',
@@ -349,9 +428,9 @@ void main() {
     expect(find.byKey(const Key('view_receipt_items_button')), findsOneWidget);
     expect(find.text('Süt'), findsNothing);
     expect(find.text('Ekmek'), findsNothing);
-
     await tester.tap(find.byKey(const Key('view_receipt_items_button')));
     await tester.pumpAndSettle();
+
     expect(find.text('Süt'), findsOneWidget);
     expect(find.text('Ekmek'), findsOneWidget);
     await tester.tap(find.byKey(const Key('apply_receipt_items_button')));
@@ -378,6 +457,7 @@ void main() {
               result = await Navigator.of(context).push<TransactionDraft>(
                 MaterialPageRoute(
                   builder: (_) => TransactionDraftPage(
+                    mode: TransactionDraftPageMode.ocrReview,
                     initialDraft: TransactionDraft(
                       institutionName: 'Market',
                       category: 'Market',
@@ -405,6 +485,8 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('view_receipt_items_button')));
     await tester.pumpAndSettle();
+
+    expect(find.text('Kahve'), findsOneWidget);
     await tester.tap(find.byKey(const Key('use_receipt_items_total_button')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('confirm_use_items_total_button')));

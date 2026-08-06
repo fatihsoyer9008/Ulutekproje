@@ -192,22 +192,36 @@ class _TransactionDraftPageState extends State<TransactionDraftPage> {
       );
 
       setState(() {
-        _institutionController.text = draft.institutionName;
-        _amountController.text = draft.amountInMinor == null
-            ? ''
-            : formatMinorAsTurkishLira(draft.amountInMinor!);
-        _transactionDate = draft.transactionDate;
-        _dateController.text = _formatTransactionDate(_transactionDate);
-        _receiptItems = [...draft.receiptItems];
+        if (_institutionController.text.trim().isEmpty &&
+            draft.institutionName.trim().isNotEmpty) {
+          _institutionController.text = draft.institutionName;
+        }
 
-        if (matchingCategory != null) {
+        if (_amountController.text.trim().isEmpty &&
+            draft.amountInMinor != null) {
+          _amountController.text = formatMinorAsTurkishLira(
+            draft.amountInMinor!,
+          );
+        }
+
+        if (_transactionDate == null && draft.transactionDate != null) {
+          _transactionDate = draft.transactionDate;
+          _dateController.text = _formatTransactionDate(_transactionDate);
+        }
+
+        if (_receiptItems.isEmpty && draft.receiptItems.isNotEmpty) {
+          _receiptItems = [...draft.receiptItems];
+        }
+
+        if ((_selectedCategory == null || _selectedCategory!.trim().isEmpty) &&
+            matchingCategory != null) {
           _selectedCategory = matchingCategory;
         }
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Görsel güvenli analiz ile yeniden ayrıştırıldı.'),
+          content: Text('Görsel analiz yalnızca boş fiş alanlarını tamamladı.'),
         ),
       );
     } on ReceiptParserException catch (error) {

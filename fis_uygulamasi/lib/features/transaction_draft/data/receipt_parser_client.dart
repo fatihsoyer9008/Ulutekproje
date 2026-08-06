@@ -175,7 +175,11 @@ class ReceiptParserClient {
             contentType: MediaType.parse(image.mimeType),
           ),
         }),
-        options: Options(headers: {'X-Installation-ID': installationId}),
+        options: Options(
+          headers: {'X-Installation-ID': installationId},
+          sendTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 90),
+        ),
         cancelToken: cancelToken,
         onSendProgress: onSendProgress,
       );
