@@ -31,3 +31,48 @@ Uint8List enhanceReceiptImage(Uint8List sourceBytes) {
 
   return Uint8List.fromList(image_lib.encodeJpg(enhanced, quality: 95));
 }
+
+/// Sunucuya gönderilecek, boyutu optimize edilmiş fiş görseli.
+class ReceiptUploadImage {
+  const ReceiptUploadImage({
+    required this.bytes,
+    required this.mimeType,
+    required this.fileName,
+  });
+
+  final Uint8List bytes;
+  final String mimeType;
+  final String fileName;
+}
+
+/// Görseli sunucu yüklemesi için JPEG'e dönüştürür, yönünü düzeltir ve
+/// uzun kenarını en fazla 1920 piksele indirir.
+ReceiptUploadImage prepareReceiptImageForUpload(Uint8List sourceBytes) {
+  final decoded = image_lib.decodeImage(sourceBytes);
+  if (decoded == null) {
+    throw const FormatException('Fiş görseli okunamadı.');
+  }
+
+  var optimized = image_lib.bakeOrientation(decoded);
+
+  const maxLongEdge = 1920;
+  final longEdge = optimized.width > optimized.height
+      ? optimized.width
+      : optimized.height;
+
+  if (longEdge > maxLongEdge) {
+    final scale = maxLongEdge / longEdge;
+    optimized = image_lib.copyResize(
+      optimized,
+      width: (optimized.width * scale).round(),
+      height: (optimized.height * scale).round(),
+      interpolation: image_lib.Interpolation.cubic,
+    );
+  }
+
+  return ReceiptUploadImage(
+    bytes: Uint8List.fromList(image_lib.encodeJpg(optimized, quality: 85)),
+    mimeType: 'image/jpeg',
+    fileName: 'receipt.jpg',
+  );
+}

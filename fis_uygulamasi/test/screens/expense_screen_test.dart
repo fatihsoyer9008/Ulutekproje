@@ -6,12 +6,15 @@ import 'package:app_main/src/screens/expense_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() {
   testWidgets('renders the subscription empty state without dummy data', (
     tester,
   ) async {
-    await tester.pumpWidget(const MaterialApp(home: ExpenseScreen()));
+    await tester.pumpWidget(
+      ProviderScope(child: const MaterialApp(home: ExpenseScreen())),
+    );
 
     expect(find.byKey(const Key('subscriptions_empty_state')), findsOneWidget);
     expect(find.text('Henüz kayıtlı aboneliğiniz yok'), findsOneWidget);
@@ -85,10 +88,12 @@ void main() {
     final galleryResult = Completer<String?>();
     final parseResult = Completer<ReceiptParseResult>();
     await tester.pumpWidget(
-      MaterialApp(
-        home: ExpenseScreen(
-          pickGalleryReceipt: (_) => galleryResult.future,
-          parseReceipt: (_, {cancelToken}) => parseResult.future,
+      ProviderScope(
+        child: MaterialApp(
+          home: ExpenseScreen(
+            pickGalleryReceipt: (_) => galleryResult.future,
+            parseReceipt: (_, {cancelToken}) => parseResult.future,
+          ),
         ),
       ),
     );
