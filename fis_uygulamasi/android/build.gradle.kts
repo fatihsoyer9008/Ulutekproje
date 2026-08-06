@@ -31,6 +31,19 @@ subprojects {
             }
         }
     }
+
+    // camera_android_camerax 0.7.4+2 compiles CameraX 1.6.1 APIs that
+    // reference CallbackToFutureAdapter, but the plugin does not expose the
+    // AndroidX concurrent artifact on its Java compile classpath. Keep this
+    // project-level workaround until the plugin publishes that dependency.
+    if (name == "camera_android_camerax") {
+        plugins.withId("com.android.library") {
+            dependencies.add(
+                "implementation",
+                "androidx.concurrent:concurrent-futures:1.1.0",
+            )
+        }
+    }
 }
 subprojects {
     project.evaluationDependsOn(":app")
