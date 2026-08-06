@@ -222,6 +222,12 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
                 .retryFailedAndConflicted,
             readQueueSummary: () =>
                 ref.read(offlineTaskRepositoryProvider).getQueueSummary(),
+            countClaimableTransactions: ref
+                .read(localTransactionClaimServiceProvider)
+                .countClaimable,
+            claimLocalTransactions: () => ref
+                .read(localTransactionClaimServiceProvider)
+                .claimForUser(auth.user!.id),
           ),
         );
       },

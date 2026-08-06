@@ -5,7 +5,8 @@ from datetime import UTC, date, datetime
 import httpx
 import pytest
 import pytest_asyncio
-from fastapi import Depends
+from fastapi import Depends, HTTPException
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -85,6 +86,36 @@ class FailingAssistantModel(StubAssistantModel):
     ) -> AssistantPeriodPlan:
         del question, timezone_name, current_local_datetime
         raise AssistantProviderError("simulated provider failure")
+
+
+def test_assistant_provider_uses_dedicated_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "assistant_enabled", True)
+    monkeypatch.setattr(
+        settings,
+        "assistant_gemini_api_key",
+        SecretStr("assistant-only-key"),
+    )
+    monkeypatch.setattr(settings, "gemini_api_key", SecretStr("receipt-only-key"))
+
+    service = get_assistant_model_service()
+
+    assert service._api_key == "assistant-only-key"
+
+
+def test_assistant_provider_does_not_fallback_to_receipt_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "assistant_enabled", True)
+    monkeypatch.setattr(settings, "assistant_gemini_api_key", None)
+    monkeypatch.setattr(settings, "gemini_api_key", SecretStr("receipt-only-key"))
+
+    with pytest.raises(HTTPException) as exc_info:
+        get_assistant_model_service()
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "AI assistant provider is not configured."
 
 
 def _transaction(
