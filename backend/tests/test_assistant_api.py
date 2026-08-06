@@ -118,6 +118,19 @@ def _transaction(
     )
 
 
+async def _grant_assistant_consent(client: httpx.AsyncClient) -> None:
+    response = await client.put(
+        "/api/v1/assistant/consent",
+        json={
+            "accepted": True,
+            "consent_version": settings.assistant_consent_version,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["consent_granted"] is True
+
+
 @pytest_asyncio.fixture
 async def assistant_context(
     monkeypatch: pytest.MonkeyPatch,
@@ -237,10 +250,66 @@ async def assistant_context(
 
 
 @pytest.mark.asyncio
+async def test_assistant_rejects_query_without_current_consent(
+    assistant_context,
+) -> None:
+    client, model = assistant_context
+
+    response = await client.post(
+        "/api/v1/assistant/query",
+        json={
+            "question": "Bu ay ne harcadım?",
+            "timezone": "Europe/Istanbul",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Current AI data processing consent is required."
+    }
+    assert model.summaries == []
+
+
+@pytest.mark.asyncio
+async def test_assistant_rejects_query_after_consent_is_revoked(
+    assistant_context,
+) -> None:
+    client, model = assistant_context
+    await _grant_assistant_consent(client)
+
+    revoke_response = await client.put(
+        "/api/v1/assistant/consent",
+        json={
+            "accepted": False,
+            "consent_version": settings.assistant_consent_version,
+        },
+    )
+
+    assert revoke_response.status_code == 200
+    assert revoke_response.json()["consent_granted"] is False
+    assert revoke_response.json()["consent_revoked_at"] is not None
+
+    query_response = await client.post(
+        "/api/v1/assistant/query",
+        json={
+            "question": "Bu ay ne harcadım?",
+            "timezone": "Europe/Istanbul",
+        },
+    )
+
+    assert query_response.status_code == 403
+    assert query_response.json() == {
+        "detail": "Current AI data processing consent is required."
+    }
+    assert model.summaries == []
+
+
+@pytest.mark.asyncio
 async def test_assistant_uses_only_current_users_active_period_data(
     assistant_context,
 ) -> None:
     client, model = assistant_context
+    await _grant_assistant_consent(client)
 
     response = await client.post(
         "/api/v1/assistant/query",
@@ -308,6 +377,7 @@ async def test_assistant_maps_provider_failure_to_bad_gateway(
     assistant_context,
 ) -> None:
     client, _ = assistant_context
+    await _grant_assistant_consent(client)
     app.dependency_overrides[get_assistant_model_service] = (
         lambda: FailingAssistantModel()
     )

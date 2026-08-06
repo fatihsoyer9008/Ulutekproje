@@ -189,6 +189,32 @@ void main() {
     expect(repository.syncedIds, [1]);
   });
 
+  test(
+    'aktif sync temizlenirken yeni kayıt için takip turu başlatır',
+    () async {
+      final cleanupStarted = Completer<void>();
+      final cleanupRelease = Completer<void>();
+      final repository = _FakeSyncTaskRepository([task(1)])
+        ..cleanupStarted = cleanupStarted
+        ..cleanupRelease = cleanupRelease;
+      final gateway = _FakeGateway((_) async {});
+      final scope = container(repository: repository, gateway: gateway);
+      final coordinator = scope.read(syncCoordinatorProvider.notifier);
+
+      final firstSync = coordinator.syncPendingTasks();
+      await cleanupStarted.future;
+
+      repository.addPending(task(2));
+      final followUpSync = coordinator.syncAfterSave();
+
+      cleanupRelease.complete();
+      await Future.wait([firstSync, followUpSync]);
+
+      expect(gateway.calls, 2);
+      expect(repository.syncedIds, [1, 2]);
+    },
+  );
+
   test('50 üzerindeki görevleri kuyruk boşalana kadar batch işler', () async {
     final repository = _FakeSyncTaskRepository(
       List.generate(105, (index) => task(index + 1)),
@@ -248,6 +274,10 @@ class _FakeSyncTaskRepository implements SyncTaskRepository {
   final cleanupResults = <int>[];
   int errorUpdates = 0;
   int requeueCalls = 0;
+  Completer<void>? cleanupStarted;
+  Completer<void>? cleanupRelease;
+
+  void addPending(OfflineTask task) => _pending[task.id] = task;
 
   void addRetryable(OfflineTask task) => _retryable[task.id] = task;
 
@@ -297,6 +327,17 @@ class _FakeSyncTaskRepository implements SyncTaskRepository {
   @override
   Future<int> deleteSyncedBefore(DateTime cutoff, {int limit = 100}) async {
     cleanupCutoffs.add(cutoff);
+
+    final started = cleanupStarted;
+    if (started != null && !started.isCompleted) {
+      started.complete();
+    }
+
+    final release = cleanupRelease;
+    if (release != null) {
+      await release.future;
+    }
+
     return cleanupResults.isEmpty ? 0 : cleanupResults.removeAt(0);
   }
 }

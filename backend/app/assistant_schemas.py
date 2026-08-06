@@ -39,6 +39,21 @@ class AssistantQueryRequest(BaseModel):
         return normalized
 
 
+class AssistantConsentUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    accepted: bool
+    consent_version: str = Field(min_length=1, max_length=64)
+
+
+class AssistantStatusResponse(BaseModel):
+    enabled: bool
+    required_consent_version: str
+    consent_granted: bool
+    consent_granted_at: datetime | None
+    consent_revoked_at: datetime | None
+
+
 class AssistantPeriodPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

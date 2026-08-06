@@ -40,7 +40,12 @@ class User(Base):
         default=1,
         server_default="1",
     )
-    last_login_at: Mapped[datetime | None] = mapped_column(
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    assistant_consent_version: Mapped[str | None] = mapped_column(String(64))
+    assistant_consent_granted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    assistant_consent_revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
     created_at: Mapped[datetime] = mapped_column(

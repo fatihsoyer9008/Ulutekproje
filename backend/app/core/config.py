@@ -81,10 +81,20 @@ class Settings(BaseSettings):
 
     assistant_enabled: bool = False
     assistant_model: str = "gemini-3.5-flash-lite"
+    assistant_consent_version: str = Field(
+        default="2026-08-01",
+        min_length=1,
+        max_length=64,
+    )
+    assistant_request_timeout_ms: int = Field(
+        default=25_000,
+        ge=5_000,
+        le=30_000,
+    )
     assistant_provider_timeout_ms: int = Field(
-        default=20_000,
+        default=10_000,
         ge=1_000,
-        le=120_000,
+        le=30_000,
     )
     assistant_user_burst_limit: int = Field(default=6, ge=1, le=1_000)
     assistant_user_daily_limit: int = Field(default=100, ge=1, le=100_000)

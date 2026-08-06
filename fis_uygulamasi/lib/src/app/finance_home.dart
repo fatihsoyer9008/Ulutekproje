@@ -4,6 +4,7 @@ import 'package:core_ui/core_ui.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 
+import '../../features/ai_assistant/presentation/assistant_access_gate.dart';
 import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
 import '../../features/ai_assistant/presentation/ai_assistant_sheet.dart';
 import '../screens/calendar_screen.dart';
@@ -27,6 +28,7 @@ class FinanceHome extends StatefulWidget {
     this.pendingOfflineTaskCount = 0,
     this.enableAccountMenu = false,
     this.aiAssistantMessageStream,
+    this.aiAssistantAccessGate,
     super.key,
   });
 
@@ -40,13 +42,14 @@ class FinanceHome extends StatefulWidget {
   final int pendingOfflineTaskCount;
   final bool enableAccountMenu;
   final AiAssistantMessageStream? aiAssistantMessageStream;
-
+  final AiAssistantAccessGate? aiAssistantAccessGate;
   @override
   State<FinanceHome> createState() => _FinanceHomeState();
 }
 
 class _FinanceHomeState extends State<FinanceHome> {
   int _index = 0;
+  bool _isPreparingAssistant = false;
   final Set<int> _visitedIndices = {0};
   final Random _greetingRandom = Random();
   final StatisticsScreenController _statisticsController =
@@ -151,20 +154,35 @@ class _FinanceHomeState extends State<FinanceHome> {
     );
   }
 
-  void _showAiAssistant() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      constraints: const BoxConstraints(maxWidth: 720),
-      builder: (_) => FractionallySizedBox(
-        heightFactor: .9,
-        child: AiAssistantSheet(
-          transactions: widget.transactions,
-          messageStream: widget.aiAssistantMessageStream,
+  Future<void> _showAiAssistant() async {
+    if (_isPreparingAssistant) return;
+    _isPreparingAssistant = true;
+
+    try {
+      final accessGate = widget.aiAssistantAccessGate;
+      if (accessGate != null) {
+        final allowed = await accessGate.ensureAccess(context);
+        if (!allowed || !mounted) return;
+      }
+
+      if (!mounted) return;
+
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        constraints: const BoxConstraints(maxWidth: 720),
+        builder: (_) => FractionallySizedBox(
+          heightFactor: .9,
+          child: AiAssistantSheet(
+            transactions: widget.transactions,
+            messageStream: widget.aiAssistantMessageStream,
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      _isPreparingAssistant = false;
+    }
   }
 
   void _showSynchronizationStatus(BuildContext context) {

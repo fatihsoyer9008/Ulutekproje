@@ -1,3 +1,4 @@
+import 'package:app_main/core/database/database_providers.dart';
 import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
@@ -27,6 +28,9 @@ void main() {
       ProviderScope(
         overrides: [
           authSessionControllerProvider.overrideWith((ref) => authController),
+          offlineQueueSummaryProvider.overrideWith(
+            (ref) => Stream.value(const OfflineQueueSummary()),
+          ),
           syncTaskRepositoryProvider.overrideWithValue(repository),
           pendingTaskSyncGatewayProvider.overrideWithValue(gateway),
         ],

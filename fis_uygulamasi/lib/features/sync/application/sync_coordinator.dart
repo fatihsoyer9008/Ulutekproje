@@ -97,23 +97,55 @@ class SyncCoordinator extends Notifier<SyncState> {
   final Delay _delay;
   final Clock _clock;
   Future<void>? _activeSync;
+  bool _rerunRequested = false;
+  bool _retryRequested = false;
 
   @override
   SyncState build() => const SyncState();
 
-  Future<void> syncPendingTasks() => _startSync(requeueRetryable: false);
+  Future<void> syncPendingTasks() =>
+      _startSync(requeueRetryable: false, rerunIfActive: false);
 
-  Future<void> retryFailedAndConflicted() => _startSync(requeueRetryable: true);
+  Future<void> syncAfterSave() =>
+      _startSync(requeueRetryable: false, rerunIfActive: true);
 
-  Future<void> _startSync({required bool requeueRetryable}) {
+  Future<void> retryFailedAndConflicted() =>
+      _startSync(requeueRetryable: true, rerunIfActive: true);
+
+  Future<void> _startSync({
+    required bool requeueRetryable,
+    required bool rerunIfActive,
+  }) {
     final running = _activeSync;
-    if (running != null) return running;
+    if (running != null) {
+      if (rerunIfActive || requeueRetryable) {
+        _rerunRequested = true;
+        _retryRequested = _retryRequested || requeueRetryable;
+      }
+      return running;
+    }
 
-    final operation = _runSyncSafely(requeueRetryable: requeueRetryable);
-    _activeSync = operation;
-    return operation.whenComplete(() {
-      if (identical(_activeSync, operation)) _activeSync = null;
+    _rerunRequested = true;
+    _retryRequested = _retryRequested || requeueRetryable;
+
+    late final Future<void> operation;
+    operation = _drainSyncRequests().whenComplete(() {
+      if (identical(_activeSync, operation)) {
+        _activeSync = null;
+      }
     });
+    _activeSync = operation;
+    return operation;
+  }
+
+  Future<void> _drainSyncRequests() async {
+    while (_rerunRequested) {
+      _rerunRequested = false;
+      final shouldRequeueRetryable = _retryRequested;
+      _retryRequested = false;
+
+      await _runSyncSafely(requeueRetryable: shouldRequeueRetryable);
+    }
   }
 
   Future<void> _runSyncSafely({required bool requeueRetryable}) async {
