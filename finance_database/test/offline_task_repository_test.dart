@@ -87,6 +87,49 @@ void main() {
     expect(await repository.getPendingTasks(), isEmpty);
   });
 
+  test(
+    'queue summary pending failed ve conflict durumlarını kalıcı okur',
+    () async {
+      final pendingId = await repository.add(task('task-pending-summary'));
+      final failedId = await repository.add(task('task-failed-summary'));
+      final conflictId = await repository.add(task('task-conflict-summary'));
+      await repository.markFailed(failedId, 'offline');
+      await repository.markConflict(conflictId, 'newer server value');
+
+      final summary = await repository.getQueueSummary();
+
+      expect(pendingId, isPositive);
+      expect(summary.pendingCount, 1);
+      expect(summary.failedCount, 1);
+      expect(summary.conflictCount, 1);
+      expect(summary.retryableCount, 2);
+    },
+  );
+
+  test(
+    'failed ve conflict görevleri audit bilgisi korunarak pending yapılır',
+    () async {
+      final failedId = await repository.add(task('task-failed-retry'));
+      final conflictId = await repository.add(task('task-conflict-retry'));
+      await repository.markFailed(failedId, 'offline');
+      await repository.markConflict(conflictId, 'newer server value');
+      final failedBefore = (await repository.getById(failedId))!;
+      final conflictBefore = (await repository.getById(conflictId))!;
+
+      final requeued = await repository.requeueFailedAndConflicted();
+
+      expect(requeued, {failedId, conflictId});
+      final failedAfter = (await repository.getById(failedId))!;
+      final conflictAfter = (await repository.getById(conflictId))!;
+      expect(failedAfter.status, OfflineTaskStatus.pending);
+      expect(failedAfter.retryCount, failedBefore.retryCount);
+      expect(failedAfter.lastError, failedBefore.lastError);
+      expect(conflictAfter.status, OfflineTaskStatus.pending);
+      expect(conflictAfter.retryCount, conflictBefore.retryCount);
+      expect(conflictAfter.lastError, conflictBefore.lastError);
+    },
+  );
+
   test('yalnızca cutoff öncesindeki synced görevleri temizler', () async {
     final oldId = await repository.add(task('task-old'));
     final recentId = await repository.add(task('task-recent'));

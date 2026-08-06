@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:isar/isar.dart';
 
 import '../backup/transaction_json_backup.dart';
+import '../models/offline_task.dart';
 import '../models/receipt_entity.dart';
 import '../models/receipt_line_item_entity.dart';
 import '../models/transaction_entity.dart';
@@ -19,7 +20,32 @@ class TransactionRepository {
     transaction.createdAt = now;
     transaction.updatedAt = now;
 
-    return await _isar.writeTxn(() async {
+    return _persistTransaction(transaction);
+  }
+
+  /// Transaction ve sync görevini aynı Isar transaction'ında kaydeder.
+  /// Herhangi bir yazım hatasında iki kayıt da rollback edilir.
+  Future<Id> addTransactionWithOfflineTask(
+    TransactionEntity transaction, {
+    required OfflineTask Function(TransactionEntity transaction)
+    buildOfflineTask,
+  }) async {
+    final now = DateTime.now();
+    transaction
+      ..createdAt = now
+      ..updatedAt = now;
+    final task = buildOfflineTask(transaction)
+      ..createdAt = now
+      ..updatedAt = now;
+
+    return _persistTransaction(transaction, offlineTask: task);
+  }
+
+  Future<Id> _persistTransaction(
+    TransactionEntity transaction, {
+    OfflineTask? offlineTask,
+  }) async {
+    return _isar.writeTxn(() async {
       final transactionId = await _isar.transactionEntitys.put(transaction);
       final receiptId = await _upsertReceipt(transactionId, transaction);
       await _replaceReceiptLineItems(
@@ -27,6 +53,9 @@ class TransactionRepository {
         receiptId,
         transaction.receiptLineItems,
       );
+      if (offlineTask != null) {
+        await _isar.offlineTasks.put(offlineTask);
+      }
       transaction.receiptLineItemsLoaded = true;
       return transactionId;
     });

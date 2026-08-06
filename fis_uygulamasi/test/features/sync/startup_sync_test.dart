@@ -64,6 +64,9 @@ class _StartupRepository implements SyncTaskRepository {
       task == null ? const [] : [task!];
 
   @override
+  Future<Set<Id>> requeueFailedAndConflicted() async => const {};
+
+  @override
   Future<void> markAsSynced(Id id) async {
     syncedIds.add(id);
     task = null;

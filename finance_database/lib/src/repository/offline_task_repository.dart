@@ -2,6 +2,23 @@ import 'package:isar/isar.dart';
 
 import '../models/offline_task.dart';
 
+class OfflineQueueSummary {
+  const OfflineQueueSummary({
+    this.pendingCount = 0,
+    this.failedCount = 0,
+    this.conflictCount = 0,
+  });
+
+  final int pendingCount;
+  final int failedCount;
+  final int conflictCount;
+
+  int get retryableCount => failedCount + conflictCount;
+  bool get hasPending => pendingCount > 0;
+  bool get hasFailures => failedCount > 0;
+  bool get hasConflicts => conflictCount > 0;
+}
+
 class OfflineTaskRepository {
   OfflineTaskRepository(this._isar);
 
@@ -40,6 +57,57 @@ class OfflineTaskRepository {
       .statusEqualTo(OfflineTaskStatus.pending)
       .sortByCreatedAt()
       .watch(fireImmediately: true);
+
+  Future<OfflineQueueSummary> getQueueSummary() async {
+    final counts = await Future.wait([
+      _isar.offlineTasks
+          .filter()
+          .statusEqualTo(OfflineTaskStatus.pending)
+          .count(),
+      _isar.offlineTasks
+          .filter()
+          .statusEqualTo(OfflineTaskStatus.failed)
+          .count(),
+      _isar.offlineTasks
+          .filter()
+          .statusEqualTo(OfflineTaskStatus.conflict)
+          .count(),
+    ]);
+    return OfflineQueueSummary(
+      pendingCount: counts[0],
+      failedCount: counts[1],
+      conflictCount: counts[2],
+    );
+  }
+
+  Stream<OfflineQueueSummary> watchQueueSummary() => _isar.offlineTasks
+      .watchLazy(fireImmediately: true)
+      .asyncMap((_) => getQueueSummary());
+
+  /// Failed/conflict görevleri manuel retry için atomik olarak pending yapar.
+  /// Retry sayısı, son hata ve son deneme zamanı audit amacıyla korunur.
+  Future<Set<Id>> requeueFailedAndConflicted() async {
+    return _isar.writeTxn(() async {
+      final tasks = await _isar.offlineTasks.where().findAll();
+      final retryable = tasks
+          .where(
+            (task) =>
+                task.status == OfflineTaskStatus.failed ||
+                task.status == OfflineTaskStatus.conflict,
+          )
+          .toList();
+      if (retryable.isEmpty) return const <Id>{};
+
+      final now = DateTime.now();
+      for (final task in retryable) {
+        task
+          ..status = OfflineTaskStatus.pending
+          ..updatedAt = now;
+      }
+      await _isar.offlineTasks.putAll(retryable);
+      return retryable.map((task) => task.id).toSet();
+    });
+  }
 
   Future<void> update(OfflineTask task) async {
     task.updatedAt = DateTime.now();
