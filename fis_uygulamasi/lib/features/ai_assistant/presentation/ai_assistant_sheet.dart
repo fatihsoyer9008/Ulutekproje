@@ -62,11 +62,13 @@ class _AiAssistantSheetState extends State<AiAssistantSheet> {
         setState(() => _messages.last.text += chunk);
         _scrollToLatest();
       },
-      onError: (_) {
+      onError: (Object error) {
         if (!mounted) return;
+        final message = error.toString().trim();
         setState(() {
-          _messages.last.text =
-              'Şu anda yanıt oluşturamıyorum. Lütfen tekrar dene.';
+          _messages.last.text = message.isEmpty
+              ? 'Şu anda yanıt oluşturamıyorum. Lütfen tekrar dene.'
+              : message;
           _isStreaming = false;
         });
       },

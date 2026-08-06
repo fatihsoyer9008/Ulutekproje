@@ -149,6 +149,19 @@ async def test_gemini_requests_are_bounded_and_labels_are_untrusted(
         clients[1].aio.models.calls[0],
     ]
     assert all(call["config"].temperature is None for call in calls)
+    assert calls[0]["config"].response_schema == {
+        "type": "object",
+        "properties": {
+            "start_date": {"type": "string"},
+            "end_date_exclusive": {"type": "string"},
+        },
+        "required": ["start_date", "end_date_exclusive"],
+    }
+    assert calls[1]["config"].response_schema == {
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+    }
 
     answer_payload = json.loads(clients[1].aio.models.calls[0]["contents"])
     category_entry = answer_payload["financial_context"]["expense_categories"][0]

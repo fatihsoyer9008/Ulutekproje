@@ -21,6 +21,23 @@ from app.constants.ai_prompts import (
 )
 from app.repositories.cloud_transactions import CloudTransactionRepository
 
+_PERIOD_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "start_date": {"type": "string"},
+        "end_date_exclusive": {"type": "string"},
+    },
+    "required": ["start_date", "end_date_exclusive"],
+}
+
+_ANSWER_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string"},
+    },
+    "required": ["answer"],
+}
+
 
 class AssistantProviderError(RuntimeError):
     pass
@@ -93,7 +110,7 @@ class GeminiAssistantModelService:
                 config=types.GenerateContentConfig(
                     system_instruction=ASSISTANT_PERIOD_SYSTEM_INSTRUCTION,
                     response_mime_type="application/json",
-                    response_schema=AssistantPeriodPlan,
+                    response_schema=_PERIOD_RESPONSE_SCHEMA,
                     max_output_tokens=128,
                 ),
             )
@@ -122,7 +139,7 @@ class GeminiAssistantModelService:
             http_options=types.HttpOptions(
                 timeout=self._timeout_ms,
             ),
-        )        
+        )
         async_client = client.aio
         contents = json.dumps(
             {
@@ -139,7 +156,7 @@ class GeminiAssistantModelService:
                 config=types.GenerateContentConfig(
                     system_instruction=ASSISTANT_ANSWER_SYSTEM_INSTRUCTION,
                     response_mime_type="application/json",
-                    response_schema=AssistantAnswerPayload,
+                    response_schema=_ANSWER_RESPONSE_SCHEMA,
                     max_output_tokens=500,
                 ),
             )

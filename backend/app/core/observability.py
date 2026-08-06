@@ -31,8 +31,19 @@ class PersonalDataRedactionFilter(logging.Filter):
     """Redact e-mail addresses before a log record reaches a handler."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.msg = redact_personal_data(record.getMessage())
-        record.args = ()
+        record.msg = redact_personal_data(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                redact_personal_data(value) if isinstance(value, str) else value
+                for value in record.args
+            )
+        elif isinstance(record.args, dict):
+            record.args = {
+                key: redact_personal_data(value)
+                if isinstance(value, str)
+                else value
+                for key, value in record.args.items()
+            }
         if record.exc_info is not None:
             record.exc_text = redact_personal_data(
                 "".join(traceback.format_exception(*record.exc_info))

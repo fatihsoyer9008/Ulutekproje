@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/notifications/notification_navigation_controller.dart';
+import '../../features/ai_assistant/data/ai_assistant_client.dart';
 import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
 import '../../features/categories/presentation/category_management_page.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
@@ -87,15 +88,17 @@ GoRouter createAppRouter({
       GoRoute(
         path: '/home',
         builder: (context, state) {
-          final parser = ReceiptParserClient(
-            apiClient: ref.read(apiClientProvider),
-          );
+          final apiClient = ref.read(apiClientProvider);
+          final parser = ReceiptParserClient(apiClient: apiClient);
+          final assistantMessageStream =
+              aiAssistantMessageStream ??
+              AiAssistantClient(apiClient).streamAnswer;
           return _FinanceDataHost(
             transactionStreamFactory: transactionStreamFactory,
             saveTransaction: saveTransaction,
             scanReceipt: scanReceipt,
             parseReceipt: parser.parse,
-            aiAssistantMessageStream: aiAssistantMessageStream,
+            aiAssistantMessageStream: assistantMessageStream,
           );
         },
       ),
