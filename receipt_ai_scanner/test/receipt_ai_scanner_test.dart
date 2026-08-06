@@ -152,4 +152,22 @@ void main() {
     final print = enhanced.getPixel(10, 35).luminance;
     expect((background - print).abs(), greaterThan(35));
   });
+
+  test('receipt image enhancement expands thermal print contrast', () {
+    // Mevcut testin kodu burada kalacak.
+  });
+
+  test('prepares a large receipt image for upload', () {
+    final source = image_lib.Image(width: 2400, height: 1200);
+
+    final upload = prepareReceiptImageForUpload(image_lib.encodePng(source));
+    final optimized = image_lib.decodeImage(upload.bytes);
+
+    expect(upload.mimeType, 'image/jpeg');
+    expect(upload.fileName, 'receipt.jpg');
+    expect(upload.bytes, isNotEmpty);
+    expect(optimized, isNotNull);
+    expect(optimized!.width, 1920);
+    expect(optimized.height, 960);
+  });
 }

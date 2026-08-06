@@ -6,6 +6,7 @@ import 'package:finance_database/finance_database.dart'
     show ReceiptItem, TransactionDraft, TransactionEntity, TransactionSource;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() {
   testWidgets('shows changing analysis messages while the API is pending', (
@@ -13,14 +14,15 @@ void main() {
   ) async {
     final response = Completer<ReceiptParseResult>();
     await tester.pumpWidget(
-      MaterialApp(
-        home: ExpenseScreen(
-          scanReceipt: (_) async => 'OCR metni',
-          parseReceipt: (_, {cancelToken}) => response.future,
+      ProviderScope(
+        child: MaterialApp(
+          home: ExpenseScreen(
+            scanReceipt: (_) async => 'OCR metni',
+            parseReceipt: (_, {cancelToken}) => response.future,
+          ),
         ),
       ),
     );
-
     await tester.tap(find.byKey(const Key('ocr_camera_button')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));

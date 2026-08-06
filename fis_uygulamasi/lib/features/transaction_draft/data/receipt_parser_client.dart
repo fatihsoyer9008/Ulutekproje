@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/storage/installation_id_provider.dart';
 import '../model/transaction_draft.dart';
+import 'package:http_parser/http_parser.dart';
+import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
 class ReceiptParseResult {
   const ReceiptParseResult({
@@ -96,6 +98,7 @@ class ReceiptParserClient {
   ReceiptParserClient._(this._apiClient, this._installationIdProvider);
 
   static const _endpoint = '/api/v1/parse-receipt';
+  static const _imageEndpoint = '/api/v1/receipts/parse-image';
   static const _errorMapper = ReceiptParserErrorMapper();
 
   final ApiClient _apiClient;
@@ -119,9 +122,14 @@ class ReceiptParserClient {
       final response = await _apiClient.dio.post<Map<String, dynamic>>(
         _endpoint,
         data: {'ocr_text': ocrText},
-        options: Options(headers: {'X-Installation-ID': installationId}),
+        options: Options(
+          headers: {'X-Installation-ID': installationId},
+          sendTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 90),
+        ),
         cancelToken: cancelToken,
       );
+
       final body = response.data;
       if (body == null) {
         throw const ReceiptParserException(
@@ -143,6 +151,58 @@ class ReceiptParserClient {
     } on FormatException {
       throw const ReceiptParserException(
         'Fiş servisi geçersiz yanıt verdi. Lütfen tekrar deneyin.',
+        kind: ReceiptParserFailureKind.invalidResponse,
+      );
+    }
+  }
+
+  Future<ReceiptParseResult> parseImage(
+    ReceiptUploadImage image, {
+    CancelToken? cancelToken,
+    ProgressCallback? onSendProgress,
+  }) async {
+    try {
+      final installationId = await _installationIdProvider.getInstallationId();
+
+      debugPrint('Receipt image API POST: $_imageEndpoint');
+
+      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+        _imageEndpoint,
+        data: FormData.fromMap({
+          'image': MultipartFile.fromBytes(
+            image.bytes,
+            filename: image.fileName,
+            contentType: MediaType.parse(image.mimeType),
+          ),
+        }),
+        options: Options(
+          headers: {'X-Installation-ID': installationId},
+          sendTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 90),
+        ),
+        cancelToken: cancelToken,
+        onSendProgress: onSendProgress,
+      );
+
+      final body = response.data;
+      if (body == null) {
+        throw const ReceiptParserException(
+          'Fiş görseli servisi boş yanıt verdi. Lütfen tekrar deneyin.',
+          kind: ReceiptParserFailureKind.invalidResponse,
+        );
+      }
+
+      return ReceiptParseResult.fromJson(body);
+    } on ReceiptParserException {
+      rethrow;
+    } on DioException catch (error) {
+      debugPrint(
+        'Receipt image API connection error ($_imageEndpoint): $error',
+      );
+      throw _errorMapper.map(error);
+    } on FormatException {
+      throw const ReceiptParserException(
+        'Fiş görseli servisi geçersiz yanıt verdi. Lütfen tekrar deneyin.',
         kind: ReceiptParserFailureKind.invalidResponse,
       );
     }

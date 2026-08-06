@@ -6,6 +6,8 @@ import 'camera_failure.dart';
 import 'captured_receipt_photo.dart';
 import 'receipt_image_recognizer.dart';
 
+import 'receipt_scan_result.dart';
+
 /// Opens the back camera, captures a receipt and extracts its raw text on-device.
 class ReceiptScannerScreen extends StatefulWidget {
   const ReceiptScannerScreen({super.key});
@@ -111,7 +113,8 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
       await _prepareCameraForReceipt(controller);
       final photo = await controller.takePicture();
       final ocrStopwatch = Stopwatch()..start();
-      final recognizedText = await _recognizeReceiptText(photo);
+      final scanResult = await _recognizeReceipt(photo);
+      final recognizedText = scanResult.rawOcrText;
       ocrStopwatch.stop();
       if (kDebugMode) {
         debugPrint(
@@ -121,7 +124,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
       if (!mounted) return;
       final shouldContinue = await _showRecognizedText(recognizedText);
       if (shouldContinue && mounted) {
-        Navigator.of(context).pop(recognizedText);
+        Navigator.of(context).pop(scanResult);
       }
     } on CameraException catch (error) {
       _showMessage(_cameraErrorMessage(error));
@@ -146,11 +149,16 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     }
   }
 
-  Future<String> _recognizeReceiptText(XFile photo) =>
-      recognizeAndDeleteCapturedReceiptPhoto(
-        photo,
-        recognize: recognizeReceiptImage,
-      );
+  Future<ReceiptScanResult> _recognizeReceipt(XFile photo) async {
+    final imageBytes = await photo.readAsBytes();
+
+    final rawOcrText = await recognizeAndDeleteCapturedReceiptPhoto(
+      photo,
+      recognize: recognizeReceiptImage,
+    );
+
+    return ReceiptScanResult(rawOcrText: rawOcrText, imageBytes: imageBytes);
+  }
 
   Future<bool> _showRecognizedText(String text) async {
     final hasReadableText = text.trim().isNotEmpty;

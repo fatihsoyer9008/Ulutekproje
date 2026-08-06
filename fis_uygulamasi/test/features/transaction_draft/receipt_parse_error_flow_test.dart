@@ -5,6 +5,7 @@ import 'package:app_main/features/transaction_draft/model/transaction_draft.dart
 import 'package:app_main/src/screens/expense_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() {
   for (final testCase in <({ReceiptParserFailureKind kind, String message, bool canRetry})>[
@@ -31,14 +32,16 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: ExpenseScreen(
-            scanReceipt: (_) async => 'OCR',
-            parseReceipt: (_, {cancelToken}) async =>
-                throw ReceiptParserException(
-                  testCase.message,
-                  kind: testCase.kind,
-                ),
+        ProviderScope(
+          child: MaterialApp(
+            home: ExpenseScreen(
+              scanReceipt: (_) async => 'OCR',
+              parseReceipt: (_, {cancelToken}) async =>
+                  throw ReceiptParserException(
+                    testCase.message,
+                    kind: testCase.kind,
+                  ),
+            ),
           ),
         ),
       );
@@ -233,20 +236,22 @@ void main() {
   ) async {
     final response = Completer<ReceiptParseResult>();
     await tester.pumpWidget(
-      MaterialApp(
-        home: ExpenseScreen(
-          scanReceipt: (_) async => 'OCR',
-          parseReceipt: (_, {cancelToken}) {
-            cancelToken!.whenCancel.then((_) {
-              response.completeError(
-                const ReceiptParserException(
-                  'Fiş analizi iptal edildi.',
-                  kind: ReceiptParserFailureKind.cancelled,
-                ),
-              );
-            });
-            return response.future;
-          },
+      ProviderScope(
+        child: MaterialApp(
+          home: ExpenseScreen(
+            scanReceipt: (_) async => 'OCR',
+            parseReceipt: (_, {cancelToken}) {
+              cancelToken!.whenCancel.then((_) {
+                response.completeError(
+                  const ReceiptParserException(
+                    'Fiş analizi iptal edildi.',
+                    kind: ReceiptParserFailureKind.cancelled,
+                  ),
+                );
+              });
+              return response.future;
+            },
+          ),
         ),
       ),
     );
@@ -255,10 +260,11 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.byKey(const Key('receipt_analysis_page')), findsOneWidget);
-
+    await tester.ensureVisible(
+      find.byKey(const Key('cancel_receipt_analysis_button')),
+    );
     await tester.tap(find.byKey(const Key('cancel_receipt_analysis_button')));
-    await tester.pumpAndSettle();
-
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.byKey(const Key('receipt_analysis_page')), findsNothing);
     expect(find.text('Gider Ekle'), findsOneWidget);
   });

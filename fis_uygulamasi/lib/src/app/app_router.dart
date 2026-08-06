@@ -98,6 +98,7 @@ GoRouter createAppRouter({
             saveTransaction: saveTransaction,
             scanReceipt: scanReceipt,
             parseReceipt: parser.parse,
+            parseReceiptImage: parser.parseImage,
             aiAssistantMessageStream: assistantMessageStream,
           );
         },
@@ -113,6 +114,7 @@ GoRouter createAppRouter({
             saveTransaction: saveTransaction,
             scanReceipt: scanReceipt,
             parseReceipt: parser.parse,
+            parseReceiptImage: parser.parseImage,
             openScannerOnStart: true,
           );
         },
@@ -136,6 +138,9 @@ class _FinanceDataHost extends ConsumerStatefulWidget {
     required this.saveTransaction,
     required this.scanReceipt,
     required this.parseReceipt,
+
+    required this.parseReceiptImage,
+
     this.aiAssistantMessageStream,
   });
 
@@ -143,6 +148,9 @@ class _FinanceDataHost extends ConsumerStatefulWidget {
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler parseReceipt;
+
+  final ReceiptImageParseHandler parseReceiptImage;
+
   final AiAssistantMessageStream? aiAssistantMessageStream;
 
   @override
@@ -189,6 +197,7 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
           saveTransaction: widget.saveTransaction,
           scanReceipt: widget.scanReceipt,
           parseReceipt: widget.parseReceipt,
+          parseReceiptImage: widget.parseReceiptImage,
           onProfilePressed: () => context.push('/profile'),
           pendingOfflineTaskCount: pendingTaskCount,
           enableAccountMenu: true,

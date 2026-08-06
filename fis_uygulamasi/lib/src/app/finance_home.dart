@@ -22,6 +22,7 @@ class FinanceHome extends StatefulWidget {
     this.saveTransaction,
     this.scanReceipt,
     this.parseReceipt,
+    this.parseReceiptImage,
     this.onProfilePressed,
     this.pendingOfflineTaskCount = 0,
     this.enableAccountMenu = false,
@@ -34,6 +35,7 @@ class FinanceHome extends StatefulWidget {
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
+  final ReceiptImageParseHandler? parseReceiptImage;
   final VoidCallback? onProfilePressed;
   final int pendingOfflineTaskCount;
   final bool enableAccountMenu;
@@ -83,6 +85,8 @@ class _FinanceHomeState extends State<FinanceHome> {
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
         parseReceipt: widget.parseReceipt,
+
+        parseReceiptImage: widget.parseReceiptImage,
         onAiAssistantPressed: _showAiAssistant,
       ),
       StatisticsScreen(
