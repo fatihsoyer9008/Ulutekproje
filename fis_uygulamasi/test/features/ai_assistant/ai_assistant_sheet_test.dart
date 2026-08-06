@@ -74,4 +74,25 @@ void main() {
     expect(receivedPrompt, 'Bütçemi incele');
     expect(find.text('Yanıt tamamlandı.'), findsOneWidget);
   });
+  testWidgets('investment disclaimer appears above the conversation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      FinanceApp(transactionStream: Stream.value(const <TransactionEntity>[])),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AI Asistan'));
+    await tester.pumpAndSettle();
+
+    final disclaimer = find.byKey(const Key('ai_investment_disclaimer'));
+    final messageField = find.byKey(const Key('ai_message_field'));
+
+    expect(disclaimer, findsOneWidget);
+    expect(find.text('Bu bir yatırım tavsiyesi değildir.'), findsOneWidget);
+    expect(
+      tester.getTopLeft(disclaimer).dy,
+      lessThan(tester.getTopLeft(messageField).dy),
+    );
+  });
 }

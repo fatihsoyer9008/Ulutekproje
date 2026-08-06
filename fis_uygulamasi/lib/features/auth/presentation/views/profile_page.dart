@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../ai_assistant/data/ai_assistant_client.dart';
+import '../../../ai_assistant/presentation/assistant_consent_card.dart';
 import '../../../../application/service/transaction_export_file_service.dart';
 import '../../../../core/database/database_providers.dart';
 import '../../../backup/data/transaction_json_import_service.dart';
@@ -12,9 +14,14 @@ import '../../../sync/presentation/widgets/profile_sync_status_card.dart';
 import '../controllers/auth_session_controller.dart';
 
 class ProfilePage extends ConsumerStatefulWidget {
-  const ProfilePage({this.transactionImportService, super.key});
+  const ProfilePage({
+    this.transactionImportService,
+    this.aiAssistantClient,
+    super.key,
+  });
 
   final TransactionJsonImportService? transactionImportService;
+  final AiAssistantAccessClient? aiAssistantClient;
 
   @override
   ConsumerState<ProfilePage> createState() => _ProfilePageState();
@@ -81,6 +88,15 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                       .read(syncCoordinatorProvider.notifier)
                       .retryFailedAndConflicted(),
           ),
+          if (!isGuest && widget.aiAssistantClient != null) ...[
+            const SizedBox(height: 20),
+            Text(
+              'Yapay zekâ ve gizlilik',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 10),
+            AssistantConsentCard(client: widget.aiAssistantClient!),
+          ],
           if (widget.transactionImportService != null) ...[
             const SizedBox(height: 20),
             Text(

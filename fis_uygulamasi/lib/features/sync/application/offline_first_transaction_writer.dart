@@ -12,16 +12,19 @@ typedef SaveTransactionWithOfflineTask =
       OfflineTask Function(TransactionEntity persistedTransaction)
       buildOfflineTask,
     );
+typedef TriggerSynchronization = void Function();
 
 class OfflineFirstTransactionWriter {
   OfflineFirstTransactionWriter({
     required this.saveTransaction,
     required this.saveTransactionWithOfflineTask,
+    required this.triggerSynchronization,
     Random? random,
   }) : _random = random ?? Random.secure();
 
   final SaveLocalTransaction saveTransaction;
   final SaveTransactionWithOfflineTask saveTransactionWithOfflineTask;
+  final TriggerSynchronization triggerSynchronization;
   final Random _random;
 
   Future<void> save(
@@ -47,6 +50,17 @@ class OfflineFirstTransactionWriter {
         ..type = OfflineTaskType.createTransaction
         ..payloadJson = jsonEncode(_syncPayload(persistedTransaction)),
     );
+
+    _triggerSynchronizationSafely();
+  }
+
+  void _triggerSynchronizationSafely() {
+    try {
+      triggerSynchronization();
+    } on Object {
+      // İşlem ve offline görev zaten kalıcı olarak kaydedildi.
+      // Scheduler hatası kullanıcıya kayıt başarısızmış gibi gösterilmemeli.
+    }
   }
 
   Map<String, Object?> _syncPayload(TransactionEntity transaction) => {

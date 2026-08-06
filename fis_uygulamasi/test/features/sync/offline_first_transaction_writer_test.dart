@@ -6,10 +6,12 @@ import 'package:finance_database/finance_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('giriş yapan kullanıcının kaydını atomik callback ile hazırlar', () async {
+  test('giriş yapan kullanıcının kaydından sonra sync tetikler', () async {
     TransactionEntity? savedTransaction;
     OfflineTask? savedTask;
     var localSaveCount = 0;
+    var syncTriggerCount = 0;
+
     final writer = OfflineFirstTransactionWriter(
       saveTransaction: (_) async => localSaveCount++,
       saveTransactionWithOfflineTask: (transaction, buildTask) async {
@@ -20,6 +22,7 @@ void main() {
         savedTransaction = transaction;
         savedTask = buildTask(transaction);
       },
+      triggerSynchronization: () => syncTriggerCount++,
       random: Random(7),
     );
     final transaction = _transaction();
@@ -27,6 +30,7 @@ void main() {
     await writer.save(transaction, authenticatedUserId: 'user-id');
 
     expect(localSaveCount, 0);
+    expect(syncTriggerCount, 1);
     expect(savedTransaction, same(transaction));
     expect(transaction.ownerKey, 'user:user-id');
     expect(transaction.syncState, SyncState.pending);
@@ -42,6 +46,7 @@ void main() {
     expect(savedTask!.type, OfflineTaskType.createTransaction);
 
     final payload = jsonDecode(savedTask!.payloadJson) as Map<String, dynamic>;
+
     expect(payload['client_record_id'], transaction.clientRecordId);
     expect(payload['transaction_type'], 'expense');
     expect(payload['amount_in_minor'], 2500);
@@ -49,12 +54,15 @@ void main() {
     expect(payload['client_created_at'], '2026-08-05T10:00:00.000Z');
   });
 
-  test('misafir kaydı offline sync kuyruğuna eklenmez', () async {
+  test('misafir kaydı sync kuyruğuna eklenmez ve sync tetiklemez', () async {
     var localSaveCount = 0;
     var atomicSaveCount = 0;
+    var syncTriggerCount = 0;
+
     final writer = OfflineFirstTransactionWriter(
       saveTransaction: (_) async => localSaveCount++,
       saveTransactionWithOfflineTask: (_, _) async => atomicSaveCount++,
+      triggerSynchronization: () => syncTriggerCount++,
       random: Random(7),
     );
     final transaction = _transaction();
@@ -63,9 +71,52 @@ void main() {
 
     expect(localSaveCount, 1);
     expect(atomicSaveCount, 0);
+    expect(syncTriggerCount, 0);
     expect(transaction.syncState, SyncState.localOnly);
     expect(transaction.clientRecordId, isNull);
   });
+
+  test('atomik kayıt başarısız olursa sync tetiklenmez', () async {
+    var syncTriggerCount = 0;
+
+    final writer = OfflineFirstTransactionWriter(
+      saveTransaction: (_) async {},
+      saveTransactionWithOfflineTask: (_, _) async {
+        throw StateError('atomic write failed');
+      },
+      triggerSynchronization: () => syncTriggerCount++,
+      random: Random(7),
+    );
+
+    await expectLater(
+      writer.save(_transaction(), authenticatedUserId: 'user-id'),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(syncTriggerCount, 0);
+  });
+
+  test(
+    'sync scheduler hatası kalıcı yerel kaydı başarısız göstermez',
+    () async {
+      var atomicSaveCount = 0;
+
+      final writer = OfflineFirstTransactionWriter(
+        saveTransaction: (_) async {},
+        saveTransactionWithOfflineTask: (_, _) async {
+          atomicSaveCount++;
+        },
+        triggerSynchronization: () {
+          throw StateError('scheduler unavailable');
+        },
+        random: Random(7),
+      );
+
+      await writer.save(_transaction(), authenticatedUserId: 'user-id');
+
+      expect(atomicSaveCount, 1);
+    },
+  );
 }
 
 TransactionEntity _transaction() => TransactionEntity()

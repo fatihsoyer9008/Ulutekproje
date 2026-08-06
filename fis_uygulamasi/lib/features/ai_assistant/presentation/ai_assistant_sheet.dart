@@ -62,11 +62,13 @@ class _AiAssistantSheetState extends State<AiAssistantSheet> {
         setState(() => _messages.last.text += chunk);
         _scrollToLatest();
       },
-      onError: (_) {
+      onError: (Object error) {
         if (!mounted) return;
+        final message = error.toString().trim();
         setState(() {
-          _messages.last.text =
-              'Şu anda yanıt oluşturamıyorum. Lütfen tekrar dene.';
+          _messages.last.text = message.isEmpty
+              ? 'Şu anda yanıt oluşturamıyorum. Lütfen tekrar dene.'
+              : message;
           _isStreaming = false;
         });
       },
@@ -182,6 +184,33 @@ class _AiAssistantSheetState extends State<AiAssistantSheet> {
               ),
             ),
             const Divider(height: 1),
+            Container(
+              key: const Key('ai_investment_disclaimer'),
+              width: double.infinity,
+              color: scheme.tertiaryContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 18,
+                    color: scheme.onTertiaryContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Bu bir yatırım tavsiyesi değildir.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onTertiaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
             Expanded(
               child: _messages.isEmpty
                   ? _EmptyConversation(onQuestionPressed: _send)
@@ -232,14 +261,6 @@ class _AiAssistantSheetState extends State<AiAssistantSheet> {
                     ),
                   ),
                 ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Text(
-                'AI yanıtları hata içerebilir. Finansal kararlarını kontrol et.',
-                style: Theme.of(context).textTheme.bodySmall,
-                textAlign: TextAlign.center,
               ),
             ),
           ],
