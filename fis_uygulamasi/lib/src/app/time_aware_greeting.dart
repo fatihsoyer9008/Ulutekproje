@@ -4,27 +4,27 @@ enum GreetingPeriod { morning, noon, evening, night }
 
 abstract final class TimeAwareGreeting {
   static const _morningMessages = <String>[
-    'Günaydın, {name}',
-    'Güne güzel başlayalım, {name}',
-    'Harika bir sabah olsun, {name}',
+    '{name}, günaydın!',
+    '{name}, güzel bir sabah!',
+    '{name}, mutlu sabahlar!',
   ];
 
   static const _noonMessages = <String>[
-    'İyi öğlenler, {name}',
-    'Günün güzel geçsin, {name}',
-    'Keyifli bir öğlen olsun, {name}',
+    '{name}, iyi günler!',
+    '{name}, keyifli günler!',
+    '{name}, güzel bir gün!',
   ];
 
   static const _eveningMessages = <String>[
-    'İyi akşamlar, {name}',
-    'Günün nasıl geçti, {name}?',
-    'Keyifli akşamlar, {name}',
+    '{name}, iyi akşamlar!',
+    '{name}, günün nasıldı?',
+    '{name}, keyifli akşamlar!',
   ];
 
   static const _nightMessages = <String>[
-    'İyi geceler, {name}',
-    'Geceye kısa bir finans özeti, {name}?',
-    'Huzurlu geceler, {name}',
+    '{name}, iyi geceler!',
+    '{name}, günün özeti?',
+    '{name}, huzurlu geceler!',
   ];
 
   static GreetingPeriod periodFor(DateTime localTime) {
