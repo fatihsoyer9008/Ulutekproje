@@ -1,9 +1,15 @@
 import 'dart:async';
 
+import 'package:app_main/core/database/database_providers.dart';
 import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
 import 'package:app_main/src/screens/expense_screen.dart';
 import 'package:finance_database/finance_database.dart'
-    show ReceiptItem, TransactionDraft, TransactionEntity, TransactionSource;
+    show
+        CategoryEntity,
+        ReceiptItem,
+        TransactionDraft,
+        TransactionEntity,
+        TransactionSource;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,7 +43,11 @@ void main() {
 
     response.complete(
       const ReceiptParseResult(
-        draft: TransactionDraft.empty(),
+        draft: TransactionDraft(
+          institutionName: 'MIGROS',
+          category: 'Market',
+          amountInMinor: 2550,
+        ),
         normalizedOcrText: 'OCR metni',
         confidenceScore: 0.9,
         isParseSuccessful: true,
@@ -123,7 +133,7 @@ void main() {
     expect(savedTransactions.single.source, TransactionSource.ocrLlm);
   });
 
-  testWidgets('shows the confidence warning for an unsuccessful parse', (
+  testWidgets('does not open an empty review for an unreviewable parse', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -133,7 +143,7 @@ void main() {
           parseReceipt: (_, {cancelToken}) async => const ReceiptParseResult(
             draft: TransactionDraft.empty(),
             normalizedOcrText: 'bozuk OCR',
-            confidenceScore: 0.85,
+            confidenceScore: 0.2,
             isParseSuccessful: false,
           ),
         ),
@@ -143,12 +153,123 @@ void main() {
     await tester.tap(find.byKey(const Key('ocr_camera_button')));
     await tester.pumpAndSettle();
 
+    expect(find.text('İşlemi Kontrol Et'), findsNothing);
+    expect(find.byKey(const Key('receipt_parse_error_dialog')), findsOneWidget);
     expect(
-      find.text(
-        'Tutar veya kurum adından tam emin olamadık, lütfen kontrol edin',
+      find.textContaining(
+        'Fişten kontrol edilebilir işlem bilgisi çıkarılamadı',
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('does not treat an empty receipt item as reviewable data', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExpenseScreen(
+          scanReceipt: (_) async => 'bozuk OCR',
+          parseReceipt: (_, {cancelToken}) async =>
+              ReceiptParseResult.fromJson(const {
+                'normalized_ocr_text': 'bozuk OCR',
+                'confidence_score': 0.2,
+                'is_parse_successful': false,
+                'items': [{}],
+              }),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('ocr_camera_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('İşlemi Kontrol Et'), findsNothing);
+    expect(find.byKey(const Key('receipt_parse_error_dialog')), findsOneWidget);
+  });
+
+  testWidgets('keeps the scan flow locked until the current review opens', (
+    tester,
+  ) async {
+    final categories = StreamController<List<CategoryEntity>>();
+    addTearDown(categories.close);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          categoriesProvider.overrideWith((ref) => categories.stream),
+        ],
+        child: MaterialApp(
+          home: ExpenseScreen(
+            scanReceipt: (_) async => 'İLK FİŞ TOPLAM 25,50 TL',
+            parseReceipt: (_, {cancelToken}) async => const ReceiptParseResult(
+              draft: TransactionDraft(
+                institutionName: 'İLK MARKET',
+                category: 'Market',
+                amountInMinor: 2550,
+              ),
+              normalizedOcrText: 'İLK FİŞ TOPLAM 25,50 TL',
+              confidenceScore: 0.9,
+              isParseSuccessful: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('ocr_camera_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final cameraButton = tester.widget<FilledButton>(
+      find.byKey(const Key('ocr_camera_button')),
+    );
+    expect(cameraButton.onPressed, isNull);
+
+    categories.add(const <CategoryEntity>[]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('İşlemi Kontrol Et'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'İLK MARKET'), findsOneWidget);
+  });
+
+  testWidgets('a second scan shows only the newest receipt draft', (
+    tester,
+  ) async {
+    var scanCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExpenseScreen(
+          scanReceipt: (_) async {
+            scanCount++;
+            return scanCount == 1 ? 'İLK FİŞ' : 'İKİNCİ FİŞ';
+          },
+          parseReceipt: (text, {cancelToken}) async => ReceiptParseResult(
+            draft: TransactionDraft(
+              institutionName: text == 'İLK FİŞ' ? 'İLK MARKET' : 'YENİ MARKET',
+              category: 'Market',
+              amountInMinor: text == 'İLK FİŞ' ? 2550 : 4890,
+            ),
+            normalizedOcrText: text,
+            confidenceScore: 0.9,
+            isParseSuccessful: true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('ocr_camera_button')));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextFormField, 'İLK MARKET'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ocr_camera_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(TextFormField, 'YENİ MARKET'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'İLK MARKET'), findsNothing);
   });
 
   testWidgets('keeps the expense screen open when parsing fails', (
