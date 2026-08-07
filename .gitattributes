@@ -1,6 +1,8 @@
 # Flutter regenerates plugin registrants with LF on every platform. Pin their
 # line endings so Windows core.autocrlf does not mark them modified after
 # `flutter pub get` or `flutter run`.
+.gitattributes text eol=lf
+*.dart text eol=lf
 **/flutter/generated_plugin_registrant.cc text eol=lf
 **/flutter/generated_plugin_registrant.h text eol=lf
 **/flutter/generated_plugins.cmake text eol=lf

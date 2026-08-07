@@ -1,7 +1,12 @@
+import 'dart:math';
+
 import 'package:core_ui/core_ui.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 
+import '../../features/ai_assistant/presentation/assistant_access_gate.dart';
+import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
+import '../../features/ai_assistant/presentation/ai_assistant_sheet.dart';
 import '../screens/calendar_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/expense_screen.dart';
@@ -9,6 +14,7 @@ import '../screens/savings_screen.dart';
 import '../screens/statistics_screen.dart';
 import '../screens/transactions_screen.dart';
 import '../widgets/app_drawer.dart';
+import 'time_aware_greeting.dart';
 
 class FinanceHome extends StatefulWidget {
   const FinanceHome({
@@ -17,9 +23,12 @@ class FinanceHome extends StatefulWidget {
     this.saveTransaction,
     this.scanReceipt,
     this.parseReceipt,
+    this.parseReceiptImage,
     this.onProfilePressed,
     this.pendingOfflineTaskCount = 0,
     this.enableAccountMenu = false,
+    this.aiAssistantMessageStream,
+    this.aiAssistantAccessGate,
     super.key,
   });
 
@@ -28,22 +37,28 @@ class FinanceHome extends StatefulWidget {
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
+  final ReceiptImageParseHandler? parseReceiptImage;
   final VoidCallback? onProfilePressed;
   final int pendingOfflineTaskCount;
   final bool enableAccountMenu;
-
+  final AiAssistantMessageStream? aiAssistantMessageStream;
+  final AiAssistantAccessGate? aiAssistantAccessGate;
   @override
   State<FinanceHome> createState() => _FinanceHomeState();
 }
 
 class _FinanceHomeState extends State<FinanceHome> {
   int _index = 0;
+  bool _isPreparingAssistant = false;
   final Set<int> _visitedIndices = {0};
+  final Random _greetingRandom = Random();
   final StatisticsScreenController _statisticsController =
       StatisticsScreenController();
+  late DateTime _greetingLocalTime;
+  late String _homeGreeting;
 
   List<String> get _titles => [
-    'Günaydın, ${widget.greetingName}',
+    _homeGreeting,
     'İstatistikler',
     'Kumbaralarım',
     'Finans Takvimi',
@@ -51,13 +66,31 @@ class _FinanceHomeState extends State<FinanceHome> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _updateGreeting();
+  }
+
+  @override
+  void didUpdateWidget(covariant FinanceHome oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.greetingName != widget.greetingName) {
+      _updateGreeting();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    _refreshGreetingWhenNeeded();
     final screens = [
       DashboardScreen(
         transactions: widget.transactions,
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
         parseReceipt: widget.parseReceipt,
+
+        parseReceiptImage: widget.parseReceiptImage,
+        onAiAssistantPressed: _showAiAssistant,
       ),
       StatisticsScreen(
         controller: _statisticsController,
@@ -85,6 +118,8 @@ class _FinanceHomeState extends State<FinanceHome> {
       onNotificationsPressed: () => _showSynchronizationStatus(context),
       onAiAssistantPressed: _index == 1
           ? _statisticsController.showSummary
+          : _index == 0
+          ? _showAiAssistant
           : null,
       body: IndexedStack(
         index: _index,
@@ -96,6 +131,58 @@ class _FinanceHomeState extends State<FinanceHome> {
         ),
       ),
     );
+  }
+
+  void _refreshGreetingWhenNeeded() {
+    final now = DateTime.now();
+    final dayChanged =
+        now.year != _greetingLocalTime.year ||
+        now.month != _greetingLocalTime.month ||
+        now.day != _greetingLocalTime.day;
+    final periodChanged =
+        TimeAwareGreeting.periodFor(now) !=
+        TimeAwareGreeting.periodFor(_greetingLocalTime);
+    if (dayChanged || periodChanged) _updateGreeting(now);
+  }
+
+  void _updateGreeting([DateTime? localTime]) {
+    _greetingLocalTime = localTime ?? DateTime.now();
+    _homeGreeting = TimeAwareGreeting.compose(
+      name: widget.greetingName,
+      localTime: _greetingLocalTime,
+      random: _greetingRandom,
+    );
+  }
+
+  Future<void> _showAiAssistant() async {
+    if (_isPreparingAssistant) return;
+    _isPreparingAssistant = true;
+
+    try {
+      final accessGate = widget.aiAssistantAccessGate;
+      if (accessGate != null) {
+        final allowed = await accessGate.ensureAccess(context);
+        if (!allowed || !mounted) return;
+      }
+
+      if (!mounted) return;
+
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        constraints: const BoxConstraints(maxWidth: 720),
+        builder: (_) => FractionallySizedBox(
+          heightFactor: .9,
+          child: AiAssistantSheet(
+            transactions: widget.transactions,
+            messageStream: widget.aiAssistantMessageStream,
+          ),
+        ),
+      );
+    } finally {
+      _isPreparingAssistant = false;
+    }
   }
 
   void _showSynchronizationStatus(BuildContext context) {

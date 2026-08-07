@@ -14,6 +14,9 @@ class ReceiptLineItemEntity {
   @Index()
   late int transactionId;
 
+  @Index()
+  late int receiptId;
+
   late int position;
   late String name;
   String? category;

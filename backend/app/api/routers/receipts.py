@@ -2,11 +2,22 @@ import logging
 from time import perf_counter
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 
 from app.api.dependencies import get_rate_limiter, request_ip
 from app.core.config import settings
-from app.core.rate_limit import RateLimiter, RateLimitRule
+from app.core.rate_limit import RateLimiter
+from app.core.receipt_image_security import read_validated_receipt_image
+from app.core.receipt_rate_limits import enforce_receipt_rate_limits
 from app.schemas import ReceiptParserRequest, ReceiptParserResponse
 from app.services.receipt_parser import (
     DummyReceiptParserService,
@@ -17,27 +28,6 @@ from app.services.receipt_parser import (
 
 router = APIRouter(prefix="/api/v1", tags=["receipts"])
 logger = logging.getLogger("app.receipts")
-
-RECEIPT_IP_BURST = RateLimitRule(
-    name="receipt-ip-burst",
-    limit=settings.receipt_ip_burst_limit,
-    window_seconds=60,
-)
-RECEIPT_IP_DAILY = RateLimitRule(
-    name="receipt-ip-daily",
-    limit=settings.receipt_ip_daily_limit,
-    window_seconds=86_400,
-)
-RECEIPT_INSTALLATION_BURST = RateLimitRule(
-    name="receipt-installation-burst",
-    limit=settings.receipt_installation_burst_limit,
-    window_seconds=60,
-)
-RECEIPT_INSTALLATION_DAILY = RateLimitRule(
-    name="receipt-installation-daily",
-    limit=settings.receipt_installation_daily_limit,
-    window_seconds=86_400,
-)
 
 InstallationIdHeader = Annotated[
     str | None,
@@ -72,29 +62,10 @@ async def _enforce_receipt_limits(
     installation_id: str | None,
     limiter: RateLimiter,
 ) -> None:
-    ip_identifier = f"ip:{request_ip(request)}"
-
-    await limiter.enforce(
-        RECEIPT_IP_BURST,
-        identifier=ip_identifier,
-    )
-    await limiter.enforce(
-        RECEIPT_IP_DAILY,
-        identifier=ip_identifier,
-    )
-
-    if installation_id is None:
-        return
-
-    installation_identifier = f"installation:{installation_id}"
-
-    await limiter.enforce(
-        RECEIPT_INSTALLATION_BURST,
-        identifier=installation_identifier,
-    )
-    await limiter.enforce(
-        RECEIPT_INSTALLATION_DAILY,
-        identifier=installation_identifier,
+    await enforce_receipt_rate_limits(
+        client_ip=request_ip(request),
+        installation_id=installation_id,
+        limiter=limiter,
     )
 
 
@@ -131,6 +102,59 @@ async def parse_receipt(
         duration_ms = (perf_counter() - started_at) * 1000
         logger.info(
             "receipt_parse_completed request_id=%s duration_ms=%.2f "
+            "model=%s outcome=%s",
+            request_id,
+            duration_ms,
+            model_name,
+            outcome,
+        )
+
+
+@router.post(
+    "/receipts/parse-image",
+    response_model=ReceiptParserResponse,
+)
+async def parse_receipt_image(
+    request: Request,
+    image: Annotated[
+        UploadFile,
+        File(description="JPEG veya PNG biçimindeki fiş fotoğrafı"),
+    ],
+    installation_id: InstallationIdHeader = None,
+    parser: ReceiptParserService = Depends(get_receipt_parser_service),
+) -> ReceiptParserResponse:
+    del installation_id
+    validated_image = await read_validated_receipt_image(image)
+    started_at = perf_counter()
+    request_id = getattr(request.state, "request_id", "unknown")
+    model_name = str(getattr(parser, "model_name", "unknown"))
+    outcome = "success"
+
+    try:
+        return await parser.parse_image(
+            image_bytes=validated_image.data,
+            mime_type=validated_image.mime_type,
+        )
+    except ReceiptParserError as exc:
+        outcome = "provider_error"
+        provider_error = exc.__cause__ or exc
+        logger.warning(
+            "receipt_image_provider_failed request_id=%s model=%s " "error_type=%s",
+            request_id,
+            model_name,
+            type(provider_error).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=("Fiş görüntüsü yapay zekâ servisi tarafından ayrıştırılamadı"),
+        ) from exc
+    except Exception:
+        outcome = "unexpected_error"
+        raise
+    finally:
+        duration_ms = (perf_counter() - started_at) * 1000
+        logger.info(
+            "receipt_image_parse_completed request_id=%s duration_ms=%.2f "
             "model=%s outcome=%s",
             request_id,
             duration_ms,

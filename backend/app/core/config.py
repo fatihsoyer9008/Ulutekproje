@@ -50,6 +50,22 @@ class Settings(BaseSettings):
     trust_proxy_headers: bool = False
     trusted_client_ip_header: str = ""
     trusted_proxy_cidrs: str = ""
+    receipt_image_upload_enabled: bool = False
+    receipt_image_max_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        ge=1,
+        le=20 * 1024 * 1024,
+    )
+    receipt_image_max_pixels: int = Field(
+        default=25_000_000,
+        ge=1,
+        le=50_000_000,
+    )
+    receipt_image_processing_concurrency: int = Field(
+        default=2,
+        ge=1,
+        le=8,
+    )
     receipt_ip_burst_limit: int = Field(default=10, ge=1, le=10_000)
     receipt_ip_daily_limit: int = Field(default=50, ge=1, le=1_000_000)
     receipt_installation_burst_limit: int = Field(
@@ -62,6 +78,28 @@ class Settings(BaseSettings):
         ge=1,
         le=1_000_000,
     )
+
+    assistant_enabled: bool = False
+    assistant_model: str = "gemini-3.5-flash-lite"
+    assistant_gemini_api_key: SecretStr | None = None
+    assistant_consent_version: str = Field(
+        default="2026-08-01",
+        min_length=1,
+        max_length=64,
+    )
+    assistant_request_timeout_ms: int = Field(
+        default=25_000,
+        ge=5_000,
+        le=30_000,
+    )
+    assistant_provider_timeout_ms: int = Field(
+        default=10_000,
+        ge=1_000,
+        le=30_000,
+    )
+    assistant_user_burst_limit: int = Field(default=6, ge=1, le=1_000)
+    assistant_user_daily_limit: int = Field(default=100, ge=1, le=100_000)
+    assistant_max_period_days: int = Field(default=3660, ge=1, le=36500)
 
     google_oauth_client_ids: str = ""
     # Backwards-compatible name used by the existing local environment.
@@ -83,11 +121,7 @@ class Settings(BaseSettings):
     @field_validator("trusted_proxy_cidrs")
     @classmethod
     def validate_trusted_proxy_cidrs(cls, value: str) -> str:
-        configured_cidrs = [
-            item.strip()
-            for item in value.split(",")
-            if item.strip()
-        ]
+        configured_cidrs = [item.strip() for item in value.split(",") if item.strip()]
 
         try:
             for cidr in configured_cidrs:

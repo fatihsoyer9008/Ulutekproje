@@ -17,10 +17,15 @@ class ReceiptParserRequest(BaseModel):
 
 class ReceiptItem(BaseModel):
     name: str = Field(min_length=1)
-    price_minor: int = Field(ge=0, description="Kuruş cinsinden ürün fiyatı")
-    category: str = Field(min_length=1)
-    # These fields are deliberately optional: older parsers only supplied
-    # ``price_minor`` and clients must continue to accept those responses.
+    # A line can still be useful when OCR only recognizes its product name.
+    # Keep uncertain values null instead of forcing Gemini to invent them or
+    # discard the complete line item.
+    price_minor: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Kuruş cinsinden ürün fiyatı",
+    )
+    category: Optional[str] = Field(default=None, min_length=1)
     total_amount_minor: Optional[int] = Field(default=None, ge=0)
     quantity: Optional[float] = Field(default=None, ge=0)
     unit_price_in_minor: Optional[int] = Field(default=None, ge=0)

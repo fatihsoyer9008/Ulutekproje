@@ -20,7 +20,12 @@ void main() {
 
     // Isar, IsarService'e bağımlı olmadan doğrudan geçici klasörde açılır
     isar = await Isar.open(
-      [TransactionEntitySchema, ReceiptLineItemEntitySchema],
+      [
+        TransactionEntitySchema,
+        ReceiptEntitySchema,
+        ReceiptLineItemEntitySchema,
+        OfflineTaskSchema,
+      ],
       directory: tempDir.path,
       name: 'transaction_repository_test',
     );
@@ -54,6 +59,9 @@ void main() {
         ..category = TransactionCategory.market
         ..date = DateTime.now()
         ..source = TransactionSource.manual
+        ..clientRecordId = 'd9ca5a3e-599d-497c-8c96-c68c0e5b90d1'
+        ..ownerKey = 'guest:test-installation'
+        ..syncState = SyncState.pending
         ..merchantName = 'Migros';
 
       final id = await repository.addTransaction(newTransaction);
@@ -63,6 +71,117 @@ void main() {
       expect(fetched?.id, equals(id));
       expect(fetched?.amountInMinor, equals(1250));
       expect(fetched?.merchantName, equals('Migros'));
+      expect(
+        fetched?.clientRecordId,
+        equals('d9ca5a3e-599d-497c-8c96-c68c0e5b90d1'),
+      );
+      expect(fetched?.ownerKey, equals('guest:test-installation'));
+      expect(fetched?.syncState, SyncState.pending);
+    });
+
+    test('yeni işlem varsayılan olarak localOnly durumundadır', () {
+      final transaction = TransactionEntity();
+
+      expect(transaction.syncState, SyncState.localOnly);
+    });
+
+    test('transaction ve offline task atomik olarak kaydedilir', () async {
+      final transaction = TransactionEntity()
+        ..amountInMinor = 2500
+        ..category = TransactionCategory.market
+        ..date = DateTime(2026, 8, 5)
+        ..source = TransactionSource.manual
+        ..clientRecordId = 'd9ca5a3e-599d-497c-8c96-c68c0e5b90d1'
+        ..ownerKey = 'user:test-user'
+        ..syncState = SyncState.pending;
+
+      final id = await repository.addTransactionWithOfflineTask(
+        transaction,
+        buildOfflineTask: (_) => OfflineTask()
+          ..clientTaskId = 'operation-atomic-success'
+          ..payloadJson = '{}',
+      );
+
+      expect(await repository.getTransactionById(id), isNotNull);
+      final tasks = await isar.offlineTasks.where().findAll();
+      expect(tasks, hasLength(1));
+      expect(tasks.single.clientTaskId, 'operation-atomic-success');
+      expect(tasks.single.createdAt, transaction.createdAt);
+    });
+
+    test('localOnly kayıtları idempotent biçimde sync kuyruğuna alır', () async {
+      final transaction = TransactionEntity()
+        ..amountInMinor = 4200
+        ..category = TransactionCategory.market
+        ..date = DateTime(2026, 8, 6)
+        ..source = TransactionSource.manual;
+      await repository.addTransaction(transaction);
+
+      var recordSequence = 0;
+      var taskSequence = 0;
+      Future<int> claim() => repository.enqueueLocalOnlyTransactions(
+        ownerKey: 'user:test-user',
+        createClientRecordId: () => 'record-${recordSequence++}',
+        buildOfflineTask: (_) => OfflineTask()
+          ..clientTaskId = 'task-${taskSequence++}'
+          ..payloadJson = '{}',
+      );
+
+      expect(await repository.countLocalOnlyTransactions(), 1);
+      expect(await claim(), 1);
+      expect(await claim(), 0);
+
+      final stored = await repository.getTransactionById(transaction.id);
+      expect(stored?.ownerKey, 'user:test-user');
+      expect(stored?.clientRecordId, 'record-0');
+      expect(stored?.syncState, SyncState.pending);
+      expect(await isar.offlineTasks.count(), 1);
+    });
+
+    test(
+      'offline task yazımı hata verirse transaction rollback edilir',
+      () async {
+        final existingTask = OfflineTask()
+          ..clientTaskId = 'duplicate-operation-id'
+          ..payloadJson = '{}'
+          ..createdAt = DateTime(2026, 8, 5)
+          ..updatedAt = DateTime(2026, 8, 5);
+        await isar.writeTxn(() => isar.offlineTasks.put(existingTask));
+        final transaction = TransactionEntity()
+          ..amountInMinor = 2500
+          ..category = TransactionCategory.market
+          ..date = DateTime(2026, 8, 5)
+          ..source = TransactionSource.manual;
+
+        await expectLater(
+          repository.addTransactionWithOfflineTask(
+            transaction,
+            buildOfflineTask: (_) => OfflineTask()
+              ..clientTaskId = 'duplicate-operation-id'
+              ..payloadJson = '{}',
+          ),
+          throwsA(anything),
+        );
+
+        expect(await isar.transactionEntitys.count(), 0);
+        expect(await isar.offlineTasks.count(), 1);
+      },
+    );
+
+    test('eski metadata alanları null olan kaydı sorunsuz okur', () async {
+      final legacyTransaction = TransactionEntity()
+        ..amountInMinor = 9900
+        ..category = TransactionCategory.diger
+        ..date = DateTime(2026, 8, 5)
+        ..source = TransactionSource.manual;
+
+      final id = await repository.addTransaction(legacyTransaction);
+      final fetched = await repository.getTransactionById(id);
+
+      expect(fetched, isNotNull);
+      expect(fetched?.clientRecordId, isNull);
+      expect(fetched?.ownerKey, isNull);
+      expect(fetched?.syncState, SyncState.localOnly);
     });
 
     // Test 2: Tüm Kayıtları Getirme
@@ -171,6 +290,9 @@ void main() {
           receiptItems: const [ReceiptItem(name: 'Süt', priceMinor: 2500)],
         ).toTransactionEntity();
         final id = await repository.addTransaction(transaction);
+        final receiptBeforeUpdate = await repository.getReceiptByTransactionId(
+          id,
+        );
 
         final unloaded = await isar.transactionEntitys.get(id);
         expect(unloaded?.receiptLineItemsLoaded, isFalse);
@@ -178,7 +300,15 @@ void main() {
         await repository.updateTransaction(unloaded);
 
         final updated = await repository.getTransactionById(id);
+        final receiptAfterUpdate = await repository.getReceiptByTransactionId(
+          id,
+        );
         expect(updated?.merchantName, 'Migros Jet');
+        expect(receiptAfterUpdate?.id, receiptBeforeUpdate?.id);
+        expect(
+          updated?.receiptLineItems.single.receiptId,
+          receiptAfterUpdate?.id,
+        );
         expect(updated?.receiptLineItems.single.name, 'Süt');
       },
     );
@@ -201,9 +331,13 @@ void main() {
 
       final id = await repository.addTransaction(transaction);
       final items = await repository.getReceiptLineItems(id);
+      final receipt = await repository.getReceiptByTransactionId(id);
 
       expect(items.map((item) => item.name), ['Süt', 'Ekmek']);
       expect(items.first.transactionId, id);
+      expect(receipt?.transactionId, id);
+      expect(receipt?.totalAmountInMinor, 4500);
+      expect(items.first.receiptId, receipt?.id);
       expect(items.first.quantity, 2);
       expect(items.first.unitPriceInMinor, 1500);
       expect(
@@ -212,7 +346,32 @@ void main() {
       );
 
       await repository.deleteTransaction(id);
+      expect(await repository.getReceiptByTransactionId(id), isNull);
       expect(await repository.getReceiptLineItems(id), isEmpty);
+    });
+
+    test('ürün kaydı hata verirse işlem, fiş ve ürünleri geri alır', () async {
+      final transaction = TransactionEntity()
+        ..amountInMinor = 1000
+        ..category = TransactionCategory.market
+        ..date = DateTime(2026, 8, 4)
+        ..source = TransactionSource.ocrLlm
+        ..receiptLineItems = [
+          ReceiptLineItemEntity()
+            ..transactionId = 0
+            ..receiptId = 0
+            ..position = 0,
+        ]
+        ..receiptLineItemsLoaded = true;
+
+      await expectLater(
+        repository.addTransaction(transaction),
+        throwsA(anything),
+      );
+
+      expect(await isar.transactionEntitys.count(), 0);
+      expect(await isar.receiptEntitys.count(), 0);
+      expect(await isar.receiptLineItemEntitys.count(), 0);
     });
   });
   group('TransactionRepository analiz sorguları', () {

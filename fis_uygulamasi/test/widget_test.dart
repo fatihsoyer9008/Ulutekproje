@@ -1,5 +1,5 @@
 import 'dart:async';
-
+import 'package:app_main/core/database/database_providers.dart';
 import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
@@ -62,6 +62,9 @@ void main() {
       ProviderScope(
         overrides: [
           authSessionControllerProvider.overrideWith((ref) => authController),
+          offlineQueueSummaryProvider.overrideWith(
+            (ref) => Stream.value(const OfflineQueueSummary()),
+          ),
         ],
         child: MaterialApp(
           home: FinanceHome(
@@ -76,7 +79,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Günaydın, Ayşe'), findsOneWidget);
+    expect(find.textContaining('Ayşe'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('app_menu_button')));
     await tester.pumpAndSettle();
@@ -129,7 +132,11 @@ void main() {
     await tester.tap(find.byKey(const Key('drawer_profile_tile')));
     await tester.pumpAndSettle();
     final logoutButton = find.byKey(const Key('logout_button'));
-    await tester.ensureVisible(logoutButton);
+    await tester.scrollUntilVisible(
+      logoutButton,
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.pumpAndSettle();
     await tester.tap(logoutButton);
     await tester.pumpAndSettle();

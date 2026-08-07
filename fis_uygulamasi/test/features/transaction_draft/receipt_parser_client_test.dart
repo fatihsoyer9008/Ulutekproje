@@ -8,6 +8,7 @@ import 'package:app_main/core/storage/secure_token_storage.dart';
 import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
 void main() {
   group('ReceiptParserErrorMapper', () {
@@ -474,6 +475,123 @@ void main() {
     expect(result.usedLocalFallback, isTrue);
     expect(result.draft.amountInMinor, 10000);
   });
+
+  test(
+    'uploads image with JWT, installation id and increased timeouts',
+    () async {
+      final dio = Dio(BaseOptions(baseUrl: 'https://example.com'));
+      dio.httpClientAdapter = _FakeAdapter((options) {
+        expect(options.method, 'POST');
+        expect(options.path, '/api/v1/receipts/parse-image');
+        expect(options.headers['Authorization'], 'Bearer current-access-token');
+        expect(
+          options.headers['X-Installation-ID'],
+          'installation-test-1234567890',
+        );
+        expect(options.data, isA<FormData>());
+        expect(options.sendTimeout, const Duration(seconds: 60));
+        expect(options.receiveTimeout, const Duration(seconds: 90));
+
+        return _jsonResponse({
+          'normalized_ocr_text': 'MIGROS TOPLAM 25,50 TL',
+          'merchant': 'MIGROS',
+          'total_amount_minor': 2550,
+          'date': '2026-08-06T12:00:00Z',
+          'category': 'Market',
+          'confidence_score': 0.95,
+          'is_parse_successful': true,
+        });
+      });
+
+      final apiClient = ApiClient(
+        baseUrl: 'https://example.com',
+        tokenStorage: _MemoryTokenStorage(),
+        dio: dio,
+      );
+      addTearDown(apiClient.close);
+
+      await apiClient.setSession(
+        const AuthTokenBundle(
+          accessToken: 'current-access-token',
+          refreshToken: 'current-refresh-token',
+          user: {},
+        ),
+      );
+
+      final client = ReceiptParserClient(
+        apiClient: apiClient,
+        installationIdProvider: const _FakeInstallationIdProvider(
+          'installation-test-1234567890',
+        ),
+      );
+
+      final result = await client.parseImage(_testReceiptImage());
+
+      expect(result.draft.institutionName, 'MIGROS');
+      expect(result.draft.amountInMinor, 2550);
+    },
+  );
+
+  test('maps cancelled image upload through parseImage', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.cancel,
+      );
+    });
+
+    expect(
+      () => client.parseImage(_testReceiptImage(), cancelToken: CancelToken()),
+      throwsA(
+        isA<ReceiptParserException>().having(
+          (error) => error.kind,
+          'kind',
+          ReceiptParserFailureKind.cancelled,
+        ),
+      ),
+    );
+  });
+
+  test('maps image upload timeout through parseImage', () async {
+    final client = _clientWithResponse((options) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.receiveTimeout,
+      );
+    });
+
+    expect(
+      () => client.parseImage(_testReceiptImage()),
+      throwsA(
+        isA<ReceiptParserException>().having(
+          (error) => error.kind,
+          'kind',
+          ReceiptParserFailureKind.timeout,
+        ),
+      ),
+    );
+  });
+
+  test('rejects invalid image parser response through parseImage', () async {
+    final client = _clientWithResponse(
+      (_) => _jsonResponse({
+        'normalized_ocr_text': '',
+        'confidence_score': 0.95,
+        'is_parse_successful': true,
+      }),
+    );
+
+    expect(
+      () => client.parseImage(_testReceiptImage()),
+      throwsA(
+        isA<ReceiptParserException>().having(
+          (error) => error.kind,
+          'kind',
+          ReceiptParserFailureKind.invalidResponse,
+        ),
+      ),
+    );
+  });
 }
 
 ReceiptParserException _mappedHttpFailure(
@@ -515,6 +633,12 @@ ResponseBody _jsonResponse(Map<String, dynamic> body) =>
         Headers.contentTypeHeader: [Headers.jsonContentType],
       },
     );
+
+ReceiptUploadImage _testReceiptImage() => ReceiptUploadImage(
+  bytes: Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xD9]),
+  mimeType: 'image/jpeg',
+  fileName: 'receipt-test.jpg',
+);
 
 class _FakeAdapter implements HttpClientAdapter {
   _FakeAdapter(this.handler);

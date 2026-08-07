@@ -35,6 +35,28 @@ USE_DUMMY_PARSER=false
 
 API anahtarını içeren `.env` dosyası Git tarafından yok sayılır; bu dosyayı commit etmeyin.
 
+## Finansal AI Asistan anahtarı
+
+Fiş OCR/ayrıştırma ve Finansal AI Asistan farklı Gemini anahtarları kullanır.
+Bu sayede iki özelliğin Google proje kotası ve anahtar rotasyonu birbirinden
+bağımsız yönetilebilir:
+
+```dotenv
+# Fiş OCR/ayrıştırma
+GEMINI_API_KEY=receipt-project-api-key
+GEMINI_MODEL=gemini-3.5-flash-lite
+
+# Finansal AI Asistan
+ASSISTANT_ENABLED=true
+ASSISTANT_GEMINI_API_KEY=assistant-project-api-key
+ASSISTANT_MODEL=gemini-3.5-flash-lite
+```
+
+`ASSISTANT_ENABLED=true` iken `ASSISTANT_GEMINI_API_KEY` zorunludur. Sistem
+bilerek `GEMINI_API_KEY` değerine geri dönmez; böylece iki özellik farkında
+olmadan aynı sağlayıcı kotasını tüketmez. Gerçek anahtarları yalnızca yerel
+`.env` dosyasında veya sunucunun şifreli secret yönetiminde saklayın.
+
 ## Prompt ve dayanıklılık testleri
 
 Gemini sistem talimatı tek kaynaktan yönetilir:

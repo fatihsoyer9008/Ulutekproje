@@ -3,9 +3,10 @@ import 'dart:async';
 import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
 import 'package:app_main/src/screens/expense_screen.dart';
 import 'package:finance_database/finance_database.dart'
-    show TransactionDraft, TransactionEntity, TransactionSource;
+    show ReceiptItem, TransactionDraft, TransactionEntity, TransactionSource;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() {
   testWidgets('shows changing analysis messages while the API is pending', (
@@ -13,14 +14,15 @@ void main() {
   ) async {
     final response = Completer<ReceiptParseResult>();
     await tester.pumpWidget(
-      MaterialApp(
-        home: ExpenseScreen(
-          scanReceipt: (_) async => 'OCR metni',
-          parseReceipt: (_, {cancelToken}) => response.future,
+      ProviderScope(
+        child: MaterialApp(
+          home: ExpenseScreen(
+            scanReceipt: (_) async => 'OCR metni',
+            parseReceipt: (_, {cancelToken}) => response.future,
+          ),
         ),
       ),
     );
-
     await tester.tap(find.byKey(const Key('ocr_camera_button')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
@@ -64,6 +66,15 @@ void main() {
                 category: 'Market',
                 amountInMinor: 2550,
                 transactionDate: DateTime(2026, 7, 28),
+                receiptItems: const [
+                  ReceiptItem(
+                    name: 'Süt 1L',
+                    category: 'Gıda',
+                    quantity: 1,
+                    unitPriceInMinor: 2550,
+                    totalAmountInMinor: 2550,
+                  ),
+                ],
               ),
               normalizedOcrText: 'MİGROS\nTOPLAM 25,50 TL',
               confidenceScore: 0.92,
@@ -94,6 +105,13 @@ void main() {
     );
     expect(find.widgetWithText(TextFormField, '25,50'), findsOneWidget);
     expect(find.byKey(const Key('transaction_date_field')), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('receipt_items_summary_count')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('1 ürün kalemi bulundu.'), findsOneWidget);
+    expect(find.byKey(const Key('secure_analysis_button')), findsNothing);
     expect(savedTransactions, isEmpty);
     await tester.drag(find.byType(ListView), const Offset(0, -500));
     await tester.pumpAndSettle();

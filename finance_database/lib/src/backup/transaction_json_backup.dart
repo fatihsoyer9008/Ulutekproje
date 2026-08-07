@@ -118,6 +118,14 @@ abstract final class TransactionJsonBackup {
     final updatedAt =
         _readOptionalDate(raw, const ['updatedAt', 'updated_at'], index) ??
         createdAt;
+    final syncState =
+        _readOptionalEnum(
+          raw,
+          const ['syncState', 'sync_state'],
+          SyncState.values,
+          index,
+        ) ??
+        SyncState.localOnly;
 
     final transaction = TransactionEntity()
       ..transactionType = transactionType
@@ -133,6 +141,15 @@ abstract final class TransactionJsonBackup {
         'merchant_name',
       ], index)
       ..source = source
+      ..clientRecordId = _readOptionalString(raw, const [
+        'clientRecordId',
+        'client_record_id',
+      ], index)
+      ..ownerKey = _readOptionalString(raw, const [
+        'ownerKey',
+        'owner_key',
+      ], index)
+      ..syncState = syncState
       ..rawOcrText = _readOptionalString(raw, const [
         'rawOcrText',
         'raw_ocr_text',
@@ -280,6 +297,24 @@ abstract final class TransactionJsonBackup {
     int index,
   ) {
     final value = _requiredValue(map, keys, index);
+    if (value is String) {
+      for (final candidate in values) {
+        if (candidate.name == value) return candidate;
+      }
+    }
+    throw TransactionJsonImportException(
+      '${index + 1}. işlemde "${keys.first}" değeri geçersiz.',
+    );
+  }
+
+  static T? _readOptionalEnum<T extends Enum>(
+    Map<String, dynamic> map,
+    List<String> keys,
+    List<T> values,
+    int index,
+  ) {
+    final value = _optionalValue(map, keys);
+    if (value == null) return null;
     if (value is String) {
       for (final candidate in values) {
         if (candidate.name == value) return candidate;

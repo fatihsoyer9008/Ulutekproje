@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/notifications/notification_navigation_controller.dart';
+import '../../features/ai_assistant/data/ai_assistant_client.dart';
+import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
+import '../../features/ai_assistant/presentation/assistant_access_gate.dart';
+import '../../features/sync/application/sync_coordinator.dart';
 import '../../features/categories/presentation/category_management_page.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/auth/presentation/views/forgot_password_page.dart';
@@ -26,6 +30,7 @@ GoRouter createAppRouter({
   saveTransaction,
   required ReceiptScanLauncher? scanReceipt,
   TransactionJsonImportService? transactionImportService,
+  AiAssistantMessageStream? aiAssistantMessageStream,
 }) {
   return GoRouter(
     initialLocation: '/startup',
@@ -85,14 +90,20 @@ GoRouter createAppRouter({
       GoRoute(
         path: '/home',
         builder: (context, state) {
-          final parser = ReceiptParserClient(
-            apiClient: ref.read(apiClientProvider),
-          );
+          final apiClient = ref.read(apiClientProvider);
+          final parser = ReceiptParserClient(apiClient: apiClient);
+          final assistantClient = AiAssistantClient(apiClient);
+          final assistantMessageStream =
+              aiAssistantMessageStream ?? assistantClient.streamAnswer;
+
           return _FinanceDataHost(
             transactionStreamFactory: transactionStreamFactory,
             saveTransaction: saveTransaction,
             scanReceipt: scanReceipt,
             parseReceipt: parser.parse,
+            parseReceiptImage: parser.parseImage,
+            aiAssistantClient: assistantClient,
+            aiAssistantMessageStream: assistantMessageStream,
           );
         },
       ),
@@ -107,14 +118,17 @@ GoRouter createAppRouter({
             saveTransaction: saveTransaction,
             scanReceipt: scanReceipt,
             parseReceipt: parser.parse,
+            parseReceiptImage: parser.parseImage,
             openScannerOnStart: true,
           );
         },
       ),
       GoRoute(
         path: '/profile',
-        builder: (_, _) =>
-            ProfilePage(transactionImportService: transactionImportService),
+        builder: (_, _) => ProfilePage(
+          transactionImportService: transactionImportService,
+          aiAssistantClient: AiAssistantClient(ref.read(apiClientProvider)),
+        ),
       ),
       GoRoute(
         path: '/categories',
@@ -130,12 +144,22 @@ class _FinanceDataHost extends ConsumerStatefulWidget {
     required this.saveTransaction,
     required this.scanReceipt,
     required this.parseReceipt,
+
+    required this.parseReceiptImage,
+
+    required this.aiAssistantClient,
+    this.aiAssistantMessageStream,
   });
 
   final Stream<List<TransactionEntity>> Function() transactionStreamFactory;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler parseReceipt;
+
+  final ReceiptImageParseHandler parseReceiptImage;
+
+  final AiAssistantClient aiAssistantClient;
+  final AiAssistantMessageStream? aiAssistantMessageStream;
 
   @override
   ConsumerState<_FinanceDataHost> createState() => _FinanceDataHostState();
@@ -153,8 +177,8 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authSessionControllerProvider);
-    final pendingTaskCount =
-        ref.watch(pendingOfflineTasksProvider).asData?.value.length ?? 0;
+    final queueSummary = ref.watch(offlineQueueSummaryProvider).asData?.value;
+    final pendingTaskCount = queueSummary?.pendingCount ?? 0;
     final displayName = auth.user?.displayName?.trim();
     final email = auth.user?.email.trim();
     final greetingName = displayName != null && displayName.isNotEmpty
@@ -181,9 +205,30 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
           saveTransaction: widget.saveTransaction,
           scanReceipt: widget.scanReceipt,
           parseReceipt: widget.parseReceipt,
+          parseReceiptImage: widget.parseReceiptImage,
           onProfilePressed: () => context.push('/profile'),
           pendingOfflineTaskCount: pendingTaskCount,
           enableAccountMenu: true,
+          aiAssistantMessageStream: widget.aiAssistantMessageStream,
+          aiAssistantAccessGate: AiAssistantAccessGate(
+            client: widget.aiAssistantClient,
+            authStatus: auth.status,
+            queueSummary: queueSummary,
+            syncPendingTasks: ref
+                .read(syncCoordinatorProvider.notifier)
+                .syncPendingTasks,
+            retryFailedAndConflicted: ref
+                .read(syncCoordinatorProvider.notifier)
+                .retryFailedAndConflicted,
+            readQueueSummary: () =>
+                ref.read(offlineTaskRepositoryProvider).getQueueSummary(),
+            countClaimableTransactions: ref
+                .read(localTransactionClaimServiceProvider)
+                .countClaimable,
+            claimLocalTransactions: () => ref
+                .read(localTransactionClaimServiceProvider)
+                .claimForUser(auth.user!.id),
+          ),
         );
       },
     );

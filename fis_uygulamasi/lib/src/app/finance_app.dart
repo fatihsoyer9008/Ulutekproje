@@ -1,15 +1,18 @@
 import 'dart:async';
 
 import 'package:core_ui/core_ui.dart';
-import 'package:finance_database/finance_database.dart';
+import 'package:finance_database/finance_database.dart' hide SyncState;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/theme/theme_mode_provider.dart';
+import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/backup/data/transaction_json_import_service.dart';
 import '../../features/notifications/notification_navigation_controller.dart';
-import '../../core/theme/theme_mode_provider.dart';
+import '../../features/sync/application/sync_coordinator.dart';
+import '../../features/sync/domain/sync_state.dart';
 import '../screens/expense_screen.dart';
 import 'app_router.dart';
 import 'finance_home.dart';
@@ -18,6 +21,7 @@ class FinanceApp extends ConsumerStatefulWidget {
   const FinanceApp({
     super.key,
     this.enableAuth = false,
+    this.enableStartupSync = false,
     this.notificationNavigationController,
     this.transactionStream = const Stream<List<TransactionEntity>>.empty(),
     this.transactionStreamFactory,
@@ -25,9 +29,11 @@ class FinanceApp extends ConsumerStatefulWidget {
     this.scanReceipt,
     this.parseReceipt,
     this.transactionImportService,
+    this.aiAssistantMessageStream,
   });
 
   final bool enableAuth;
+  final bool enableStartupSync;
   final NotificationNavigationController? notificationNavigationController;
   final Stream<List<TransactionEntity>> transactionStream;
   final Stream<List<TransactionEntity>> Function()? transactionStreamFactory;
@@ -35,6 +41,7 @@ class FinanceApp extends ConsumerStatefulWidget {
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
   final TransactionJsonImportService? transactionImportService;
+  final AiAssistantMessageStream? aiAssistantMessageStream;
 
   @override
   ConsumerState<FinanceApp> createState() => _FinanceAppState();
@@ -42,10 +49,25 @@ class FinanceApp extends ConsumerStatefulWidget {
 
 class _FinanceAppState extends ConsumerState<FinanceApp> {
   GoRouter? _router;
+  ProviderSubscription<AuthSessionState>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
+
+    if (widget.enableStartupSync) {
+      _authSubscription = ref.listenManual(authSessionControllerProvider, (
+        previous,
+        next,
+      ) {
+        if (next.status == AuthStatus.authenticated &&
+            previous?.status != AuthStatus.authenticated) {
+          unawaited(
+            ref.read(syncCoordinatorProvider.notifier).syncPendingTasks(),
+          );
+        }
+      }, fireImmediately: true);
+    }
 
     if (widget.enableAuth) {
       _router = createAppRouter(
@@ -55,6 +77,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
         transactionImportService: widget.transactionImportService,
+        aiAssistantMessageStream: widget.aiAssistantMessageStream,
       );
 
       final router = _router;
@@ -69,6 +92,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
 
   @override
   void dispose() {
+    _authSubscription?.close();
     widget.notificationNavigationController?.detachNavigator();
     _router?.dispose();
     super.dispose();
@@ -76,6 +100,9 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
 
   @override
   Widget build(BuildContext context) {
+    final syncState = widget.enableStartupSync
+        ? ref.watch(syncCoordinatorProvider)
+        : const SyncState();
     final themeMode = widget.enableAuth
         ? ref.watch(appThemeModeProvider)
         : ThemeMode.light;
@@ -105,6 +132,12 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
         darkTheme: AppTheme.dark,
         themeMode: themeMode,
         routerConfig: router,
+        builder: widget.enableStartupSync
+            ? (context, child) => _SyncStatusOverlay(
+                state: syncState,
+                child: child ?? const SizedBox.shrink(),
+              )
+            : null,
       );
     }
 
@@ -114,6 +147,12 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
+      builder: widget.enableStartupSync
+          ? (context, child) => _SyncStatusOverlay(
+              state: syncState,
+              child: child ?? const SizedBox.shrink(),
+            )
+          : null,
       home: StreamBuilder<List<TransactionEntity>>(
         stream: widget.transactionStream,
         builder: (context, snapshot) {
@@ -134,9 +173,53 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
             saveTransaction: widget.saveTransaction,
             scanReceipt: widget.scanReceipt,
             parseReceipt: widget.parseReceipt,
+            aiAssistantMessageStream: widget.aiAssistantMessageStream,
           );
         },
       ),
+    );
+  }
+}
+
+class _SyncStatusOverlay extends StatelessWidget {
+  const _SyncStatusOverlay({required this.state, required this.child});
+
+  final SyncState state;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        child,
+        if (state.status == SyncStatus.syncing)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: LinearProgressIndicator(value: state.progress),
+          ),
+        if (state.status == SyncStatus.error ||
+            state.status == SyncStatus.conflict)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: Material(
+              color: Theme.of(context).colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  state.errorMessage ?? 'Senkronizasyon tamamlanamadı.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

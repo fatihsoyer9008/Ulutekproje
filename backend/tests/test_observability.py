@@ -3,6 +3,7 @@ import sys
 
 import pytest
 from fastapi.testclient import TestClient
+from uvicorn.logging import AccessFormatter
 
 from app.api.dependencies import get_rate_limiter
 from app.api.routers.receipts import get_receipt_parser_service
@@ -170,6 +171,31 @@ def test_personal_email_is_redacted_from_log_record() -> None:
 
     assert record.getMessage() == "Login failed for <redacted-email>"
     assert "personal.user" not in record.getMessage()
+
+
+def test_redaction_preserves_uvicorn_access_log_arguments() -> None:
+    record = logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg='%s - "%s %s HTTP/%s" %d',
+        args=(
+            "127.0.0.1:12345",
+            "POST",
+            "/api/v1/assistant/query?email=person@example.com",
+            "1.1",
+            200,
+        ),
+        exc_info=None,
+    )
+
+    PersonalDataRedactionFilter().filter(record)
+    formatted = AccessFormatter().format(record)
+
+    assert len(record.args) == 5
+    assert "person@example.com" not in formatted
+    assert "<redacted-email>" in formatted
 
 
 def test_personal_email_is_redacted_from_exception_traceback() -> None:
