@@ -163,6 +163,31 @@ void main() {
     );
   });
 
+  testWidgets('does not treat an empty receipt item as reviewable data', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExpenseScreen(
+          scanReceipt: (_) async => 'bozuk OCR',
+          parseReceipt: (_, {cancelToken}) async =>
+              ReceiptParseResult.fromJson(const {
+                'normalized_ocr_text': 'bozuk OCR',
+                'confidence_score': 0.2,
+                'is_parse_successful': false,
+                'items': [{}],
+              }),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('ocr_camera_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('İşlemi Kontrol Et'), findsNothing);
+    expect(find.byKey(const Key('receipt_parse_error_dialog')), findsOneWidget);
+  });
+
   testWidgets('keeps the scan flow locked until the current review opens', (
     tester,
   ) async {

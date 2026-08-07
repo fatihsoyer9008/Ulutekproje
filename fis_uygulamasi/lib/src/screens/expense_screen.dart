@@ -396,7 +396,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       draft.institutionName.trim().isNotEmpty ||
       (draft.amountInMinor ?? 0) > 0 ||
       draft.transactionDate != null ||
-      draft.receiptItems.isNotEmpty;
+      draft.receiptItems.any((item) => item.name.trim().isNotEmpty);
 
   Future<ReceiptParseResult?> _runSecureImageAnalysis(
     BuildContext context,
