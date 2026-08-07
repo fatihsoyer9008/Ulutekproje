@@ -22,6 +22,7 @@ void main() {
         ReceiptLineItemEntitySchema,
         OfflineTaskSchema,
         CategoryEntitySchema,
+        SavingsGoalEntitySchema,
       ],
       directory: tempDirectory.path,
       name: 'database_providers_test',
@@ -53,6 +54,10 @@ void main() {
     expect(
       container.read(categoryRepositoryProvider),
       isA<CategoryRepository>(),
+    );
+    expect(
+      container.read(savingsGoalRepositoryProvider),
+      isA<SavingsGoalRepository>(),
     );
   });
 }

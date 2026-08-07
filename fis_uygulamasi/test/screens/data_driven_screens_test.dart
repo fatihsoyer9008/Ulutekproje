@@ -13,6 +13,50 @@ void main() {
     expect(find.text('Henüz birikim hedefi bulunmuyor.'), findsOneWidget);
   });
 
+  testWidgets('savings goals use featured and vertical list layout', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SavingsScreen(
+            goals: [
+              SavingGoal(
+                'Yeni Araba',
+                4200,
+                12000,
+                Icons.directions_car_rounded,
+                Colors.pink,
+              ),
+              SavingGoal(
+                'Tatil',
+                6500,
+                10000,
+                Icons.flight_takeoff_rounded,
+                Colors.teal,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(PageView), findsNothing);
+    expect(find.byKey(const Key('savings_vertical_list')), findsOneWidget);
+    expect(find.text('🎯'), findsOneWidget);
+    expect(find.text('Ana Hedef'), findsOneWidget);
+    expect(find.text('Diğer Birikimlerim'), findsOneWidget);
+    expect(find.textContaining('Kalan:'), findsNWidgets(2));
+    expect(find.text('%65'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const Key('savings_vertical_list')),
+      const Offset(0, -1200),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('savings_bottom_safe_space')), findsOneWidget);
+  });
+
   testWidgets('statistics accepts monthly amounts in minor units', (
     tester,
   ) async {

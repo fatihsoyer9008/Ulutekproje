@@ -22,6 +22,7 @@ class FinanceApp extends ConsumerStatefulWidget {
     super.key,
     this.enableAuth = false,
     this.enableStartupSync = false,
+    this.enableDatabaseFeatures = false,
     this.notificationNavigationController,
     this.transactionStream = const Stream<List<TransactionEntity>>.empty(),
     this.transactionStreamFactory,
@@ -34,6 +35,7 @@ class FinanceApp extends ConsumerStatefulWidget {
 
   final bool enableAuth;
   final bool enableStartupSync;
+  final bool enableDatabaseFeatures;
   final NotificationNavigationController? notificationNavigationController;
   final Stream<List<TransactionEntity>> transactionStream;
   final Stream<List<TransactionEntity>> Function()? transactionStreamFactory;
@@ -72,6 +74,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
     if (widget.enableAuth) {
       _router = createAppRouter(
         ref: ref,
+        enableDatabaseFeatures: widget.enableDatabaseFeatures,
         transactionStreamFactory:
             widget.transactionStreamFactory ?? () => widget.transactionStream,
         saveTransaction: widget.saveTransaction,

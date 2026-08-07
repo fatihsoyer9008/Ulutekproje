@@ -27,6 +27,7 @@ class FinanceHome extends StatefulWidget {
     this.onProfilePressed,
     this.pendingOfflineTaskCount = 0,
     this.enableAccountMenu = false,
+    this.enablePersistentSavings = false,
     this.aiAssistantMessageStream,
     this.aiAssistantAccessGate,
     super.key,
@@ -41,6 +42,7 @@ class FinanceHome extends StatefulWidget {
   final VoidCallback? onProfilePressed;
   final int pendingOfflineTaskCount;
   final bool enableAccountMenu;
+  final bool enablePersistentSavings;
   final AiAssistantMessageStream? aiAssistantMessageStream;
   final AiAssistantAccessGate? aiAssistantAccessGate;
   @override
@@ -96,7 +98,9 @@ class _FinanceHomeState extends State<FinanceHome> {
         controller: _statisticsController,
         transactions: widget.transactions,
       ),
-      const SavingsScreen(),
+      widget.enablePersistentSavings
+          ? const SavingsScreen.live()
+          : const SavingsScreen(),
       const CalendarScreen(),
       TransactionsScreen(transactions: widget.transactions),
     ];
