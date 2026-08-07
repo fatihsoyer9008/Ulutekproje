@@ -21,35 +21,9 @@ abstract final class AppTheme {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: AppColors.canvas,
-      textTheme: const TextTheme(
-        headlineLarge: TextStyle(
-          fontSize: 32,
-          fontWeight: FontWeight.w800,
-          letterSpacing: -1.1,
-          color: AppColors.ink,
-        ),
-        headlineMedium: TextStyle(
-          fontSize: 25,
-          fontWeight: FontWeight.w800,
-          letterSpacing: -.7,
-          color: AppColors.ink,
-        ),
-        titleLarge: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
-          color: AppColors.ink,
-        ),
-        titleMedium: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-          color: AppColors.ink,
-        ),
-        bodyLarge: TextStyle(fontSize: 16, height: 1.4, color: AppColors.ink),
-        bodyMedium: TextStyle(
-          fontSize: 14,
-          height: 1.4,
-          color: AppColors.muted,
-        ),
+      textTheme: _textTheme(
+        primaryColor: AppColors.ink,
+        secondaryColor: AppColors.muted,
       ),
       appBarTheme: const AppBarTheme(
         elevation: 0,
@@ -113,6 +87,36 @@ abstract final class AppTheme {
     );
   }
 
+  static TextTheme _textTheme({
+    required Color primaryColor,
+    required Color secondaryColor,
+  }) => TextTheme(
+    headlineLarge: TextStyle(
+      fontSize: 32,
+      fontWeight: FontWeight.w800,
+      letterSpacing: -1.1,
+      color: primaryColor,
+    ),
+    headlineMedium: TextStyle(
+      fontSize: 25,
+      fontWeight: FontWeight.w800,
+      letterSpacing: -.7,
+      color: primaryColor,
+    ),
+    titleLarge: TextStyle(
+      fontSize: 20,
+      fontWeight: FontWeight.w700,
+      color: primaryColor,
+    ),
+    titleMedium: TextStyle(
+      fontSize: 16,
+      fontWeight: FontWeight.w700,
+      color: primaryColor,
+    ),
+    bodyLarge: TextStyle(fontSize: 16, height: 1.4, color: primaryColor),
+    bodyMedium: TextStyle(fontSize: 14, height: 1.4, color: secondaryColor),
+  );
+
   static ThemeData _createDark() {
     final scheme = ColorScheme.fromSeed(
       seedColor: AppColors.primary,
@@ -124,6 +128,10 @@ abstract final class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      textTheme: _textTheme(
+        primaryColor: scheme.onSurface,
+        secondaryColor: scheme.onSurfaceVariant,
+      ),
       scaffoldBackgroundColor: scheme.surface,
       canvasColor: scheme.surface,
       appBarTheme: AppBarTheme(
