@@ -46,7 +46,28 @@ void main() {
     await tester.tap(find.text('AI Asistan'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Akıllı Harcama Özeti'), findsOneWidget);
+    expect(find.byKey(const Key('ai_close_button')), findsOneWidget);
+  });
+
+  testWidgets('AI Asistan opens from every navigation tab', (tester) async {
+    await tester.pumpWidget(
+      FinanceApp(transactionStream: Stream.value(const <TransactionEntity>[])),
+    );
+    await tester.pumpAndSettle();
+
+    for (var index = 0; index < 5; index++) {
+      await tester.tap(find.byType(NavigationDestination).at(index));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(FloatingActionButton));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('ai_close_button')), findsOneWidget);
+      expect(find.text('AI Asistan yakında sizinle.'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('ai_close_button')));
+      await tester.pumpAndSettle();
+    }
   });
 
   testWidgets('drawer and synchronization status use live application data', (
