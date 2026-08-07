@@ -116,11 +116,7 @@ class _FinanceHomeState extends State<FinanceHome> {
           : null,
       notificationCount: widget.pendingOfflineTaskCount,
       onNotificationsPressed: () => _showSynchronizationStatus(context),
-      onAiAssistantPressed: _index == 1
-          ? _statisticsController.showSummary
-          : _index == 0
-          ? _showAiAssistant
-          : null,
+      onAiAssistantPressed: _showAiAssistant,
       body: IndexedStack(
         index: _index,
         children: List.generate(
