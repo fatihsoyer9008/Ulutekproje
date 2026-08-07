@@ -131,6 +131,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: themeMode,
+        themeAnimationDuration: Duration.zero,
         routerConfig: router,
         builder: widget.enableStartupSync
             ? (context, child) => _SyncStatusOverlay(
@@ -147,6 +148,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
+      themeAnimationDuration: Duration.zero,
       builder: widget.enableStartupSync
           ? (context, child) => _SyncStatusOverlay(
               state: syncState,

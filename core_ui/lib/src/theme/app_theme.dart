@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
 abstract final class AppTheme {
-  static ThemeData get light {
+  static final ThemeData light = _createLight();
+  static final ThemeData dark = _createDark();
+
+  static ThemeData _createLight() {
     final scheme = ColorScheme.fromSeed(
       seedColor: AppColors.primary,
       brightness: Brightness.light,
@@ -110,7 +113,7 @@ abstract final class AppTheme {
     );
   }
 
-  static ThemeData get dark {
+  static ThemeData _createDark() {
     final scheme = ColorScheme.fromSeed(
       seedColor: AppColors.primary,
       brightness: Brightness.dark,
