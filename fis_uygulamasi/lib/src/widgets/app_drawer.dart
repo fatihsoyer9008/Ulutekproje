@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/theme_mode_provider.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 
+const _themeChangeDelay = Duration(milliseconds: 300);
+
 class AppDrawer extends ConsumerWidget {
   const AppDrawer({required this.onProfilePressed, super.key});
 
@@ -91,12 +93,17 @@ class AppDrawer extends ConsumerWidget {
                     ? 'Açık temaya geç'
                     : 'Koyu temaya geç',
               ),
-              onTap: () {
-                ref
-                    .read(appThemeModeProvider.notifier)
-                    .state = themeMode == ThemeMode.dark
+              onTap: () async {
+                final themeModeNotifier = ref.read(
+                  appThemeModeProvider.notifier,
+                );
+                final nextThemeMode = themeMode == ThemeMode.dark
                     ? ThemeMode.light
                     : ThemeMode.dark;
+
+                Navigator.of(context).pop();
+                await Future<void>.delayed(_themeChangeDelay);
+                themeModeNotifier.state = nextThemeMode;
               },
             ),
             const Spacer(),
