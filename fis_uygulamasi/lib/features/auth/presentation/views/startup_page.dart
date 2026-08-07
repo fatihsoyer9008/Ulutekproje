@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../controllers/auth_session_controller.dart';
+import '../widgets/auth_widgets.dart';
 
 class StartupPage extends ConsumerStatefulWidget {
   const StartupPage({super.key});
@@ -31,7 +32,7 @@ class _StartupPageState extends ConsumerState<StartupPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.account_balance_wallet_rounded, size: 62),
+          AppLogo(size: 96),
           SizedBox(height: 24),
           CircularProgressIndicator(),
           SizedBox(height: 14),
