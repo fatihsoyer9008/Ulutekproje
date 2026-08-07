@@ -97,7 +97,7 @@ class _FinanceHomeState extends State<FinanceHome> {
         transactions: widget.transactions,
       ),
       const SavingsScreen(),
-      const CalendarScreen(),
+      CalendarScreen(transactions: widget.transactions),
       TransactionsScreen(transactions: widget.transactions),
     ];
 
