@@ -41,10 +41,10 @@ void main() {
     });
 
     test('uses expected primary greeting for each period', () {
-      expect(_greetingAt(8), 'Günaydın, Alihan');
-      expect(_greetingAt(13), 'İyi öğlenler, Alihan');
-      expect(_greetingAt(20), 'İyi akşamlar, Alihan');
-      expect(_greetingAt(2), 'İyi geceler, Alihan');
+      expect(_greetingAt(8), 'Alihan, günaydın!');
+      expect(_greetingAt(13), 'Alihan, iyi günler!');
+      expect(_greetingAt(20), 'Alihan, iyi akşamlar!');
+      expect(_greetingAt(2), 'Alihan, iyi geceler!');
     });
   });
 }
