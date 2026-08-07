@@ -62,7 +62,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           padding: const EdgeInsets.all(10),
           child: TableCalendar<TransactionEntity>(
             locale: 'tr_TR',
-            firstDay: DateTime(2020),
+            firstDay: DateTime(2000),
             lastDay: DateTime(DateTime.now().year + 5, 12, 31),
             focusedDay: _focusedDay,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
@@ -272,11 +272,12 @@ class _TransactionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isIncome = transaction.transactionType == TransactionType.income;
     final color = isIncome ? AppColors.income : AppColors.expense;
+    final categoryName = _transactionCategoryName(transaction);
     final title = transaction.merchantName?.trim().isNotEmpty == true
         ? transaction.merchantName!.trim()
         : isIncome
         ? 'Gelir'
-        : _categoryName(transaction.category);
+        : categoryName;
 
     return AppCard(
       key: Key('calendar_transaction_${transaction.id}'),
@@ -298,7 +299,7 @@ class _TransactionTile extends StatelessWidget {
                 Text(title, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 2),
                 Text(
-                  '${isIncome ? 'Gelir' : _categoryName(transaction.category)}'
+                  '${isIncome ? 'Gelir' : categoryName}'
                   ' • ${DateFormat('HH:mm', 'tr_TR').format(transaction.date)}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -355,3 +356,10 @@ String _categoryName(TransactionCategory category) => switch (category) {
   TransactionCategory.giyim => 'Giyim',
   TransactionCategory.diger => 'Diğer',
 };
+
+String _transactionCategoryName(TransactionEntity transaction) {
+  final customName = transaction.categoryName?.trim();
+  return customName?.isNotEmpty == true
+      ? customName!
+      : _categoryName(transaction.category);
+}

@@ -91,11 +91,48 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('supports valid transactions dated before 2020', (tester) async {
+    final transaction = _transaction(
+      id: 5,
+      date: DateTime(2005, 4, 10, 11),
+      amountInMinor: 25000,
+      merchantName: 'Eski işlem',
+    );
+
+    await _pumpCalendar(
+      tester,
+      transactions: [transaction],
+      initialFocusedDay: DateTime(2005, 4, 10),
+    );
+
+    expect(find.byKey(const Key('calendar_transaction_5')), findsOneWidget);
+    expect(find.text('Eski işlem'), findsOneWidget);
+  });
+
+  testWidgets('preserves a custom category name in transaction details', (
+    tester,
+  ) async {
+    final transaction = _transaction(
+      id: 6,
+      date: DateTime(2026, 8, 15, 10),
+      amountInMinor: 150000,
+      category: TransactionCategory.diger,
+      categoryName: 'Kira',
+    );
+
+    await _pumpCalendar(tester, transactions: [transaction]);
+
+    expect(find.text('Kira'), findsOneWidget);
+    expect(find.textContaining('Kira •'), findsOneWidget);
+    expect(find.textContaining('Diğer •'), findsNothing);
+  });
 }
 
 Future<void> _pumpCalendar(
   WidgetTester tester, {
   required List<TransactionEntity> transactions,
+  DateTime? initialFocusedDay,
 }) async {
   tester.view.physicalSize = const Size(1080, 1920);
   tester.view.devicePixelRatio = 1;
@@ -107,7 +144,7 @@ Future<void> _pumpCalendar(
       home: Scaffold(
         body: CalendarScreen(
           transactions: transactions,
-          initialFocusedDay: DateTime(2026, 8, 15),
+          initialFocusedDay: initialFocusedDay ?? DateTime(2026, 8, 15),
         ),
       ),
     ),
@@ -121,11 +158,14 @@ TransactionEntity _transaction({
   required int amountInMinor,
   TransactionType type = TransactionType.expense,
   String? merchantName,
+  TransactionCategory category = TransactionCategory.market,
+  String? categoryName,
 }) => TransactionEntity()
   ..id = id
   ..transactionType = type
   ..amountInMinor = amountInMinor
-  ..category = TransactionCategory.market
+  ..category = category
+  ..categoryName = categoryName
   ..date = date
   ..merchantName = merchantName
   ..source = TransactionSource.manual
