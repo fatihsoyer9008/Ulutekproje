@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../features/savings/application/savings_goal_notifier.dart';
+import '../../features/savings/domain/savings_goal_insights.dart';
+import '../../features/savings/domain/savings_money.dart';
 import '../models/ui_models.dart';
 
 class SavingsScreen extends StatelessWidget {
@@ -31,18 +33,30 @@ class _LiveSavingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final goals = ref.watch(savingsGoalProvider);
-    return goals.when(
+    final owner = ref.watch(activeSavingsOwnerKeyProvider);
+    return owner.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => _LoadError(
-        onRetry: () => ref.read(savingsGoalProvider.notifier).loadGoals(),
+        onRetry: () => ref.invalidate(activeSavingsOwnerKeyProvider),
       ),
-      data: (items) => _SavingsContent(
-        goals: [for (final item in items) _GoalView.fromEntity(item)],
-        onAdd: (goal) => ref.read(savingsGoalProvider.notifier).addGoal(goal),
-        onUpdateAmount: (id, amount) =>
-            ref.read(savingsGoalProvider.notifier).updateGoalAmount(id, amount),
-      ),
+      data: (ownerKey) {
+        final goals = ref.watch(savingsGoalProvider(ownerKey));
+        return goals.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => _LoadError(
+            onRetry: () =>
+                ref.read(savingsGoalProvider(ownerKey).notifier).loadGoals(),
+          ),
+          data: (items) => _SavingsContent(
+            goals: [for (final item in items) _GoalView.fromEntity(item)],
+            onAdd: (goal) =>
+                ref.read(savingsGoalProvider(ownerKey).notifier).addGoal(goal),
+            onUpdateAmount: (id, amount) => ref
+                .read(savingsGoalProvider(ownerKey).notifier)
+                .updateGoalAmount(id, amount),
+          ),
+        );
+      },
     );
   }
 }
@@ -52,7 +66,7 @@ class _SavingsContent extends StatelessWidget {
 
   final List<_GoalView> goals;
   final Future<void> Function(SavingsGoalEntity goal)? onAdd;
-  final Future<void> Function(int id, double amount)? onUpdateAmount;
+  final Future<void> Function(int id, int amountInMinor)? onUpdateAmount;
 
   Future<void> _showCreateSheet(BuildContext context) async {
     if (onAdd == null) return;
@@ -171,7 +185,7 @@ class _GoalCard extends StatelessWidget {
 
   final _GoalView goal;
   final bool featured;
-  final Future<void> Function(int id, double amount)? onUpdateAmount;
+  final Future<void> Function(int id, int amountInMinor)? onUpdateAmount;
 
   Future<void> _showAddMoneySheet(BuildContext context) async {
     if (goal.id == null || onUpdateAmount == null) return;
@@ -183,7 +197,10 @@ class _GoalCard extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 560),
       builder: (_) => _AddSavingsAmountSheet(
         goal: goal,
-        onSave: (amount) => onUpdateAmount!(goal.id!, goal.current + amount),
+        onSave: (amountInMinor) => onUpdateAmount!(
+          goal.id!,
+          goal.currentAmountInMinor + amountInMinor,
+        ),
       ),
     );
   }
@@ -198,7 +215,7 @@ class _GoalCard extends StatelessWidget {
     final currency = NumberFormat.currency(
       locale: 'tr_TR',
       symbol: '₺',
-      decimalDigits: 0,
+      decimalDigits: 2,
     );
     final theme = Theme.of(context);
     final ringSize = featured ? 112.0 : 84.0;
@@ -355,18 +372,13 @@ List<Color> _progressColors(Color accent) => [
 
 String _smartSuggestion(_GoalView goal, double remaining) {
   if (remaining <= 0) return 'Harika! Bu hedefe ulaştın.';
-  final date = goal.targetDate;
-  if (date != null && date.isAfter(DateTime.now())) {
-    final months = (date.difference(DateTime.now()).inDays / 30).ceil().clamp(
-      1,
-      360,
-    );
-    final monthly = remaining / months;
-    return 'Ayda ${NumberFormat.currency(locale: 'tr_TR', symbol: '₺', decimalDigits: 0).format(monthly)} ekleyerek hedefe zamanında ulaşabilirsin.';
-  }
-  if (goal.current > 0) {
-    final months = (remaining / goal.current).ceil().clamp(1, 999);
-    return 'Mevcut birikim hızınla yaklaşık $months ayda hedefe ulaşabilirsin.';
+  final monthlyInMinor = requiredMonthlySavingsInMinor(
+    remainingAmountInMinor: (remaining * 100).round(),
+    targetDate: goal.targetDate,
+    now: DateTime.now(),
+  );
+  if (monthlyInMinor != null) {
+    return 'Ayda ${NumberFormat.currency(locale: 'tr_TR', symbol: '₺', decimalDigits: 2).format(monthlyInMinor / 100)} ekleyerek hedefe zamanında ulaşabilirsin.';
   }
   return 'Düzenli küçük katkılarla hedefini bugünden hızlandırabilirsin.';
 }
@@ -379,17 +391,39 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final targetDate = goal.targetDate;
-    final daysLeft = targetDate?.difference(DateTime.now()).inDays;
-    final (label, color) = progress >= 1
-        ? ('🏆 Hedef Tamamlandı', const Color(0xFF2EAD67))
-        : daysLeft != null && daysLeft <= 30
-        ? ('⏳ Zaman Daralıyor', const Color(0xFFF59E0B))
-        : progress >= .65
-        ? ('🎯 Planın Önündesin', const Color(0xFF00AEEF))
-        : progress >= .30
-        ? ('🔥 Çok İyi Gidiyor', const Color(0xFFFF3D81))
-        : ('✨ Güzel Bir Başlangıç', goal.color);
+    final status = calculateSavingsGoalStatus(
+      progress: progress,
+      createdAt: goal.createdAt,
+      targetDate: goal.targetDate,
+      now: DateTime.now(),
+    );
+    final (label, color) = switch (status) {
+      SavingsGoalStatus.completed => (
+        '🏆 Hedef Tamamlandı',
+        const Color(0xFF2EAD67),
+      ),
+      SavingsGoalStatus.overdue => (
+        '⚠️ Hedef Tarihi Geçti',
+        const Color(0xFFD14343),
+      ),
+      SavingsGoalStatus.aheadOfPlan => (
+        '🎯 Planın Önündesin',
+        const Color(0xFF00AEEF),
+      ),
+      SavingsGoalStatus.behindPlan => (
+        '📌 Planın Gerisindesin',
+        const Color(0xFFE0783E),
+      ),
+      SavingsGoalStatus.deadlineApproaching => (
+        '⏳ Zaman Daralıyor',
+        const Color(0xFFF59E0B),
+      ),
+      SavingsGoalStatus.progressingWell => (
+        '🔥 Çok İyi Gidiyor',
+        const Color(0xFFFF3D81),
+      ),
+      SavingsGoalStatus.gettingStarted => ('✨ Güzel Bir Başlangıç', goal.color),
+    };
     return DecoratedBox(
       decoration: BoxDecoration(
         color: color.withValues(alpha: .13),
@@ -558,7 +592,7 @@ class _AddSavingsAmountSheet extends StatefulWidget {
   const _AddSavingsAmountSheet({required this.goal, required this.onSave});
 
   final _GoalView goal;
-  final Future<void> Function(double amount) onSave;
+  final Future<void> Function(int amountInMinor) onSave;
 
   @override
   State<_AddSavingsAmountSheet> createState() => _AddSavingsAmountSheetState();
@@ -575,13 +609,13 @@ class _AddSavingsAmountSheetState extends State<_AddSavingsAmountSheet> {
     super.dispose();
   }
 
-  double? _amount() => double.tryParse(_controller.text.replaceAll(',', '.'));
+  int? _amountInMinor() => parseSavingsAmountInMinor(_controller.text);
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate() || _saving) return;
     setState(() => _saving = true);
     try {
-      await widget.onSave(_amount()!);
+      await widget.onSave(_amountInMinor()!);
       if (mounted) Navigator.of(context).pop();
     } catch (_) {
       if (!mounted) return;
@@ -627,8 +661,8 @@ class _AddSavingsAmountSheetState extends State<_AddSavingsAmountSheet> {
               prefixIcon: Icon(Icons.savings_outlined),
             ),
             validator: (_) {
-              final amount = _amount();
-              if (amount == null || amount <= 0) {
+              final amountInMinor = _amountInMinor();
+              if (amountInMinor == null || amountInMinor <= 0) {
                 return 'Sıfırdan büyük geçerli bir tutar girin.';
               }
               return null;
@@ -699,20 +733,23 @@ class _CreateSavingsGoalSheetState extends State<_CreateSavingsGoalSheet> {
     super.dispose();
   }
 
-  double? _parseAmount(String value) =>
-      double.tryParse(value.trim().replaceAll(',', '.'));
+  int? _parseAmountInMinor(String value) => parseSavingsAmountInMinor(value);
 
   String? _requiredAmountValidator(String? value) {
-    final amount = _parseAmount(value ?? '');
+    final amount = _parseAmountInMinor(value ?? '');
     if (amount == null || amount <= 0) return 'Geçerli bir hedef tutar girin.';
     return null;
   }
 
   String? _optionalAmountValidator(String? value) {
     if (value == null || value.trim().isEmpty) return null;
-    final amount = _parseAmount(value);
+    final amount = _parseAmountInMinor(value);
     if (amount == null || amount < 0) {
       return 'Geçerli bir başlangıç tutarı girin.';
+    }
+    final target = _parseAmountInMinor(_targetController.text);
+    if (target != null && amount > target) {
+      return 'Başlangıç tutarı hedefi aşamaz.';
     }
     return null;
   }
@@ -736,8 +773,8 @@ class _CreateSavingsGoalSheetState extends State<_CreateSavingsGoalSheet> {
       ..description = _descriptionController.text.trim().isEmpty
           ? null
           : _descriptionController.text.trim()
-      ..targetAmount = _parseAmount(_targetController.text)!
-      ..currentAmount = _parseAmount(_initialController.text) ?? 0
+      ..targetAmountInMinor = _parseAmountInMinor(_targetController.text)!
+      ..currentAmountInMinor = _parseAmountInMinor(_initialController.text) ?? 0
       ..targetDate = _targetDate
       ..iconCodePoint = _icons[_iconIndex].codePoint
       ..colorHex =
@@ -819,6 +856,7 @@ class _CreateSavingsGoalSheetState extends State<_CreateSavingsGoalSheet> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextFormField(
+                      key: const Key('savings_goal_initial_amount'),
                       controller: _initialController,
                       decoration: const InputDecoration(
                         labelText: 'Başlangıç',
@@ -918,6 +956,7 @@ class _GoalView {
     this.current,
     this.target,
     this.targetDate,
+    this.createdAt,
     this.icon,
     this.color,
   );
@@ -928,6 +967,7 @@ class _GoalView {
     goal.current,
     goal.target,
     null,
+    DateTime.fromMillisecondsSinceEpoch(0),
     goal.icon,
     goal.color,
   );
@@ -935,9 +975,10 @@ class _GoalView {
     goal.id,
     goal.title,
     goal.description,
-    goal.currentAmount,
-    goal.targetAmount,
+    goal.currentAmountInMinor / 100,
+    goal.targetAmountInMinor / 100,
     goal.targetDate,
+    goal.createdAt,
     IconData(
       // ignore: non_const_argument_for_const_parameter
       goal.iconCodePoint ?? Icons.savings_rounded.codePoint,
@@ -951,8 +992,11 @@ class _GoalView {
   final double current;
   final double target;
   final DateTime? targetDate;
+  final DateTime createdAt;
   final IconData icon;
   final Color color;
+
+  int get currentAmountInMinor => (current * 100).round();
 
   double get progress => target <= 0 ? 0 : (current / target).clamp(0.0, 1.0);
 }
@@ -965,7 +1009,7 @@ Color _colorFromHex(String? value) {
 
 class _LoadError extends StatelessWidget {
   const _LoadError({required this.onRetry});
-  final VoidCallback onRetry;
+  final VoidCallback? onRetry;
   @override
   Widget build(BuildContext context) => Center(
     child: Column(
@@ -973,11 +1017,12 @@ class _LoadError extends StatelessWidget {
       children: [
         const Text('Birikim hedefleri yüklenemedi.'),
         const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: onRetry,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Tekrar Dene'),
-        ),
+        if (onRetry != null)
+          OutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Tekrar Dene'),
+          ),
       ],
     ),
   );

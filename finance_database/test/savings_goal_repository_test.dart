@@ -32,16 +32,90 @@ void main() {
     final goal = SavingsGoalEntity()
       ..title = 'Yeni Araba'
       ..description = 'Hayalimdeki araba'
-      ..targetAmount = 500000
+      ..targetAmountInMinor = 50000000
       ..createdAt = DateTime(2026, 8, 7);
 
-    final id = await repository.addGoal(goal);
-    expect((await repository.getGoals()).single.title, 'Yeni Araba');
+    final id = await repository.addGoal(goal, ownerKey: 'user:a');
+    expect(
+      (await repository.getGoals(ownerKey: 'user:a')).single.title,
+      'Yeni Araba',
+    );
 
-    await repository.updateGoalAmount(id, 150000);
-    expect((await repository.getGoals()).single.currentAmount, 150000);
+    await repository.updateGoalAmount(id, 15000000, ownerKey: 'user:a');
+    expect(
+      (await repository.getGoals(
+        ownerKey: 'user:a',
+      )).single.currentAmountInMinor,
+      15000000,
+    );
 
-    await repository.deleteGoal(id);
-    expect(await repository.getGoals(), isEmpty);
+    await repository.deleteGoal(id, ownerKey: 'user:a');
+    expect(await repository.getGoals(ownerKey: 'user:a'), isEmpty);
+  });
+
+  test('hedefleri sahipler arasında izole eder', () async {
+    Future<void> add(String title, String ownerKey) => repository.addGoal(
+      SavingsGoalEntity()
+        ..title = title
+        ..targetAmountInMinor = 10050
+        ..createdAt = DateTime(2026, 8, 7),
+      ownerKey: ownerKey,
+    );
+
+    await add('A hedefi', 'user:a');
+    await add('B hedefi', 'user:b');
+
+    expect(
+      (await repository.getGoals(ownerKey: 'user:a')).single.title,
+      'A hedefi',
+    );
+    expect(
+      (await repository.getGoals(ownerKey: 'user:b')).single.title,
+      'B hedefi',
+    );
+  });
+
+  test('ondalıklı katkıları kuruş olarak hatasız toplar', () async {
+    final id = await repository.addGoal(
+      SavingsGoalEntity()
+        ..title = 'Kuruş hedefi'
+        ..targetAmountInMinor = 10050
+        ..createdAt = DateTime(2026, 8, 7),
+      ownerKey: 'user:a',
+    );
+
+    await repository.updateGoalAmount(id, 10, ownerKey: 'user:a');
+    await repository.updateGoalAmount(id, 10 + 20, ownerKey: 'user:a');
+
+    expect(
+      (await repository.getGoals(
+        ownerKey: 'user:a',
+      )).single.currentAmountInMinor,
+      30,
+    );
+  });
+
+  test('veritabanı yeniden açıldığında hedef kalıcıdır', () async {
+    await repository.addGoal(
+      SavingsGoalEntity()
+        ..title = 'Kalıcı hedef'
+        ..targetAmountInMinor = 250000
+        ..createdAt = DateTime(2026, 8, 7),
+      ownerKey: 'guest:installation-test',
+    );
+
+    await isar.close();
+    isar = await Isar.open(
+      [SavingsGoalEntitySchema],
+      directory: directory.path,
+      name: 'savings_goal_test',
+    );
+    repository = SavingsGoalRepository(isar);
+
+    final goals = await repository.getGoals(
+      ownerKey: 'guest:installation-test',
+    );
+    expect(goals.single.title, 'Kalıcı hedef');
+    expect(goals.single.targetAmountInMinor, 250000);
   });
 }

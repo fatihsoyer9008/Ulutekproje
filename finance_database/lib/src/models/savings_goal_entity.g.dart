@@ -27,10 +27,10 @@ const SavingsGoalEntitySchema = CollectionSchema(
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
-    r'currentAmount': PropertySchema(
+    r'currentAmountInMinor': PropertySchema(
       id: 2,
-      name: r'currentAmount',
-      type: IsarType.double,
+      name: r'currentAmountInMinor',
+      type: IsarType.long,
     ),
     r'description': PropertySchema(
       id: 3,
@@ -42,18 +42,23 @@ const SavingsGoalEntitySchema = CollectionSchema(
       name: r'iconCodePoint',
       type: IsarType.long,
     ),
-    r'targetAmount': PropertySchema(
+    r'ownerKey': PropertySchema(
       id: 5,
-      name: r'targetAmount',
-      type: IsarType.double,
+      name: r'ownerKey',
+      type: IsarType.string,
+    ),
+    r'targetAmountInMinor': PropertySchema(
+      id: 6,
+      name: r'targetAmountInMinor',
+      type: IsarType.long,
     ),
     r'targetDate': PropertySchema(
-      id: 6,
+      id: 7,
       name: r'targetDate',
       type: IsarType.dateTime,
     ),
     r'title': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'title',
       type: IsarType.string,
     )
@@ -63,7 +68,21 @@ const SavingsGoalEntitySchema = CollectionSchema(
   deserialize: _savingsGoalEntityDeserialize,
   deserializeProp: _savingsGoalEntityDeserializeProp,
   idName: r'id',
-  indexes: {},
+  indexes: {
+    r'ownerKey': IndexSchema(
+      id: -688544438286220026,
+      name: r'ownerKey',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'ownerKey',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    )
+  },
   links: {},
   embeddedSchemas: {},
   getId: _savingsGoalEntityGetId,
@@ -90,6 +109,7 @@ int _savingsGoalEntityEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
+  bytesCount += 3 + object.ownerKey.length * 3;
   bytesCount += 3 + object.title.length * 3;
   return bytesCount;
 }
@@ -102,12 +122,13 @@ void _savingsGoalEntitySerialize(
 ) {
   writer.writeString(offsets[0], object.colorHex);
   writer.writeDateTime(offsets[1], object.createdAt);
-  writer.writeDouble(offsets[2], object.currentAmount);
+  writer.writeLong(offsets[2], object.currentAmountInMinor);
   writer.writeString(offsets[3], object.description);
   writer.writeLong(offsets[4], object.iconCodePoint);
-  writer.writeDouble(offsets[5], object.targetAmount);
-  writer.writeDateTime(offsets[6], object.targetDate);
-  writer.writeString(offsets[7], object.title);
+  writer.writeString(offsets[5], object.ownerKey);
+  writer.writeLong(offsets[6], object.targetAmountInMinor);
+  writer.writeDateTime(offsets[7], object.targetDate);
+  writer.writeString(offsets[8], object.title);
 }
 
 SavingsGoalEntity _savingsGoalEntityDeserialize(
@@ -119,13 +140,14 @@ SavingsGoalEntity _savingsGoalEntityDeserialize(
   final object = SavingsGoalEntity();
   object.colorHex = reader.readStringOrNull(offsets[0]);
   object.createdAt = reader.readDateTime(offsets[1]);
-  object.currentAmount = reader.readDouble(offsets[2]);
+  object.currentAmountInMinor = reader.readLong(offsets[2]);
   object.description = reader.readStringOrNull(offsets[3]);
   object.iconCodePoint = reader.readLongOrNull(offsets[4]);
   object.id = id;
-  object.targetAmount = reader.readDouble(offsets[5]);
-  object.targetDate = reader.readDateTimeOrNull(offsets[6]);
-  object.title = reader.readString(offsets[7]);
+  object.ownerKey = reader.readString(offsets[5]);
+  object.targetAmountInMinor = reader.readLong(offsets[6]);
+  object.targetDate = reader.readDateTimeOrNull(offsets[7]);
+  object.title = reader.readString(offsets[8]);
   return object;
 }
 
@@ -141,16 +163,18 @@ P _savingsGoalEntityDeserializeProp<P>(
     case 1:
       return (reader.readDateTime(offset)) as P;
     case 2:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readLong(offset)) as P;
     case 3:
       return (reader.readStringOrNull(offset)) as P;
     case 4:
       return (reader.readLongOrNull(offset)) as P;
     case 5:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 6:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readLong(offset)) as P;
     case 7:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 8:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -247,6 +271,51 @@ extension SavingsGoalEntityQueryWhere
         upper: upperId,
         includeUpper: includeUpper,
       ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterWhereClause>
+      ownerKeyEqualTo(String ownerKey) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'ownerKey',
+        value: [ownerKey],
+      ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterWhereClause>
+      ownerKeyNotEqualTo(String ownerKey) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'ownerKey',
+              lower: [],
+              upper: [ownerKey],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'ownerKey',
+              lower: [ownerKey],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'ownerKey',
+              lower: [ownerKey],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'ownerKey',
+              lower: [],
+              upper: [ownerKey],
+              includeUpper: false,
+            ));
+      }
     });
   }
 }
@@ -464,67 +533,57 @@ extension SavingsGoalEntityQueryFilter
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
-      currentAmountEqualTo(
-    double value, {
-    double epsilon = Query.epsilon,
-  }) {
+      currentAmountInMinorEqualTo(int value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'currentAmount',
+        property: r'currentAmountInMinor',
         value: value,
-        epsilon: epsilon,
       ));
     });
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
-      currentAmountGreaterThan(
-    double value, {
+      currentAmountInMinorGreaterThan(
+    int value, {
     bool include = false,
-    double epsilon = Query.epsilon,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.greaterThan(
         include: include,
-        property: r'currentAmount',
+        property: r'currentAmountInMinor',
         value: value,
-        epsilon: epsilon,
       ));
     });
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
-      currentAmountLessThan(
-    double value, {
+      currentAmountInMinorLessThan(
+    int value, {
     bool include = false,
-    double epsilon = Query.epsilon,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.lessThan(
         include: include,
-        property: r'currentAmount',
+        property: r'currentAmountInMinor',
         value: value,
-        epsilon: epsilon,
       ));
     });
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
-      currentAmountBetween(
-    double lower,
-    double upper, {
+      currentAmountInMinorBetween(
+    int lower,
+    int upper, {
     bool includeLower = true,
     bool includeUpper = true,
-    double epsilon = Query.epsilon,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.between(
-        property: r'currentAmount',
+        property: r'currentAmountInMinor',
         lower: lower,
         includeLower: includeLower,
         upper: upper,
         includeUpper: includeUpper,
-        epsilon: epsilon,
       ));
     });
   }
@@ -814,67 +873,193 @@ extension SavingsGoalEntityQueryFilter
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
-      targetAmountEqualTo(
-    double value, {
-    double epsilon = Query.epsilon,
+      ownerKeyEqualTo(
+    String value, {
+    bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'targetAmount',
+        property: r'ownerKey',
         value: value,
-        epsilon: epsilon,
+        caseSensitive: caseSensitive,
       ));
     });
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
-      targetAmountGreaterThan(
-    double value, {
+      ownerKeyGreaterThan(
+    String value, {
     bool include = false,
-    double epsilon = Query.epsilon,
+    bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.greaterThan(
         include: include,
-        property: r'targetAmount',
+        property: r'ownerKey',
         value: value,
-        epsilon: epsilon,
+        caseSensitive: caseSensitive,
       ));
     });
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
-      targetAmountLessThan(
-    double value, {
+      ownerKeyLessThan(
+    String value, {
     bool include = false,
-    double epsilon = Query.epsilon,
+    bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.lessThan(
         include: include,
-        property: r'targetAmount',
+        property: r'ownerKey',
         value: value,
-        epsilon: epsilon,
+        caseSensitive: caseSensitive,
       ));
     });
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
-      targetAmountBetween(
-    double lower,
-    double upper, {
+      ownerKeyBetween(
+    String lower,
+    String upper, {
     bool includeLower = true,
     bool includeUpper = true,
-    double epsilon = Query.epsilon,
+    bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.between(
-        property: r'targetAmount',
+        property: r'ownerKey',
         lower: lower,
         includeLower: includeLower,
         upper: upper,
         includeUpper: includeUpper,
-        epsilon: epsilon,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
+      ownerKeyStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'ownerKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
+      ownerKeyEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'ownerKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
+      ownerKeyContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'ownerKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
+      ownerKeyMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'ownerKey',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
+      ownerKeyIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'ownerKey',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
+      ownerKeyIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'ownerKey',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
+      targetAmountInMinorEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'targetAmountInMinor',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
+      targetAmountInMinorGreaterThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'targetAmountInMinor',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
+      targetAmountInMinorLessThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'targetAmountInMinor',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterFilterCondition>
+      targetAmountInMinorBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'targetAmountInMinor',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
       ));
     });
   }
@@ -1127,16 +1312,16 @@ extension SavingsGoalEntityQuerySortBy
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
-      sortByCurrentAmount() {
+      sortByCurrentAmountInMinor() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'currentAmount', Sort.asc);
+      return query.addSortBy(r'currentAmountInMinor', Sort.asc);
     });
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
-      sortByCurrentAmountDesc() {
+      sortByCurrentAmountInMinorDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'currentAmount', Sort.desc);
+      return query.addSortBy(r'currentAmountInMinor', Sort.desc);
     });
   }
 
@@ -1169,16 +1354,30 @@ extension SavingsGoalEntityQuerySortBy
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
-      sortByTargetAmount() {
+      sortByOwnerKey() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'targetAmount', Sort.asc);
+      return query.addSortBy(r'ownerKey', Sort.asc);
     });
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
-      sortByTargetAmountDesc() {
+      sortByOwnerKeyDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'targetAmount', Sort.desc);
+      return query.addSortBy(r'ownerKey', Sort.desc);
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
+      sortByTargetAmountInMinor() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'targetAmountInMinor', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
+      sortByTargetAmountInMinorDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'targetAmountInMinor', Sort.desc);
     });
   }
 
@@ -1242,16 +1441,16 @@ extension SavingsGoalEntityQuerySortThenBy
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
-      thenByCurrentAmount() {
+      thenByCurrentAmountInMinor() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'currentAmount', Sort.asc);
+      return query.addSortBy(r'currentAmountInMinor', Sort.asc);
     });
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
-      thenByCurrentAmountDesc() {
+      thenByCurrentAmountInMinorDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'currentAmount', Sort.desc);
+      return query.addSortBy(r'currentAmountInMinor', Sort.desc);
     });
   }
 
@@ -1297,16 +1496,30 @@ extension SavingsGoalEntityQuerySortThenBy
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
-      thenByTargetAmount() {
+      thenByOwnerKey() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'targetAmount', Sort.asc);
+      return query.addSortBy(r'ownerKey', Sort.asc);
     });
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
-      thenByTargetAmountDesc() {
+      thenByOwnerKeyDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'targetAmount', Sort.desc);
+      return query.addSortBy(r'ownerKey', Sort.desc);
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
+      thenByTargetAmountInMinor() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'targetAmountInMinor', Sort.asc);
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QAfterSortBy>
+      thenByTargetAmountInMinorDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'targetAmountInMinor', Sort.desc);
     });
   }
 
@@ -1356,9 +1569,9 @@ extension SavingsGoalEntityQueryWhereDistinct
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QDistinct>
-      distinctByCurrentAmount() {
+      distinctByCurrentAmountInMinor() {
     return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'currentAmount');
+      return query.addDistinctBy(r'currentAmountInMinor');
     });
   }
 
@@ -1377,9 +1590,16 @@ extension SavingsGoalEntityQueryWhereDistinct
   }
 
   QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QDistinct>
-      distinctByTargetAmount() {
+      distinctByOwnerKey({bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'targetAmount');
+      return query.addDistinctBy(r'ownerKey', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, SavingsGoalEntity, QDistinct>
+      distinctByTargetAmountInMinor() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'targetAmountInMinor');
     });
   }
 
@@ -1420,10 +1640,10 @@ extension SavingsGoalEntityQueryProperty
     });
   }
 
-  QueryBuilder<SavingsGoalEntity, double, QQueryOperations>
-      currentAmountProperty() {
+  QueryBuilder<SavingsGoalEntity, int, QQueryOperations>
+      currentAmountInMinorProperty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'currentAmount');
+      return query.addPropertyName(r'currentAmountInMinor');
     });
   }
 
@@ -1441,10 +1661,16 @@ extension SavingsGoalEntityQueryProperty
     });
   }
 
-  QueryBuilder<SavingsGoalEntity, double, QQueryOperations>
-      targetAmountProperty() {
+  QueryBuilder<SavingsGoalEntity, String, QQueryOperations> ownerKeyProperty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'targetAmount');
+      return query.addPropertyName(r'ownerKey');
+    });
+  }
+
+  QueryBuilder<SavingsGoalEntity, int, QQueryOperations>
+      targetAmountInMinorProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'targetAmountInMinor');
     });
   }
 

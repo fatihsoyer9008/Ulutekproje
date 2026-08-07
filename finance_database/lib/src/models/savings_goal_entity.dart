@@ -8,10 +8,13 @@ class SavingsGoalEntity {
 
   late String title;
   String? description;
-  late double targetAmount;
-  double currentAmount = 0;
+  late int targetAmountInMinor;
+  int currentAmountInMinor = 0;
   DateTime? targetDate;
   int? iconCodePoint;
   String? colorHex;
   late DateTime createdAt;
+
+  @Index(caseSensitive: true)
+  late String ownerKey;
 }
