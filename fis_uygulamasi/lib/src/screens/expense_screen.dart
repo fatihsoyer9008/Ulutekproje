@@ -321,14 +321,15 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
 
     if (!context.mounted) return;
     _removeRouteIfMounted(rootNavigator, analysisRoute);
-    _setFlowActive(false);
 
     if (parseFailure != null) {
+      _setFlowActive(false);
       if (parseFailure.isCancelled) return;
       await _showParseFailure(context, parseFailure, rawText);
       return;
     }
     if (unexpectedError != null) {
+      _setFlowActive(false);
       debugPrint('Fiş ayrıştırma hatası: $unexpectedError');
       debugPrintStack(stackTrace: unexpectedStackTrace);
       ScaffoldMessenger.of(context)
@@ -339,33 +340,63 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       return;
     }
 
-    final categories = await _loadCategories(context);
-    if (!context.mounted) return;
-    final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
-      MaterialPageRoute(
-        builder: (_) => TransactionDraftPage(
-          initialDraft: TransactionDraft(
-            institutionName: result!.draft.institutionName,
-            category: result.draft.category,
-            amountInMinor: result.draft.amountInMinor,
-            transactionDate: result.draft.transactionDate,
-            rawOcrText: rawText,
-            receiptItems: result.draft.receiptItems,
-          ),
-          normalizedOcrText: result.normalizedOcrText,
-          confidenceScore: result.confidenceScore,
-          isParseSuccessful: result.isParseSuccessful,
-          onSecureAnalysisRequested:
-              _lastReceiptImageBytes == null || widget.parseReceiptImage == null
-              ? null
-              : () => _runSecureImageAnalysis(context),
-          categories: categories,
+    final parseResult = result!;
+    if (!_hasReviewableReceiptData(parseResult.draft)) {
+      _setFlowActive(false);
+      await _showParseFailure(
+        context,
+        const ReceiptParserException(
+          'Fişten kontrol edilebilir işlem bilgisi çıkarılamadı. '
+          'Lütfen fişi yeniden çekin veya bilgileri elle girin.',
+          kind: ReceiptParserFailureKind.validation,
         ),
-      ),
-    );
-    if (!context.mounted) return;
-    await _saveDraft(context, confirmedDraft, source: TransactionSource.ocrLlm);
+        rawText,
+      );
+      return;
+    }
+
+    try {
+      final categories = await _loadCategories(context);
+      if (!context.mounted) return;
+      final confirmedDraft = await Navigator.of(context).push<TransactionDraft>(
+        MaterialPageRoute(
+          builder: (_) => TransactionDraftPage(
+            initialDraft: TransactionDraft(
+              institutionName: parseResult.draft.institutionName,
+              category: parseResult.draft.category,
+              amountInMinor: parseResult.draft.amountInMinor,
+              transactionDate: parseResult.draft.transactionDate,
+              rawOcrText: rawText,
+              receiptItems: parseResult.draft.receiptItems,
+            ),
+            normalizedOcrText: parseResult.normalizedOcrText,
+            confidenceScore: parseResult.confidenceScore,
+            isParseSuccessful: parseResult.isParseSuccessful,
+            onSecureAnalysisRequested:
+                _lastReceiptImageBytes == null ||
+                    widget.parseReceiptImage == null
+                ? null
+                : () => _runSecureImageAnalysis(context),
+            categories: categories,
+          ),
+        ),
+      );
+      if (!context.mounted) return;
+      await _saveDraft(
+        context,
+        confirmedDraft,
+        source: TransactionSource.ocrLlm,
+      );
+    } finally {
+      _setFlowActive(false);
+    }
   }
+
+  bool _hasReviewableReceiptData(TransactionDraft draft) =>
+      draft.institutionName.trim().isNotEmpty ||
+      (draft.amountInMinor ?? 0) > 0 ||
+      draft.transactionDate != null ||
+      draft.receiptItems.any((item) => item.name.trim().isNotEmpty);
 
   Future<ReceiptParseResult?> _runSecureImageAnalysis(
     BuildContext context,
