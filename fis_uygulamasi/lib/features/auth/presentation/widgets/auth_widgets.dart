@@ -5,6 +5,21 @@ import 'package:go_router/go_router.dart';
 
 import '../controllers/auth_session_controller.dart';
 
+class AppLogo extends StatelessWidget {
+  const AppLogo({this.size = 80, super.key});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Image.asset(
+    'assets/branding/econbuddy_logo.png',
+    width: size,
+    height: size,
+    fit: BoxFit.contain,
+    semanticLabel: 'Uygulama logosu',
+  );
+}
+
 class AuthScaffold extends StatelessWidget {
   const AuthScaffold({
     required this.title,
@@ -38,15 +53,7 @@ class AuthScaffold extends StatelessWidget {
               children: [
                 const Align(
                   alignment: Alignment.centerLeft,
-                  child: CircleAvatar(
-                    radius: 28,
-                    backgroundColor: AppColors.mint,
-                    child: Icon(
-                      Icons.account_balance_wallet_rounded,
-                      color: AppColors.primary,
-                      size: 28,
-                    ),
-                  ),
+                  child: AppLogo(size: 64),
                 ),
                 const SizedBox(height: 24),
                 Text(title, style: Theme.of(context).textTheme.headlineLarge),

@@ -1,9 +1,9 @@
-import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../controllers/auth_session_controller.dart';
+import '../widgets/auth_widgets.dart';
 
 class WelcomePage extends ConsumerWidget {
   const WelcomePage({super.key});
@@ -17,15 +17,7 @@ class WelcomePage extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Spacer(),
-            const CircleAvatar(
-              radius: 40,
-              backgroundColor: AppColors.mint,
-              child: Icon(
-                Icons.auto_graph_rounded,
-                size: 40,
-                color: AppColors.primary,
-              ),
-            ),
+            const AppLogo(size: 112),
             const SizedBox(height: 28),
             Text(
               'Paranı daha akıllı yönet.',
