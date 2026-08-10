@@ -77,6 +77,9 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  assets:
+    - assets/branding/econbuddy_logo.png
+
 # path_provider_foundation 2.6.0, Windows'ta boşluk içeren kullanıcı yolu
 # altında objective_c native-asset hook'unun çalışmasını engelliyor.
 dependency_overrides:
