@@ -25,6 +25,7 @@ import 'finance_home.dart';
 
 GoRouter createAppRouter({
   required WidgetRef ref,
+  required bool enableDatabaseFeatures,
   required Stream<List<TransactionEntity>> Function() transactionStreamFactory,
   required Future<void> Function(TransactionEntity transaction)?
   saveTransaction,
@@ -97,6 +98,7 @@ GoRouter createAppRouter({
               aiAssistantMessageStream ?? assistantClient.streamAnswer;
 
           return _FinanceDataHost(
+            enableDatabaseFeatures: enableDatabaseFeatures,
             transactionStreamFactory: transactionStreamFactory,
             saveTransaction: saveTransaction,
             scanReceipt: scanReceipt,
@@ -140,6 +142,7 @@ GoRouter createAppRouter({
 
 class _FinanceDataHost extends ConsumerStatefulWidget {
   const _FinanceDataHost({
+    required this.enableDatabaseFeatures,
     required this.transactionStreamFactory,
     required this.saveTransaction,
     required this.scanReceipt,
@@ -151,6 +154,7 @@ class _FinanceDataHost extends ConsumerStatefulWidget {
     this.aiAssistantMessageStream,
   });
 
+  final bool enableDatabaseFeatures;
   final Stream<List<TransactionEntity>> Function() transactionStreamFactory;
   final Future<void> Function(TransactionEntity transaction)? saveTransaction;
   final ReceiptScanLauncher? scanReceipt;
@@ -177,7 +181,9 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authSessionControllerProvider);
-    final queueSummary = ref.watch(offlineQueueSummaryProvider).asData?.value;
+    final queueSummary = widget.enableDatabaseFeatures
+        ? ref.watch(offlineQueueSummaryProvider).asData?.value
+        : const OfflineQueueSummary();
     final pendingTaskCount = queueSummary?.pendingCount ?? 0;
     final displayName = auth.user?.displayName?.trim();
     final email = auth.user?.email.trim();
@@ -209,25 +215,32 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
           onProfilePressed: () => context.push('/profile'),
           pendingOfflineTaskCount: pendingTaskCount,
           enableAccountMenu: true,
+          enablePersistentSavings: widget.enableDatabaseFeatures,
           aiAssistantMessageStream: widget.aiAssistantMessageStream,
           aiAssistantAccessGate: AiAssistantAccessGate(
             client: widget.aiAssistantClient,
             authStatus: auth.status,
             queueSummary: queueSummary,
-            syncPendingTasks: ref
-                .read(syncCoordinatorProvider.notifier)
-                .syncPendingTasks,
-            retryFailedAndConflicted: ref
-                .read(syncCoordinatorProvider.notifier)
-                .retryFailedAndConflicted,
-            readQueueSummary: () =>
-                ref.read(offlineTaskRepositoryProvider).getQueueSummary(),
-            countClaimableTransactions: ref
-                .read(localTransactionClaimServiceProvider)
-                .countClaimable,
-            claimLocalTransactions: () => ref
-                .read(localTransactionClaimServiceProvider)
-                .claimForUser(auth.user!.id),
+            syncPendingTasks: widget.enableDatabaseFeatures
+                ? ref.read(syncCoordinatorProvider.notifier).syncPendingTasks
+                : () async {},
+            retryFailedAndConflicted: widget.enableDatabaseFeatures
+                ? ref
+                      .read(syncCoordinatorProvider.notifier)
+                      .retryFailedAndConflicted
+                : () async {},
+            readQueueSummary: widget.enableDatabaseFeatures
+                ? () =>
+                      ref.read(offlineTaskRepositoryProvider).getQueueSummary()
+                : () async => const OfflineQueueSummary(),
+            countClaimableTransactions: widget.enableDatabaseFeatures
+                ? ref.read(localTransactionClaimServiceProvider).countClaimable
+                : () async => 0,
+            claimLocalTransactions: widget.enableDatabaseFeatures
+                ? () => ref
+                      .read(localTransactionClaimServiceProvider)
+                      .claimForUser(auth.user!.id)
+                : () async => 0,
           ),
         );
       },

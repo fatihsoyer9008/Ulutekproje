@@ -16,6 +16,7 @@ class IsarService {
       ReceiptLineItemEntitySchema,
       OfflineTaskSchema,
       CategoryEntitySchema,
+      SavingsGoalEntitySchema,
     ], directory: directory.path);
     await TransactionRepository(isar).backfillReceiptLinks();
     _instance = isar;

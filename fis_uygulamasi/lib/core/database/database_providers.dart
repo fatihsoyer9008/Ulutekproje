@@ -42,3 +42,7 @@ final categoryRepositoryProvider = Provider<CategoryRepository>(
 final categoriesProvider = StreamProvider<List<CategoryEntity>>(
   (ref) => ref.watch(categoryRepositoryProvider).watchAllCategories(),
 );
+
+final savingsGoalRepositoryProvider = Provider<SavingsGoalStore>(
+  (ref) => SavingsGoalRepository(ref.watch(isarProvider)),
+);
