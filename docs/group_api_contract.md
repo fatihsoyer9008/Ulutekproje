@@ -2,7 +2,7 @@
 
 ## Durum ve Amaç
 
-- Sözleşme sürümü: `v1-draft-2`
+- Sözleşme sürümü: `v1-draft-3`
 - API taban yolu: `/api/v1`
 - Kapsam: Grup, üyelik, grup masrafı, bölüştürme, ödeme ve borç özeti
 - Ortak kullanıcılar: Backend, Flutter UI, borç sadeleştirme ve offline-sync ekipleri
@@ -712,7 +712,8 @@ Kurallar:
 - Masrafı oluşturan kullanıcı aktif bir grup üyesi olmalıdır.
 - `total_amount_in_minor` sıfırdan büyük olmalıdır.
 - Masraf para birimi grup para birimiyle aynı olmalıdır.
-- `receipt_id` verilirse fiş aktif kullanıcıya ait olmalıdır.
+- `receipt_id` verilirse PostgreSQL'deki `CloudReceipt.id` değerini göstermeli
+  ve fiş aktif kullanıcıya ait olmalıdır.
 - Aynı `Idempotency-Key` ve aynı body tekrar gönderilirse ilk response döner.
 - Aynı `Idempotency-Key` farklı body ile kullanılırsa `409` döner.
 
@@ -842,7 +843,18 @@ Payların toplamı `total_amount_in_minor` değerine eşit olmalıdır.
 
 Kurallar:
 
-- Her `receipt_line_item_id`, `receipt_id` altındaki gerçek bir ürünü gösterir.
+- `receipt_id`, backend/PostgreSQL tarafında kalıcı olan bir `CloudReceipt.id`
+  değeridir.
+- Her `receipt_line_item_id`, aynı cloud receipt'e bağlı kalıcı bir
+  `CloudReceiptLineItem.id` değeridir.
+- Yalnızca cihazdaki Isar veritabanında bulunan ve henüz backend'e senkronize
+  edilmemiş fiş veya ürün kimlikleri itemized request'te kullanılamaz. Backend
+  bu durumda `409 receipt_not_synced` döndürür.
+- UI itemized akıştan önce fişi ve ürünlerini buluta senkronize eder, backend'in
+  döndürdüğü cloud `receipt_id` ve `receipt_line_item_id` değerlerini bekler.
+- Senkronizasyon çevrimdışı olduğu veya tamamlanamadığı için cloud kimlikleri
+  yoksa UI itemized ekranını başlatmaz; kullanıcıya `equal`, `percentage` veya
+  `fixed_amount` Fast Split seçeneklerini gösterir.
 - Bir ürün birden fazla üyeye atanabilir.
 - Ürün paylarının toplamı ürünün `price_in_minor` değerine eşit olmalıdır.
 - `extra_amount_shares`; KDV, bahşiş, servis veya fiş-ürün toplam farkı için
@@ -890,7 +902,7 @@ metadata alanlarıdır. Tutar, ödeyen veya split değişecekse
     "currency": "TRY",
     "split": {
       "type": "equal",
-      "member_user_ids": [
+      "member_ids": [
         "00000000-0000-4000-8000-000000000001",
         "00000000-0000-4000-8000-000000000002"
       ]
@@ -1114,6 +1126,7 @@ Yeni grup endpointleri aynı hata zarfını kullanır:
 | `409` | `last_owner_required` | Son owner ayrılamaz/çıkarılamaz |
 | `409` | `idempotency_conflict` | Anahtar farklı request ile kullanıldı |
 | `409` | `expense_locked_by_settlement` | Settlement sonrası finansal değişiklik yasak |
+| `409` | `receipt_not_synced` | Itemized fiş veya ürün henüz cloud kaydı değil |
 | `410` | `invitation_expired_or_used` | Davet süresi dolmuş veya daha önce kullanılmış |
 | `422` | `invalid_split_total` | Pay toplamı masrafla eşleşmiyor |
 | `422` | `invalid_percentage_total` | Yüzde toplamı `10000` değil |
@@ -1215,8 +1228,9 @@ Borç senaryolarında aktif kullanıcı kimliği
 
 `itemizedMarketExpense`, Kalem Bazlı Bölüşüm bölümündeki request'in
 `GroupExpense` response'una dönüştürülmüş halidir. Her ürün ataması
-`ReceiptLineItemAssignment` modelini kullanır. `fastSplitTransferExpense`,
-Ortak Response Nesneleri bölümündeki `GroupExpense` örneğini kullanır.
+`ReceiptLineItemAssignment` modelini ve PostgreSQL'deki kanonik cloud receipt
+kimliklerini kullanır. `fastSplitTransferExpense`, Ortak Response Nesneleri
+bölümündeki `GroupExpense` örneğini kullanır.
 
 ### Repository Değiştirme Noktası
 
@@ -1262,6 +1276,7 @@ UI sorumlulukları:
 - [ ] Grup ve üye response şekilleri onaylandı.
 - [ ] Fast Split request şekilleri onaylandı.
 - [ ] Itemized Split request şekli onaylandı.
+- [ ] Itemized Split için cloud receipt senkronizasyon bağımlılığı onaylandı.
 - [ ] Settlement request/response şekli onaylandı.
 - [ ] Borç algoritması input/output şekli onaylandı.
 - [ ] Hata kodları onaylandı.
