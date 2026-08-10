@@ -60,7 +60,7 @@ void main() {
     test('lists only groups containing the current user', () async {
       final repository = FakeGroupRepository(
         groups: const <GroupDetail>[twoMemberGroup, fourMemberGroup],
-        currentUserId: fourthUserId,
+        currentUserId: elifnurUserId,
       );
 
       final response = await repository.listGroups();

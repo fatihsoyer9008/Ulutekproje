@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 const currentUserId = '00000000-0000-4000-8000-000000000001';
 const secondUserId = '00000000-0000-4000-8000-000000000002';
-const thirdUserId = '00000000-0000-4000-8000-000000000003';
-const fourthUserId = '00000000-0000-4000-8000-000000000004';
+const elifnurUserId = '00000000-0000-4000-8000-000000000005';
+const feyzaUserId = '00000000-0000-4000-8000-000000000006';
+const mineUserId = '00000000-0000-4000-8000-000000000007';
 
 const twoMemberGroupId = '10000000-0000-4000-8000-000000000001';
-const fourMemberGroupId = '10000000-0000-4000-8000-000000000002';
+const fourMemberGroupId = '10000000-0000-4000-8000-000000000004';
 
 const emptyGroupsResponse = GroupsResponse(groups: <Group>[]);
 
@@ -64,7 +65,7 @@ const fourMemberGroup = GroupDetail(
     ),
     GroupMember(
       groupId: fourMemberGroupId,
-      userId: thirdUserId,
+      userId: feyzaUserId,
       displayName: 'Feyza',
       role: GroupRole.admin,
       joinedAt: '2026-08-10T11:05:00Z',
@@ -72,7 +73,7 @@ const fourMemberGroup = GroupDetail(
     ),
     GroupMember(
       groupId: fourMemberGroupId,
-      userId: secondUserId,
+      userId: mineUserId,
       displayName: 'Mine',
       role: GroupRole.member,
       joinedAt: '2026-08-10T11:10:00Z',
@@ -80,7 +81,7 @@ const fourMemberGroup = GroupDetail(
     ),
     GroupMember(
       groupId: fourMemberGroupId,
-      userId: fourthUserId,
+      userId: elifnurUserId,
       displayName: 'Elifnur',
       role: GroupRole.member,
       joinedAt: '2026-08-10T11:15:00Z',
