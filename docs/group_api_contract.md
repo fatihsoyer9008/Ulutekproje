@@ -2,7 +2,7 @@
 
 ## Durum ve Amaç
 
-- Sözleşme sürümü: `v1-draft-1`
+- Sözleşme sürümü: `v1-draft-2`
 - API taban yolu: `/api/v1`
 - Kapsam: Grup, üyelik, grup masrafı, bölüştürme, ödeme ve borç özeti
 - Ortak kullanıcılar: Backend, Flutter UI, borç sadeleştirme ve offline-sync ekipleri
@@ -48,7 +48,7 @@ Token yoksa veya geçersizse `401`, grup yetkisi yetersizse `403` döner.
 | Para | Kuruş cinsinden pozitif `int` | `12550` = 125,50 TL |
 | Para birimi | ISO 4217, büyük harf | `TRY` |
 | Yüzde | Basis point cinsinden `int` | `5000` = %50,00 |
-| Miktar | En fazla üç ondalıklı sayı | `1.500` |
+| Ürün miktarı | Binde birim cinsinden `int` | `1500` = 1,500 adet |
 
 API'de parasal değerler için `double` veya metin kullanılmaz. Yüzdelik
 bölüştürmede kayan nokta hatasını önlemek için toplam `10000` basis point
@@ -60,12 +60,18 @@ anlamına gelir. Model bağlamına göre sabit alan adları `amount_in_minor`,
 `total_amount_in_minor` ve `net_amount_in_minor` olabilir. Bunların hiçbiri
 `double`, ondalıklı metin veya TL cinsinden sayı olamaz.
 
+Ürün miktarı da kayan noktalı sayı değildir. `quantity_share_milli` binde adet
+cinsinden `int` kullanır: `1000` bir adet, `1500` bir buçuk adettir. Parasal
+hesaplamada her zaman `amount_in_minor` esas alınır; miktar alanı ürün payını
+kesin ve tekrarlanabilir biçimde ifade eder.
+
 ### Ortak Enum Değerleri
 
 ```text
 group_role: owner | admin | member
 split_type: equal | percentage | fixed_amount | itemized
-share_status: open | partially_settled | settled
+share_status_v1: open
+share_status_reserved_v2: partially_settled | settled
 ```
 
 ## Sabit Model Sözlüğü
@@ -114,6 +120,7 @@ ve borç algoritması aynı alan adlarını kullanmalıdır.
 | `total_amount_in_minor` | `int` | Evet | Toplam tutar |
 | `currency` | `String` | Evet | Grup para birimi |
 | `split_type` | `split_type` | Evet | Kullanılan bölüştürme |
+| `is_financially_locked` | `bool` | Evet | Settlement sonrası finansal düzenleme kilidi |
 | `shares` | `List<ExpenseShare>` | Evet | Nihai kişi payları |
 | `line_item_assignments` | `List<ReceiptLineItemAssignment>` | Evet | Kalem atamaları |
 | `created_at` | UTC `String` | Evet | Oluşturulma zamanı |
@@ -128,8 +135,8 @@ ve borç algoritması aynı alan adlarını kullanmalıdır.
 | `user_id` | UUID `String` | Evet | Pay sahibi |
 | `display_name` | `String` | Evet | UI gösterim adı |
 | `amount_in_minor` | `int` | Evet | Nihai pay tutarı |
-| `status` | `share_status` | Evet | Ödeme durumu |
-| `settled_at` | UTC `String?` | Evet | Tam kapanmadıysa `null` |
+| `status` | `share_status_v1` | Evet | v1'de daima `open` |
+| `settled_at` | UTC `String?` | Evet | v1'de daima `null` |
 
 ### ReceiptLineItemAssignment
 
@@ -142,13 +149,14 @@ Backend veritabanı sınıfı farklı adlandırılsa bile JSON alanları değiş
 | `receipt_line_item_id` | UUID `String` | Evet | Fiş ürün satırı |
 | `user_id` | UUID `String` | Evet | Atanan grup üyesi |
 | `amount_in_minor` | `int` | Evet | Üyeye düşen ürün tutarı |
-| `quantity_share` | `number?` | Evet | Miktar bilinmiyorsa `null` |
+| `quantity_share_milli` | `int?` | Evet | 1,500 adet için `1500`; bilinmiyorsa `null` |
 
 ### DebtTransfer
 
 `DebtTransfer` istemci tarafından oluşturulan ayrı bir kayıt değildir. Saf borç
 hesabının ve `DebtSummary` response'unun önerdiği transfer nesnesidir; algoritma
-request'i Borç Algoritması bölümündeki balance listesidir.
+request'i Borç Algoritması bölümündeki `expense_balances` ve `settlements`
+listeleridir.
 
 | Alan | Tip | Zorunlu | Açıklama |
 | --- | --- | --- | --- |
@@ -286,6 +294,7 @@ göstereceği nihai paylar bulunur:
   "total_amount_in_minor": 12500,
   "currency": "TRY",
   "split_type": "equal",
+  "is_financially_locked": false,
   "shares": [
     {
       "expense_id": "40000000-0000-4000-8000-000000000001",
@@ -323,7 +332,7 @@ oluşturduğu masrafın kimliğini response'a ekler:
   "receipt_line_item_id": "30000000-0000-4000-8000-000000000001",
   "user_id": "00000000-0000-4000-8000-000000000001",
   "amount_in_minor": 3000,
-  "quantity_share": 1.0
+  "quantity_share_milli": 1000
 }
 ```
 
@@ -345,7 +354,7 @@ oluşturduğu masrafın kimliğini response'a ekler:
   "group_id": "10000000-0000-4000-8000-000000000001",
   "from_user_id": "00000000-0000-4000-8000-000000000002",
   "to_user_id": "00000000-0000-4000-8000-000000000001",
-  "amount_in_minor": 6250,
+  "amount_in_minor": 2500,
   "currency": "TRY",
   "settled_at": "2026-08-11T09:00:00Z",
   "note": "Havale ile ödendi",
@@ -362,13 +371,16 @@ oluşturduğu masrafın kimliğini response'a ekler:
 | `GET` | `/api/v1/groups/{group_id}` | Üye | `200` |
 | `PATCH` | `/api/v1/groups/{group_id}` | Owner | `200` |
 | `DELETE` | `/api/v1/groups/{group_id}` | Owner | `204` |
-| `POST` | `/api/v1/groups/{group_id}/members` | Owner/Admin | `201` |
+| `POST` | `/api/v1/groups/{group_id}/invitations` | Owner/Admin | `202` |
+| `POST` | `/api/v1/group-invitations/{token}/accept` | Giriş yapmış kullanıcı | `201` |
+| `POST` | `/api/v1/groups/{group_id}/members` | Yalnız development/mock | `201` |
 | `PATCH` | `/api/v1/groups/{group_id}/members/{user_id}` | Owner | `200` |
 | `DELETE` | `/api/v1/groups/{group_id}/members/{user_id}` | Owner/Admin | `204` |
 | `DELETE` | `/api/v1/groups/{group_id}/members/me` | Üye | `204` |
 | `POST` | `/api/v1/groups/{group_id}/expenses` | Üye | `201` |
 | `GET` | `/api/v1/groups/{group_id}/expenses` | Üye | `200` |
 | `GET` | `/api/v1/groups/{group_id}/expenses/{expense_id}` | Üye | `200` |
+| `PATCH` | `/api/v1/groups/{group_id}/expenses/{expense_id}` | Oluşturan/Owner/Admin | `200` |
 | `DELETE` | `/api/v1/groups/{group_id}/expenses/{expense_id}` | Oluşturan/Owner/Admin | `204` |
 | `POST` | `/api/v1/groups/{group_id}/settlements` | Üye | `201` |
 | `GET` | `/api/v1/groups/{group_id}/settlements` | Üye | `200` |
@@ -529,7 +541,70 @@ body döner.
 
 ## Üyelik Endpointleri
 
-### Üye Ekleme
+### Production Üye Daveti
+
+Mobil kullanıcıdan başka bir kullanıcının UUID değeri istenmez. Production
+ortamında üyelik, doğrulanmış e-posta adresine gönderilen tek kullanımlık davet
+bağlantısıyla başlatılır:
+
+```http
+POST /api/v1/groups/{group_id}/invitations
+```
+
+Request:
+
+```json
+{
+  "email": "abdullah@example.com",
+  "role": "member"
+}
+```
+
+Response her durumda `202` ve aynı genel gövde olur:
+
+```json
+{
+  "status": "request_received"
+}
+```
+
+Güvenlik ve gizlilik kuralları:
+
+- Response; e-posta kayıtlı, kayıtsız veya henüz doğrulanmamış olsa da değişmez.
+- Response içinde `user_id`, kullanıcı varlığı, davet kimliği veya token dönmez.
+- E-posta küçük harfe dönüştürülüp normalize edilir; loglarda açık e-posta
+  yerine maskelenmiş veya hash'lenmiş değer kullanılır.
+- Endpoint kullanıcı ve grup bazında rate-limit uygular.
+- Owner `admin` veya `member`, admin yalnızca `member` davet edebilir.
+- Davet token'ı tahmin edilemez, veritabanında hash'li, tek kullanımlık ve
+  24 saat geçerli olur.
+- Hesabı bulunmayan kişiye aynı bağlantı üzerinden kayıt ve e-posta doğrulama
+  akışı sunulabilir; üyelik yalnızca doğrulama tamamlandıktan sonra oluşur.
+
+Davet bağlantısını açan kullanıcı giriş yaptıktan sonra kabul eder:
+
+```http
+POST /api/v1/group-invitations/{token}/accept
+```
+
+Request body yoktur. Token'ın davet edildiği doğrulanmış e-posta ile giriş
+yapan kullanıcının doğrulanmış e-postası aynı olmalıdır.
+
+Response `201`:
+
+```json
+{
+  "member": "<GroupMember>"
+}
+```
+
+Aynı token ikinci kez kullanılırsa veya süresi dolmuşsa `410`, farklı
+doğrulanmış e-posta ile kullanılmaya çalışılırsa `403` döner.
+
+### Development/Mock Doğrudan Üye Ekleme
+
+Bu akış yalnızca fake repository, fixture ve yerel entegrasyon testleri içindir.
+Production ortamında kapalı olmalı ve route bulunmuyormuş gibi `404` dönmelidir.
 
 ```http
 POST /api/v1/groups/{group_id}/members
@@ -564,7 +639,7 @@ Kurallar:
 - Aynı kullanıcı aynı gruba iki kez eklenemez.
 - Admin yalnızca `member` rolünde üye ekleyebilir.
 - `admin` rolü verme ve owner devri yalnızca owner tarafından yapılabilir.
-- Grup dışındaki veya bulunmayan kullanıcı için `404` döner.
+- Bu endpoint production UI veya Dio repository tarafından çağrılamaz.
 
 ### Üye Rolü Güncelleme ve Owner Devri
 
@@ -731,12 +806,12 @@ Payların toplamı `total_amount_in_minor` değerine eşit olmalıdır.
           {
             "user_id": "00000000-0000-4000-8000-000000000001",
             "amount_in_minor": 3000,
-            "quantity_share": 1.0
+            "quantity_share_milli": 1000
           },
           {
             "user_id": "00000000-0000-4000-8000-000000000002",
             "amount_in_minor": 3000,
-            "quantity_share": 1.0
+            "quantity_share_milli": 1000
           }
         ]
       },
@@ -746,7 +821,7 @@ Payların toplamı `total_amount_in_minor` değerine eşit olmalıdır.
           {
             "user_id": "00000000-0000-4000-8000-000000000002",
             "amount_in_minor": 6000,
-            "quantity_share": 1.0
+            "quantity_share_milli": 1000
           }
         ]
       }
@@ -788,11 +863,78 @@ Başarılı `GroupExpense` response'unda ayrıca aşağıdaki alan bulunur:
       "receipt_line_item_id": "30000000-0000-4000-8000-000000000001",
       "user_id": "00000000-0000-4000-8000-000000000001",
       "amount_in_minor": 3000,
-      "quantity_share": 1.0
+      "quantity_share_milli": 1000
     }
   ]
 }
 ```
+
+### Masraf Güncelleme
+
+```http
+PATCH /api/v1/groups/{group_id}/expenses/{expense_id}
+```
+
+Request'te en az bir alan gönderilmelidir. `title`, `note` ve `expense_date`
+metadata alanlarıdır. Tutar, ödeyen veya split değişecekse
+`financial_details` eksiksiz gönderilir:
+
+```json
+{
+  "title": "Düzeltilmiş market alışverişi",
+  "note": "Fiş yeniden kontrol edildi",
+  "financial_details": {
+    "receipt_id": null,
+    "payer_user_id": "00000000-0000-4000-8000-000000000001",
+    "total_amount_in_minor": 13000,
+    "currency": "TRY",
+    "split": {
+      "type": "equal",
+      "member_user_ids": [
+        "00000000-0000-4000-8000-000000000001",
+        "00000000-0000-4000-8000-000000000002"
+      ]
+    }
+  }
+}
+```
+
+Response `200`:
+
+```json
+{
+  "expense": "<GroupExpense>"
+}
+```
+
+Yetki ve kilit kuralları:
+
+- Masrafı oluşturan kullanıcı kendi masrafını güncelleyebilir.
+- Owner/Admin gruptaki bütün masrafları güncelleyebilir.
+- `financial_details`, oluşturma endpointindeki bütün tutar ve split
+  doğrulamalarından yeniden geçer.
+- Masrafın `created_at` değerinden sonra aynı grupta en az bir settlement
+  kaydedilmişse `is_financially_locked: true` olur. Bu durumda tutar, ödeyen,
+  para birimi, fiş ve split değiştirilemez; deneme
+  `409 expense_locked_by_settlement` döndürür.
+- Kilitli masrafın yalnızca `title`, `note` ve `expense_date` metadata alanları
+  güncellenebilir.
+- V1'de settlement belirli bir `ExpenseShare` kaydına tahsis edilmediği için
+  “tek masraf tamamen kapandı” durumu tutulmaz. Finansal kilit yukarıdaki
+  settlement sınırına göre belirlenir.
+
+### Masraf Silme
+
+```http
+DELETE /api/v1/groups/{group_id}/expenses/{expense_id}
+```
+
+- Masrafı oluşturan kullanıcı veya Owner/Admin silebilir.
+- Silme `deleted_at` alanını dolduran soft delete işlemidir.
+- `is_financially_locked: true` olan masraf silinemez ve
+  `409 expense_locked_by_settlement` döner. V1'de düzeltme, yeni bir ters
+  kayıtla yapılır; settlement geçmişi değiştirilmez.
+- Başarılı response `204` ve boş body'dir.
 
 ### Masrafları Listeleme
 
@@ -827,7 +969,7 @@ Request:
 {
   "from_user_id": "00000000-0000-4000-8000-000000000002",
   "to_user_id": "00000000-0000-4000-8000-000000000001",
-  "amount_in_minor": 6250,
+  "amount_in_minor": 2500,
   "currency": "TRY",
   "settled_at": "2026-08-11T09:00:00Z",
   "note": "Havale ile ödendi"
@@ -851,7 +993,7 @@ Response `201`:
     "group_id": "10000000-0000-4000-8000-000000000001",
     "from_user_id": "00000000-0000-4000-8000-000000000002",
     "to_user_id": "00000000-0000-4000-8000-000000000001",
-    "amount_in_minor": 6250,
+    "amount_in_minor": 2500,
     "currency": "TRY",
     "settled_at": "2026-08-11T09:00:00Z",
     "note": "Havale ile ödendi",
@@ -859,6 +1001,21 @@ Response `201`:
   }
 }
 ```
+
+### Settlement'ın Net Borca ve Share Durumuna Etkisi
+
+- Settlement kayıtları grup net borç hesabına dahil edilir ve silinmez.
+- `from_user_id` bakiyesi `amount_in_minor` kadar artırılır; borcu azalır.
+- `to_user_id` bakiyesi aynı tutarda azaltılır; alacağı azalır.
+- Örnekte settlement öncesi Zafer `6250` alacaklı, Abdullah `-6250`
+  borçludur. Abdullah'ın Zafer'e `2500` ödemesinden sonra net bakiyeler
+  sırasıyla `3750` ve `-3750` olur.
+- V1 settlement'ları belirli bir masraf veya `ExpenseShare` kaydına tahsis
+  edilmez. Bu nedenle `ExpenseShare.status` v1'de daima `open`,
+  `ExpenseShare.settled_at` daima `null` kalır.
+- `partially_settled` ve `settled` değerleri masraf-pay tahsisi tasarlandığında
+  kullanılmak üzere v2 için ayrılmıştır. UI v1'de ödeme durumunu
+  `DebtSummary` ve settlement geçmişinden gösterir.
 
 ## Borç Algoritması ve Özet Sözleşmesi
 
@@ -870,7 +1027,7 @@ Saf algoritmanın ortak mock girdisi:
 ```json
 {
   "currency": "TRY",
-  "balances": [
+  "expense_balances": [
     {
       "user_id": "00000000-0000-4000-8000-000000000001",
       "net_amount_in_minor": 6250
@@ -878,6 +1035,13 @@ Saf algoritmanın ortak mock girdisi:
     {
       "user_id": "00000000-0000-4000-8000-000000000002",
       "net_amount_in_minor": -6250
+    }
+  ],
+  "settlements": [
+    {
+      "from_user_id": "00000000-0000-4000-8000-000000000002",
+      "to_user_id": "00000000-0000-4000-8000-000000000001",
+      "amount_in_minor": 2500
     }
   ]
 }
@@ -893,19 +1057,19 @@ Saf algoritmanın çıktısı ve `GET /groups/{group_id}/debts` response'u:
     {
       "user_id": "00000000-0000-4000-8000-000000000001",
       "display_name": "Zafer Tuna",
-      "net_amount_in_minor": 6250
+      "net_amount_in_minor": 3750
     },
     {
       "user_id": "00000000-0000-4000-8000-000000000002",
       "display_name": "Abdullah Seydi",
-      "net_amount_in_minor": -6250
+      "net_amount_in_minor": -3750
     }
   ],
   "suggested_transfers": [
     {
       "from_user_id": "00000000-0000-4000-8000-000000000002",
       "to_user_id": "00000000-0000-4000-8000-000000000001",
-      "amount_in_minor": 6250
+      "amount_in_minor": 3750
     }
   ],
   "generated_at": "2026-08-11T09:05:00Z"
@@ -942,16 +1106,20 @@ Yeni grup endpointleri aynı hata zarfını kullanır:
 | `400` | `invalid_request` | İş kuralına uymayan genel request |
 | `401` | `unauthorized` | Geçersiz veya eksik token |
 | `403` | `group_forbidden` | Grup veya rol yetkisi yok |
+| `403` | `invitation_email_mismatch` | Davet ile giriş hesabının e-postası farklı |
 | `404` | `group_not_found` | Grup bulunamadı |
 | `404` | `member_not_found` | Üye bulunamadı |
 | `404` | `expense_not_found` | Masraf bulunamadı |
 | `409` | `member_already_exists` | Aynı aktif üyelik zaten var |
 | `409` | `last_owner_required` | Son owner ayrılamaz/çıkarılamaz |
 | `409` | `idempotency_conflict` | Anahtar farklı request ile kullanıldı |
+| `409` | `expense_locked_by_settlement` | Settlement sonrası finansal değişiklik yasak |
+| `410` | `invitation_expired_or_used` | Davet süresi dolmuş veya daha önce kullanılmış |
 | `422` | `invalid_split_total` | Pay toplamı masrafla eşleşmiyor |
 | `422` | `invalid_percentage_total` | Yüzde toplamı `10000` değil |
 | `422` | `unassigned_line_items` | Atanmayan ürünler bulunuyor |
 | `422` | `currency_mismatch` | Masraf para birimi grupla farklı |
+| `429` | `invitation_rate_limited` | Çok fazla davet isteği gönderildi |
 | `503` | `service_unavailable` | Grup servisine geçici olarak ulaşılamıyor |
 
 ## Kanonik UI Mock Verisi
@@ -1097,5 +1265,9 @@ UI sorumlulukları:
 - [ ] Settlement request/response şekli onaylandı.
 - [ ] Borç algoritması input/output şekli onaylandı.
 - [ ] Hata kodları onaylandı.
+- [ ] Production e-posta daveti ve kullanıcı gizliliği kuralları onaylandı.
+- [ ] `quantity_share_milli` tamsayı miktar gösterimi onaylandı.
+- [ ] Masraf güncelleme/silme yetkisi ve settlement kilidi onaylandı.
+- [ ] Settlement'ın net borca etkisi ve v1 share-status davranışı onaylandı.
 - [ ] UI fake repository kanonik mock JSON ile başlatıldı.
 - [ ] Sözleşme PR'ı merge edilmeden model veya UI alan adları sabitlenmedi.
