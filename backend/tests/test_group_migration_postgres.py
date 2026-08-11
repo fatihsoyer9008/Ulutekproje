@@ -11,6 +11,7 @@ from sqlalchemy.engine import URL, make_url
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_REVISION = "20260811_0007"
 PRE_GROUP_REVISION = "20260806_0004"
+PRE_EXPENSE_REVISION = "20260810_0005"
 PRE_ASSIGNMENT_REVISION = "20260811_0006"
 
 GROUP_TABLES = (
@@ -23,9 +24,18 @@ GROUP_TABLES = (
 
 LEGACY_TABLE_KEYS = (
     ("users", "id", "user_id"),
+    ("oauth_accounts", "id", "oauth_account_id"),
+    ("refresh_sessions", "id", "refresh_session_id"),
+    ("one_time_tokens", "id", "one_time_token_id"),
     ("cloud_transactions", "id", "transaction_id"),
     ("cloud_receipts", "id", "receipt_id"),
     ("cloud_receipt_line_items", "id", "line_item_id"),
+    ("sync_claim_requests", "id", "sync_claim_request_id"),
+)
+
+PRE_EXPENSE_TABLE_KEYS = (
+    ("groups", "id", "group_id"),
+    ("group_members", "group_id", "group_id"),
 )
 
 PRE_ASSIGNMENT_TABLE_KEYS = (
@@ -39,6 +49,15 @@ PRE_ASSIGNMENT_TABLE_KEYS = (
 def _postgres_test_url() -> URL:
     raw_url = os.getenv("POSTGRES_TEST_DATABASE_URL")
     if not raw_url:
+        if os.getenv("REQUIRE_POSTGRES_TESTS", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }:
+            pytest.fail(
+                "POSTGRES_TEST_DATABASE_URL is required when "
+                "REQUIRE_POSTGRES_TESTS is enabled"
+            )
         pytest.skip("POSTGRES_TEST_DATABASE_URL is required for PostgreSQL tests")
     if not raw_url.startswith("postgresql+asyncpg://"):
         pytest.fail("POSTGRES_TEST_DATABASE_URL must use PostgreSQL with asyncpg")
@@ -72,12 +91,17 @@ async def _seed_legacy_data(
     try:
         identifiers = {
             "user_id": uuid.uuid4(),
+            "oauth_account_id": uuid.uuid4(),
+            "refresh_session_id": uuid.uuid4(),
+            "refresh_family_id": uuid.uuid4(),
+            "one_time_token_id": uuid.uuid4(),
             "transaction_id": uuid.uuid4(),
             "transaction_client_id": uuid.uuid4(),
             "receipt_id": uuid.uuid4(),
             "receipt_client_id": uuid.uuid4(),
             "line_item_id": uuid.uuid4(),
             "line_item_client_id": uuid.uuid4(),
+            "sync_claim_request_id": uuid.uuid4(),
         }
 
         await connection.execute(
@@ -97,6 +121,49 @@ async def _seed_legacy_data(
             f"migration-regression-{identifiers['user_id']}@example.com",
             "legacy-password-hash",
             "Legacy Migration User",
+        )
+        await connection.execute(
+            """
+            INSERT INTO oauth_accounts (
+                id, user_id, provider, provider_subject, provider_email
+            )
+            VALUES ($1, $2, 'google', $3, $4)
+            """,
+            identifiers["oauth_account_id"],
+            identifiers["user_id"],
+            f"provider-{identifiers['oauth_account_id']}",
+            f"oauth-{identifiers['user_id']}@example.com",
+        )
+        await connection.execute(
+            """
+            INSERT INTO refresh_sessions (
+                id, user_id, family_id, token_hash, expires_at,
+                device_name, user_agent
+            )
+            VALUES (
+                $1, $2, $3, $4,
+                TIMESTAMPTZ '2026-09-10 12:30:00+03',
+                'Migration Device', 'migration-regression-agent'
+            )
+            """,
+            identifiers["refresh_session_id"],
+            identifiers["user_id"],
+            identifiers["refresh_family_id"],
+            uuid.uuid4().hex + uuid.uuid4().hex,
+        )
+        await connection.execute(
+            """
+            INSERT INTO one_time_tokens (
+                id, user_id, purpose, token_hash, expires_at
+            )
+            VALUES (
+                $1, $2, 'verify_email', $3,
+                TIMESTAMPTZ '2026-08-11 12:30:00+03'
+            )
+            """,
+            identifiers["one_time_token_id"],
+            identifiers["user_id"],
+            uuid.uuid4().hex + uuid.uuid4().hex,
         )
         await connection.execute(
             """
@@ -209,6 +276,19 @@ async def _seed_legacy_data(
             identifiers["receipt_id"],
             identifiers["line_item_client_id"],
         )
+        await connection.execute(
+            """
+            INSERT INTO sync_claim_requests (
+                id, user_id, idempotency_key_hash, request_hash, response_json
+            )
+            VALUES ($1, $2, $3, $4, $5::json)
+            """,
+            identifiers["sync_claim_request_id"],
+            identifiers["user_id"],
+            uuid.uuid4().hex + uuid.uuid4().hex,
+            uuid.uuid4().hex + uuid.uuid4().hex,
+            '{"status":"accepted"}',
+        )
 
         return identifiers
     finally:
@@ -303,6 +383,59 @@ async def _seed_pre_assignment_group_data(
             identifiers["expense_id"],
             identifiers["user_id"],
         )
+    finally:
+        await connection.close()
+
+
+async def _seed_pre_expense_group_data(
+    database_url: URL,
+    identifiers: dict[str, uuid.UUID],
+) -> None:
+    connection = await asyncpg.connect(_asyncpg_dsn(database_url))
+    try:
+        identifiers["group_id"] = uuid.uuid4()
+        await connection.execute(
+            """
+            INSERT INTO groups (id, name, description, currency, created_by)
+            VALUES (
+                $1, 'Existing Group', 'Created before expense migration',
+                'TRY', $2
+            )
+            """,
+            identifiers["group_id"],
+            identifiers["user_id"],
+        )
+        await connection.execute(
+            """
+            INSERT INTO group_members (group_id, user_id, role)
+            VALUES ($1, $2, 'owner')
+            """,
+            identifiers["group_id"],
+            identifiers["user_id"],
+        )
+    finally:
+        await connection.close()
+
+
+async def _pre_expense_snapshot(
+    database_url: URL,
+    identifiers: dict[str, uuid.UUID],
+) -> dict[str, object]:
+    connection = await asyncpg.connect(_asyncpg_dsn(database_url))
+    try:
+        snapshot: dict[str, object] = {}
+        for table_name, id_column, identifier_key in PRE_EXPENSE_TABLE_KEYS:
+            rows = await connection.fetch(
+                f'SELECT * FROM "{table_name}" WHERE "{id_column}" = $1',
+                identifiers[identifier_key],
+            )
+            count = await connection.fetchval(f'SELECT count(*) FROM "{table_name}"')
+            assert rows
+            snapshot[table_name] = {
+                "count": count,
+                "rows": [dict(row) for row in rows],
+            }
+        return snapshot
     finally:
         await connection.close()
 
@@ -418,30 +551,72 @@ async def _assert_group_relations_and_indexes(
             "user_id",
         ) not in foreign_keys
 
-        index_names = {
-            row["indexname"]
-            for row in await connection.fetch(
-                """
-                SELECT indexname
-                FROM pg_indexes
-                WHERE schemaname = 'public'
-                  AND tablename = ANY($1::text[])
-                """,
-                list(GROUP_TABLES),
-            )
+        index_rows = await connection.fetch(
+            """
+            SELECT
+                index_class.relname AS index_name,
+                index_meta.indisunique AS is_unique,
+                ARRAY(
+                    SELECT pg_get_indexdef(
+                        index_meta.indexrelid,
+                        position,
+                        true
+                    )
+                    FROM generate_series(
+                        1,
+                        index_meta.indnkeyatts
+                    ) AS position
+                    ORDER BY position
+                ) AS columns,
+                pg_get_expr(
+                    index_meta.indpred,
+                    index_meta.indrelid
+                ) AS predicate
+            FROM pg_index AS index_meta
+            JOIN pg_class AS table_class
+              ON table_class.oid = index_meta.indrelid
+            JOIN pg_class AS index_class
+              ON index_class.oid = index_meta.indexrelid
+            JOIN pg_namespace AS namespace
+              ON namespace.oid = table_class.relnamespace
+            WHERE namespace.nspname = 'public'
+              AND table_class.relname = ANY($1::text[])
+            """,
+            list(GROUP_TABLES),
+        )
+        indexes = {
+            row["index_name"]: {
+                "columns": list(row["columns"]),
+                "unique": row["is_unique"],
+                "predicate": row["predicate"],
+            }
+            for row in index_rows
         }
-        assert {
-            "ix_groups_created_by",
-            "ix_groups_archived_at",
-            "ix_group_members_user_id",
-            "ix_group_members_group_left_at",
-            "ix_group_expenses_group_deleted_date",
-            "ix_group_expenses_receipt_id",
-            "ix_group_expenses_payer_user_id",
-            "ix_expense_shares_user_id",
-            "ix_expense_line_item_assignments_receipt_line_item_id",
-            "ix_expense_line_item_assignments_user_id",
-        }.issubset(index_names)
+        expected_indexes = {
+            "ix_groups_created_by": ["created_by"],
+            "ix_groups_archived_at": ["archived_at"],
+            "ix_group_members_user_id": ["user_id"],
+            "ix_group_members_group_left_at": ["group_id", "left_at"],
+            "ix_group_expenses_group_deleted_date": [
+                "group_id",
+                "deleted_at",
+                "expense_date",
+                "id",
+            ],
+            "ix_group_expenses_receipt_id": ["receipt_id"],
+            "ix_group_expenses_payer_user_id": ["payer_user_id"],
+            "ix_expense_shares_user_id": ["user_id"],
+            "ix_expense_line_item_assignments_receipt_line_item_id": [
+                "receipt_line_item_id"
+            ],
+            "ix_expense_line_item_assignments_user_id": ["user_id"],
+        }
+        for index_name, expected_columns in expected_indexes.items():
+            assert indexes[index_name] == {
+                "columns": expected_columns,
+                "unique": False,
+                "predicate": None,
+            }
     finally:
         await connection.close()
 
@@ -1085,6 +1260,130 @@ async def test_group_migrations_preserve_legacy_data_on_postgresql() -> None:
                 identifiers,
             )
             assert after_second_upgrade == before_upgrade
+        finally:
+            await admin_connection.execute(
+                "SELECT pg_terminate_backend(pid) "
+                "FROM pg_stat_activity "
+                "WHERE datname = $1 AND pid <> pg_backend_pid()",
+                temporary_database,
+            )
+            await admin_connection.execute(
+                f'DROP DATABASE IF EXISTS "{temporary_database}"'
+            )
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_expense_migration_preserves_existing_group_data() -> None:
+    """Upgrade/downgrade 0006 without losing rows created at revision 0005."""
+    base_url = _postgres_test_url()
+    temporary_database = f"group_expense_upgrade_{uuid.uuid4().hex}"
+    admin_url = base_url.set(database="postgres")
+    migration_url = base_url.set(database=temporary_database)
+    migration_url_string = migration_url.render_as_string(hide_password=False)
+
+    admin_connection = await asyncpg.connect(_asyncpg_dsn(admin_url))
+    try:
+        await admin_connection.execute(f'CREATE DATABASE "{temporary_database}"')
+        try:
+            _run_alembic(
+                migration_url_string,
+                "upgrade",
+                PRE_EXPENSE_REVISION,
+            )
+            identifiers = await _seed_legacy_data(migration_url)
+            await _seed_pre_expense_group_data(migration_url, identifiers)
+
+            legacy_before = await _legacy_snapshot(migration_url, identifiers)
+            group_before = await _pre_expense_snapshot(
+                migration_url,
+                identifiers,
+            )
+
+            _run_alembic(
+                migration_url_string,
+                "upgrade",
+                PRE_ASSIGNMENT_REVISION,
+            )
+            current = _run_alembic(migration_url_string, "current")
+            assert PRE_ASSIGNMENT_REVISION in current
+            assert await _legacy_snapshot(migration_url, identifiers) == legacy_before
+            assert await _pre_expense_snapshot(migration_url, identifiers) == group_before
+
+            connection = await asyncpg.connect(_asyncpg_dsn(migration_url))
+            try:
+                assert (
+                    await connection.fetchval(
+                        "SELECT to_regclass('public.group_expenses')"
+                    )
+                    == "group_expenses"
+                )
+                assert (
+                    await connection.fetchval(
+                        "SELECT to_regclass('public.expense_shares')"
+                    )
+                    == "expense_shares"
+                )
+                await connection.execute(
+                    """
+                    INSERT INTO group_expenses (
+                        id,
+                        group_id,
+                        receipt_id,
+                        payer_user_id,
+                        title,
+                        expense_date,
+                        total_amount_in_minor,
+                        currency,
+                        split_type
+                    )
+                    VALUES (
+                        $1, $2, $3, $4, 'Expense migration check',
+                        TIMESTAMPTZ '2026-08-11 10:00:00+03',
+                        34990, 'TRY', 'equal'
+                    )
+                    """,
+                    uuid.uuid4(),
+                    identifiers["group_id"],
+                    identifiers["receipt_id"],
+                    identifiers["user_id"],
+                )
+            finally:
+                await connection.close()
+
+            _run_alembic(
+                migration_url_string,
+                "downgrade",
+                PRE_EXPENSE_REVISION,
+            )
+            assert await _legacy_snapshot(migration_url, identifiers) == legacy_before
+            assert await _pre_expense_snapshot(migration_url, identifiers) == group_before
+
+            connection = await asyncpg.connect(_asyncpg_dsn(migration_url))
+            try:
+                assert (
+                    await connection.fetchval(
+                        "SELECT to_regclass('public.group_expenses')"
+                    )
+                    is None
+                )
+                assert (
+                    await connection.fetchval(
+                        "SELECT to_regclass('public.expense_shares')"
+                    )
+                    is None
+                )
+            finally:
+                await connection.close()
+
+            _run_alembic(
+                migration_url_string,
+                "upgrade",
+                PRE_ASSIGNMENT_REVISION,
+            )
+            assert await _legacy_snapshot(migration_url, identifiers) == legacy_before
+            assert await _pre_expense_snapshot(migration_url, identifiers) == group_before
         finally:
             await admin_connection.execute(
                 "SELECT pg_terminate_backend(pid) "

@@ -1,0 +1,63 @@
+name: Backend PostgreSQL migration regressions
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-postgres-migrations.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-postgres-migrations.yml"
+
+jobs:
+  postgres-migration-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      POSTGRES_TEST_DATABASE_URL: >-
+        postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
+      REQUIRE_POSTGRES_TESTS: "true"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install backend test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run PostgreSQL migration regression tests
+        run: >-
+          python -m pytest -q
+          tests/test_group_migration_postgres.py
+
+      - name: Run backend static analysis
+        run: python -m ruff check .
