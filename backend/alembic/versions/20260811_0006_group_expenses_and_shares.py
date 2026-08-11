@@ -129,7 +129,7 @@ def upgrade() -> None:
             ["group_expenses.id"],
             ondelete="CASCADE",
         ),
-        sa.PrimaryKeyConstraint(    
+        sa.PrimaryKeyConstraint(
             "expense_id",
             "user_id",
             name="pk_expense_shares",
