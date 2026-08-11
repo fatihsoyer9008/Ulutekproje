@@ -10,6 +10,7 @@ import '../../features/ai_assistant/presentation/assistant_access_gate.dart';
 import '../../features/sync/application/sync_coordinator.dart';
 import '../../features/categories/presentation/category_management_page.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
+import '../../features/auth/presentation/routing/auth_redirect.dart';
 import '../../features/auth/presentation/views/forgot_password_page.dart';
 import '../../features/auth/presentation/views/email_verification_page.dart';
 import '../../features/auth/presentation/views/login_page.dart';
@@ -21,6 +22,8 @@ import '../../features/backup/data/transaction_json_import_service.dart';
 import '../../core/database/database_providers.dart';
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../screens/expense_screen.dart';
+import '../../features/groups/presentation/groups_page.dart';
+
 import 'finance_home.dart';
 
 GoRouter createAppRouter({
@@ -32,12 +35,14 @@ GoRouter createAppRouter({
   required ReceiptScanLauncher? scanReceipt,
   TransactionJsonImportService? transactionImportService,
   AiAssistantMessageStream? aiAssistantMessageStream,
+  AiAssistantAccessClient? profileAiAssistantClient,
 }) {
   return GoRouter(
     initialLocation: '/startup',
     redirect: (context, state) {
       final auth = ref.read(authSessionControllerProvider);
       final location = state.matchedLocation;
+      final groupsLocation = isGroupsRoute(location);
       final isAuthPage = {
         '/welcome',
         '/login',
@@ -45,7 +50,7 @@ GoRouter createAppRouter({
         '/forgot-password',
         '/verify-email',
       }.contains(location);
-      final isProtectedPage = {
+      final isProtectedPage = groupsLocation || {
         '/home',
         '/profile',
         '/categories',
@@ -64,8 +69,15 @@ GoRouter createAppRouter({
       if (auth.status == AuthStatus.unauthenticated && isProtectedPage) {
         return '/welcome';
       }
+      if (auth.status == AuthStatus.guest && groupsLocation) {
+        return groupsLoginLocation(location);
+      }
       if (auth.status == AuthStatus.authenticated &&
           (isAuthPage || location == '/startup')) {
+        final redirect = safeGroupsRedirect(
+          state.uri.queryParameters['redirect'],
+        );
+        if (redirect != null) return redirect;
         return '/home';
       }
       if (auth.status == AuthStatus.guest &&
@@ -77,7 +89,14 @@ GoRouter createAppRouter({
     routes: [
       GoRoute(path: '/startup', builder: (_, _) => const StartupPage()),
       GoRoute(path: '/welcome', builder: (_, _) => const WelcomePage()),
-      GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
+      GoRoute(
+        path: '/login',
+        builder: (_, state) => LoginPage(
+          redirectLocation: safeGroupsRedirect(
+            state.uri.queryParameters['redirect'],
+          ),
+        ),
+      ),
       GoRoute(path: '/register', builder: (_, _) => const RegisterPage()),
       GoRoute(
         path: '/forgot-password',
@@ -85,8 +104,12 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/verify-email',
-        builder: (_, state) =>
-            EmailVerificationPage(token: state.uri.queryParameters['token']),
+        builder: (_, state) => EmailVerificationPage(
+          token: state.uri.queryParameters['token'],
+          redirectLocation: safeGroupsRedirect(
+            state.uri.queryParameters['redirect'],
+          ),
+        ),
       ),
       GoRoute(
         path: '/home',
@@ -129,13 +152,16 @@ GoRouter createAppRouter({
         path: '/profile',
         builder: (_, _) => ProfilePage(
           transactionImportService: transactionImportService,
-          aiAssistantClient: AiAssistantClient(ref.read(apiClientProvider)),
+          aiAssistantClient:
+              profileAiAssistantClient ??
+              AiAssistantClient(ref.read(apiClientProvider)),
         ),
       ),
       GoRoute(
         path: '/categories',
         builder: (_, _) => const CategoryManagementPage(),
       ),
+      GoRoute(path: '/groups', builder: (_, _) => const GroupsPage()),
     ],
   );
 }
@@ -213,6 +239,8 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
           parseReceipt: widget.parseReceipt,
           parseReceiptImage: widget.parseReceiptImage,
           onProfilePressed: () => context.push('/profile'),
+          onGroupsPressed: () => context.push('/groups'),
+          onGuestGroupsPressed: () => context.go(groupsLoginLocation()),
           pendingOfflineTaskCount: pendingTaskCount,
           enableAccountMenu: true,
           enablePersistentSavings: widget.enableDatabaseFeatures,

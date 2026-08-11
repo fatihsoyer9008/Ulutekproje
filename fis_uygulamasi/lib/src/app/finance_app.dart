@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/theme_mode_provider.dart';
 import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
+import '../../features/ai_assistant/data/ai_assistant_client.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/backup/data/transaction_json_import_service.dart';
 import '../../features/notifications/notification_navigation_controller.dart';
@@ -31,6 +32,7 @@ class FinanceApp extends ConsumerStatefulWidget {
     this.parseReceipt,
     this.transactionImportService,
     this.aiAssistantMessageStream,
+    this.profileAiAssistantClient,
   });
 
   final bool enableAuth;
@@ -44,6 +46,7 @@ class FinanceApp extends ConsumerStatefulWidget {
   final ReceiptParseHandler? parseReceipt;
   final TransactionJsonImportService? transactionImportService;
   final AiAssistantMessageStream? aiAssistantMessageStream;
+  final AiAssistantAccessClient? profileAiAssistantClient;
 
   @override
   ConsumerState<FinanceApp> createState() => _FinanceAppState();
@@ -81,6 +84,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
         scanReceipt: widget.scanReceipt,
         transactionImportService: widget.transactionImportService,
         aiAssistantMessageStream: widget.aiAssistantMessageStream,
+        profileAiAssistantClient: widget.profileAiAssistantClient,
       );
 
       final router = _router;
