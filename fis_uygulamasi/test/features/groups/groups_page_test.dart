@@ -2,6 +2,7 @@ import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
 import 'package:app_main/features/groups/data/fake_group_repository.dart';
+import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:app_main/features/groups/presentation/groups_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,7 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../fixtures/group_fixtures.dart';
 
 void main() {
-  testWidgets('grup kartında ad ve üye sayısı gösterilir', (tester) async {
+  testWidgets('grup kartında ad, üye sayısı ve borç durumu gösterilir', (
+    tester,
+  ) async {
     final repository = FakeGroupRepository(
       groups: const [twoMemberGroup],
       debtSummariesByGroup: const {
@@ -23,6 +26,44 @@ void main() {
     expect(find.text('Ev Arkadaşları'), findsOneWidget);
     expect(find.text('2 üye'), findsOneWidget);
     expect(find.textContaining('borç'), findsOneWidget);
+  });
+
+  testWidgets('alacaklı kullanıcının net durumu gösterilir', (tester) async {
+    final repository = FakeGroupRepository(
+      groups: const [twoMemberGroup],
+      debtSummariesByGroup: const {
+        twoMemberGroupId: currentUserCreditorDebtSummary,
+      },
+    );
+
+    await _pumpGroupsPage(tester, repository);
+
+    expect(find.textContaining('alacak'), findsOneWidget);
+  });
+
+  testWidgets('net tutar sıfırsa dengede durumu gösterilir', (tester) async {
+    const balancedSummary = DebtSummary(
+      groupId: twoMemberGroupId,
+      currency: 'TRY',
+      balances: [
+        DebtBalance(
+          userId: currentUserId,
+          displayName: 'Zafer Tuna',
+          netAmountInMinor: 0,
+        ),
+      ],
+      suggestedTransfers: [],
+      generatedAt: '2026-08-11T09:05:00Z',
+    );
+
+    final repository = FakeGroupRepository(
+      groups: const [twoMemberGroup],
+      debtSummariesByGroup: const {twoMemberGroupId: balancedSummary},
+    );
+
+    await _pumpGroupsPage(tester, repository);
+
+    expect(find.text('Dengede'), findsOneWidget);
   });
 
   testWidgets('grup yoksa empty state gösterilir', (tester) async {
@@ -55,6 +96,28 @@ void main() {
     await tester.pump();
 
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('debt summary yüklenirken net durum metni gösterilir', (
+    tester,
+  ) async {
+    final repository = FakeGroupRepository(groups: const [twoMemberGroup]);
+
+    await _pumpGroupsPage(
+      tester,
+      repository,
+      debtSummaryRepository: _DelayedDebtSummaryRepository(
+        summary: currentUserDebtorDebtSummary,
+      ),
+      settle: false,
+    );
+    await tester.pump();
+
+    expect(find.text('Hesaplanıyor…'), findsOneWidget);
+
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pumpAndSettle();
   });
@@ -69,6 +132,31 @@ void main() {
     expect(find.text('Tekrar dene'), findsOneWidget);
   });
 
+  testWidgets('Tekrar dene listeyi yeniden yükler', (tester) async {
+    final repository = _RetryingGroupRepository(groups: const [twoMemberGroup]);
+
+    await _pumpGroupsPage(tester, repository);
+
+    expect(find.text('Gruplar yüklenemedi'), findsOneWidget);
+
+    await tester.tap(find.text('Tekrar dene'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ev Arkadaşları'), findsOneWidget);
+  });
+
+  testWidgets('debt summary hatası net durum alanında gösterilir', (
+    tester,
+  ) async {
+    await _pumpGroupsPage(
+      tester,
+      FakeGroupRepository(groups: const [twoMemberGroup]),
+      debtSummaryRepository: const _FailingDebtSummaryRepository(),
+    );
+
+    expect(find.text('Alınamadı'), findsOneWidget);
+  });
+
   testWidgets('boş grup adı için validasyon gösterilir', (tester) async {
     await _pumpGroupsPage(tester, FakeGroupRepository());
 
@@ -79,6 +167,22 @@ void main() {
     await tester.pump();
 
     expect(find.text('Grup adı boş bırakılamaz.'), findsOneWidget);
+  });
+
+  testWidgets('grup oluşturma hatası kullanıcıya gösterilir', (tester) async {
+    await _pumpGroupsPage(tester, _CreateFailingGroupRepository());
+
+    await tester.tap(find.byKey(const Key('create_group_button')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('group_name_field')),
+      'Başarısız Grup',
+    );
+    await tester.tap(find.byKey(const Key('create_group_submit_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Grup bilgileri şu anda alınamıyor.'), findsOneWidget);
   });
 
   testWidgets('yeni grup oluşturulunca liste yenilenir', (tester) async {
@@ -101,8 +205,10 @@ void main() {
 
 Future<void> _pumpGroupsPage(
   WidgetTester tester,
-  FakeGroupRepository repository,
-) async {
+  FakeGroupRepository repository, {
+  DebtSummaryRepository? debtSummaryRepository,
+  bool settle = true,
+}) async {
   final controller = AuthSessionController(_GroupsAuthRepository());
   await controller.login('user@example.com', 'password');
 
@@ -111,12 +217,68 @@ Future<void> _pumpGroupsPage(
       overrides: [
         authSessionControllerProvider.overrideWith((ref) => controller),
         groupRepositoryProvider.overrideWithValue(repository),
+        if (debtSummaryRepository != null)
+          debtSummaryRepositoryProvider.overrideWithValue(
+            debtSummaryRepository,
+          ),
       ],
       child: const MaterialApp(home: GroupsPage()),
     ),
   );
 
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  }
+}
+
+class _RetryingGroupRepository extends FakeGroupRepository {
+  _RetryingGroupRepository({required super.groups});
+
+  bool _shouldFail = true;
+
+  @override
+  Future<GroupsResponse> listGroups({bool includeArchived = false}) async {
+    if (_shouldFail) {
+      _shouldFail = false;
+      throw groupsApiErrorException;
+    }
+
+    return super.listGroups(includeArchived: includeArchived);
+  }
+}
+
+class _CreateFailingGroupRepository extends FakeGroupRepository {
+  @override
+  Future<GroupDetail> createGroup({
+    required String name,
+    String? description,
+    String currency = 'TRY',
+  }) async {
+    throw groupsApiErrorException;
+  }
+}
+
+class _DelayedDebtSummaryRepository implements DebtSummaryRepository {
+  const _DelayedDebtSummaryRepository({required this.summary});
+
+  final DebtSummary summary;
+
+  @override
+  Future<DebtSummary> getDebtSummary(String groupId) {
+    return Future<DebtSummary>.delayed(
+      const Duration(milliseconds: 100),
+      () => summary,
+    );
+  }
+}
+
+class _FailingDebtSummaryRepository implements DebtSummaryRepository {
+  const _FailingDebtSummaryRepository();
+
+  @override
+  Future<DebtSummary> getDebtSummary(String groupId) async {
+    throw groupsApiErrorException;
+  }
 }
 
 class _GroupsAuthRepository implements AuthRepositoryBase {
