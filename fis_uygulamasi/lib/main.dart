@@ -14,6 +14,7 @@ import 'features/notifications/daily_budget_reminder_service.dart';
 import 'features/notifications/notification_navigation_controller.dart';
 import 'features/notifications/notification_preferences.dart';
 import 'features/notifications/notification_providers.dart';
+import 'features/groups/data/fake_group_repository.dart';
 import 'features/sync/application/offline_first_transaction_writer.dart';
 import 'features/sync/application/sync_coordinator.dart';
 import 'src/app/finance_app.dart';
@@ -36,6 +37,7 @@ Future<void> main() async {
       overrides: [
         isarProvider.overrideWithValue(isar),
         dailyBudgetReminderServiceProvider.overrideWithValue(reminderService),
+        groupRepositoryProvider.overrideWithValue(FakeGroupRepository.sample()),
       ],
       child: _AppBootstrap(
         notificationNavigationController: notificationNavigationController,

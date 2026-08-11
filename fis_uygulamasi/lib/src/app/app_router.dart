@@ -9,6 +9,14 @@ import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
 import '../../features/ai_assistant/presentation/assistant_access_gate.dart';
 import '../../features/sync/application/sync_coordinator.dart';
 import '../../features/categories/presentation/category_management_page.dart';
+import '../../features/groups/presentation/pages/create_group_page.dart';
+import '../../features/groups/presentation/pages/fast_split_page.dart';
+import '../../features/groups/presentation/pages/group_detail_page.dart';
+import '../../features/groups/presentation/pages/group_receipt_capture_page.dart';
+import '../../features/groups/presentation/pages/group_receipt_review_page.dart';
+import '../../features/groups/presentation/pages/groups_page.dart';
+import '../../features/groups/presentation/pages/itemized_split_page.dart';
+import '../../features/groups/domain/prepared_group_receipt.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/auth/presentation/views/forgot_password_page.dart';
 import '../../features/auth/presentation/views/email_verification_page.dart';
@@ -45,12 +53,17 @@ GoRouter createAppRouter({
         '/forgot-password',
         '/verify-email',
       }.contains(location);
-      final isProtectedPage = {
-        '/home',
-        '/profile',
-        '/categories',
-        NotificationNavigationController.expenseReceiptRoute,
-      }.contains(location);
+      final isProtectedPage =
+          {
+            '/home',
+            '/profile',
+            '/categories',
+            NotificationNavigationController.expenseReceiptRoute,
+          }.contains(location) ||
+          location == '/groups' ||
+          location.startsWith('/groups/');
+      final isGroupsPage =
+          location == '/groups' || location.startsWith('/groups/');
 
       if (auth.status == AuthStatus.initializing) {
         return location == '/startup' || location == '/verify-email'
@@ -64,8 +77,17 @@ GoRouter createAppRouter({
       if (auth.status == AuthStatus.unauthenticated && isProtectedPage) {
         return '/welcome';
       }
+      if (auth.status == AuthStatus.guest && isGroupsPage) {
+        return '/login?redirect=${Uri.encodeComponent(state.uri.toString())}';
+      }
       if (auth.status == AuthStatus.authenticated &&
           (isAuthPage || location == '/startup')) {
+        final intendedRoute = state.uri.queryParameters['redirect'];
+        if (intendedRoute != null &&
+            (intendedRoute == '/groups' ||
+                intendedRoute.startsWith('/groups/'))) {
+          return intendedRoute;
+        }
         return '/home';
       }
       if (auth.status == AuthStatus.guest &&
@@ -77,7 +99,14 @@ GoRouter createAppRouter({
     routes: [
       GoRoute(path: '/startup', builder: (_, _) => const StartupPage()),
       GoRoute(path: '/welcome', builder: (_, _) => const WelcomePage()),
-      GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
+      GoRoute(
+        path: '/login',
+        builder: (_, state) => LoginPage(
+          redirectPath: _safeGroupRedirect(
+            state.uri.queryParameters['redirect'],
+          ),
+        ),
+      ),
       GoRoute(path: '/register', builder: (_, _) => const RegisterPage()),
       GoRoute(
         path: '/forgot-password',
@@ -136,8 +165,71 @@ GoRouter createAppRouter({
         path: '/categories',
         builder: (_, _) => const CategoryManagementPage(),
       ),
+      GoRoute(path: '/groups', builder: (_, _) => const GroupsPage()),
+      GoRoute(
+        path: '/groups/create',
+        builder: (_, _) => const CreateGroupPage(),
+      ),
+      GoRoute(
+        path: '/groups/:groupId',
+        builder: (_, state) =>
+            GroupDetailPage(groupId: state.pathParameters['groupId']!),
+      ),
+      GoRoute(
+        path: '/groups/:groupId/expenses/new',
+        builder: (_, state) {
+          final parser = ReceiptParserClient(
+            apiClient: ref.read(apiClientProvider),
+          );
+          return GroupReceiptCapturePage(
+            groupId: state.pathParameters['groupId']!,
+            scanReceipt: scanReceipt,
+            parseReceipt: parser.parse,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/groups/:groupId/receipt/review',
+        builder: (_, state) => GroupReceiptReviewPage(
+          groupId: state.pathParameters['groupId']!,
+          receipt: _preparedReceiptFromExtra(state.extra),
+        ),
+      ),
+      GoRoute(
+        path: '/groups/:groupId/split/itemized',
+        builder: (_, state) => ItemizedSplitPage(
+          groupId: state.pathParameters['groupId']!,
+          receipt: _preparedReceiptFromExtra(state.extra),
+        ),
+      ),
+      GoRoute(
+        path: '/groups/:groupId/split/fast',
+        builder: (_, state) => FastSplitPage(
+          groupId: state.pathParameters['groupId']!,
+          receipt: _preparedReceiptFromExtra(state.extra),
+        ),
+      ),
     ],
   );
+}
+
+PreparedGroupReceipt _preparedReceiptFromExtra(Object? extra) {
+  if (extra is PreparedGroupReceipt) return extra;
+  if (extra is TransactionDraft) return PreparedGroupReceipt(draft: extra);
+  return const PreparedGroupReceipt(
+    draft: TransactionDraft(
+      institutionName: '',
+      category: 'Diğer',
+      amountInMinor: null,
+    ),
+  );
+}
+
+String? _safeGroupRedirect(String? value) {
+  if (value == '/groups' || (value?.startsWith('/groups/') ?? false)) {
+    return value;
+  }
+  return null;
 }
 
 class _FinanceDataHost extends ConsumerStatefulWidget {
@@ -213,6 +305,7 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
           parseReceipt: widget.parseReceipt,
           parseReceiptImage: widget.parseReceiptImage,
           onProfilePressed: () => context.push('/profile'),
+          onGroupsPressed: () => context.push('/groups'),
           pendingOfflineTaskCount: pendingTaskCount,
           enableAccountMenu: true,
           enablePersistentSavings: widget.enableDatabaseFeatures,

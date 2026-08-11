@@ -25,6 +25,7 @@ class FinanceHome extends StatefulWidget {
     this.parseReceipt,
     this.parseReceiptImage,
     this.onProfilePressed,
+    this.onGroupsPressed,
     this.pendingOfflineTaskCount = 0,
     this.enableAccountMenu = false,
     this.enablePersistentSavings = false,
@@ -40,6 +41,7 @@ class FinanceHome extends StatefulWidget {
   final ReceiptParseHandler? parseReceipt;
   final ReceiptImageParseHandler? parseReceiptImage;
   final VoidCallback? onProfilePressed;
+  final VoidCallback? onGroupsPressed;
   final int pendingOfflineTaskCount;
   final bool enableAccountMenu;
   final bool enablePersistentSavings;
@@ -117,7 +119,10 @@ class _FinanceHomeState extends State<FinanceHome> {
         });
       },
       drawer: widget.enableAccountMenu
-          ? AppDrawer(onProfilePressed: widget.onProfilePressed ?? () {})
+          ? AppDrawer(
+              onProfilePressed: widget.onProfilePressed ?? () {},
+              onGroupsPressed: widget.onGroupsPressed,
+            )
           : null,
       notificationCount: widget.pendingOfflineTaskCount,
       onNotificationsPressed: () => _showSynchronizationStatus(context),

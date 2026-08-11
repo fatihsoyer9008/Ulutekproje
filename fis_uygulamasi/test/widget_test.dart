@@ -3,6 +3,8 @@ import 'package:app_main/core/database/database_providers.dart';
 import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
+import 'package:app_main/features/groups/data/fake_group_repository.dart';
+import 'package:app_main/features/groups/presentation/pages/groups_page.dart';
 import 'package:app_main/src/app/finance_app.dart';
 import 'package:app_main/src/app/finance_home.dart';
 import 'package:app_main/src/screens/expense_screen.dart';
@@ -118,6 +120,77 @@ void main() {
       find.text('2 adet fiş senkronize edilmeyi bekliyor.'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('drawer Gruplarım seçeneği grup listesine yönlendirir', (
+    tester,
+  ) async {
+    final authController = AuthSessionController(
+      _AlwaysAuthenticatedRepository(),
+    );
+    await authController.login('user@example.com', 'password');
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authSessionControllerProvider.overrideWith((ref) => authController),
+          groupRepositoryProvider.overrideWithValue(FakeGroupRepository()),
+        ],
+        child: FinanceApp(
+          enableAuth: true,
+          transactionStream: Stream.value(const <TransactionEntity>[]),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('app_menu_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('drawer_groups_tile')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GroupsPage), findsOneWidget);
+    expect(find.text('Gruplarım'), findsOneWidget);
+  });
+
+  testWidgets('misafir Gruplarım seçeneğinde giriş ekranına yönlenir', (
+    tester,
+  ) async {
+    final authController = AuthSessionController(
+      _AlwaysAuthenticatedRepository(),
+    )..continueAsGuest();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authSessionControllerProvider.overrideWith((ref) => authController),
+          groupRepositoryProvider.overrideWithValue(FakeGroupRepository()),
+        ],
+        child: FinanceApp(
+          enableAuth: true,
+          transactionStream: Stream.value(const <TransactionEntity>[]),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('app_menu_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('drawer_groups_tile')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('login_submit_button')), findsOneWidget);
+    expect(find.byType(GroupsPage), findsNothing);
+
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      'user@example.com',
+    );
+    await tester.enterText(find.byType(TextFormField).at(1), 'password');
+    await tester.tap(find.byKey(const Key('login_submit_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GroupsPage), findsOneWidget);
   });
 
   testWidgets('transaction stream is recreated after logout and login', (

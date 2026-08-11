@@ -1,85 +1,19 @@
 import 'dart:convert';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:finance_database/finance_database.dart';
 
+import '../domain/group_expense_requests.dart';
 import '../domain/group_models.dart';
+import '../domain/prepared_group_receipt.dart';
+import '../domain/split_calculator.dart';
+import 'group_mock_data.dart';
+import 'group_repository.dart';
 
-abstract interface class GroupRepository {
-  Future<GroupsResponse> listGroups({bool includeArchived = false});
-
-  Future<GroupDetail> getGroup(String groupId);
-
-  Future<GroupDetail> createGroup({
-    required String name,
-    String? description,
-    String currency = 'TRY',
-  });
-
-  Future<GroupDetail> updateGroup({
-    required String groupId,
-    String? name,
-    String? description,
-    bool clearDescription = false,
-  });
-
-  Future<void> archiveGroup(String groupId);
-
-  Future<GroupMember> addMember({
-    required String groupId,
-    required String userId,
-    required String displayName,
-    GroupRole role = GroupRole.member,
-  });
-
-  Future<List<GroupExpense>> listExpenses(String groupId);
-
-  Future<GroupExpense> getExpense({
-    required String groupId,
-    required String expenseId,
-  });
-
-  Future<GroupExpense> createExpense(
-    GroupExpense expense, {
-    required String idempotencyKey,
-  });
-
-  Future<DebtSummary> getDebtSummary(String groupId);
-
-  Future<List<Settlement>> listSettlements(String groupId);
-
-  Future<Settlement> createSettlement(
-    Settlement settlement, {
-    required String idempotencyKey,
-  });
-}
-
-final groupRepositoryProvider = Provider<GroupRepository>(
-  (ref) => FakeGroupRepository(),
-);
-
-final groupsProvider = FutureProvider<GroupsResponse>(
-  (ref) => ref.watch(groupRepositoryProvider).listGroups(),
-);
-
-final groupDetailProvider = FutureProvider.family<GroupDetail, String>(
-  (ref, groupId) => ref.watch(groupRepositoryProvider).getGroup(groupId),
-);
-
-final groupExpensesProvider = FutureProvider.family<List<GroupExpense>, String>(
-  (ref, groupId) => ref.watch(groupRepositoryProvider).listExpenses(groupId),
-);
-
-final groupDebtSummaryProvider = FutureProvider.family<DebtSummary, String>(
-  (ref, groupId) => ref.watch(groupRepositoryProvider).getDebtSummary(groupId),
-);
-
-final groupSettlementsProvider =
-    FutureProvider.family<List<Settlement>, String>(
-      (ref, groupId) =>
-          ref.watch(groupRepositoryProvider).listSettlements(groupId),
-    );
+export 'group_repository.dart';
 
 class FakeGroupRepository implements GroupRepository {
+  factory FakeGroupRepository.sample() => _createDefaultFakeGroupRepository();
+
   FakeGroupRepository({
     this.currentUserId = '00000000-0000-4000-8000-000000000001',
     this.currentUserDisplayName = 'Aktif Kullanıcı',
@@ -132,8 +66,13 @@ class FakeGroupRepository implements GroupRepository {
       <String, _IdempotentValue<GroupExpense>>{};
   final Map<String, _IdempotentValue<Settlement>> _settlementRequests =
       <String, _IdempotentValue<Settlement>>{};
+  final Map<String, Map<String, int>> _preparedReceiptLineAmounts =
+      <String, Map<String, int>>{};
 
   int _nextGroupSequence = 100;
+  int _nextReceiptSequence = 100;
+  int _nextReceiptLineSequence = 100;
+  int _nextExpenseSequence = 100;
 
   @override
   Future<GroupsResponse> listGroups({bool includeArchived = false}) async {
@@ -356,17 +295,50 @@ class FakeGroupRepository implements GroupRepository {
   }
 
   @override
-  Future<GroupExpense> createExpense(
-    GroupExpense expense, {
+  Future<PreparedGroupReceipt> prepareReceiptForSharing(
+    TransactionDraft draft,
+  ) async {
+    await _beforeRequest();
+    final receiptId = _newReceiptId();
+    final lineItemIds = <String?>[];
+    final lineAmounts = <String, int>{};
+    for (final item in draft.receiptItems) {
+      if (item.name.trim().isEmpty) {
+        lineItemIds.add(null);
+        continue;
+      }
+      final lineItemId = _newReceiptLineItemId();
+      lineItemIds.add(lineItemId);
+      lineAmounts[lineItemId] =
+          item.totalAmountInMinor ??
+          item.priceMinor ??
+          item.unitPriceInMinor ??
+          0;
+    }
+    _preparedReceiptLineAmounts[receiptId] = lineAmounts;
+    return PreparedGroupReceipt(
+      draft: draft,
+      cloudReceiptId: receiptId,
+      cloudLineItemIds: List<String?>.unmodifiable(lineItemIds),
+    );
+  }
+
+  @override
+  Future<GroupExpense> createExpense({
+    required String groupId,
+    required CreateGroupExpenseRequest request,
     required String idempotencyKey,
   }) async {
     await _beforeRequest();
-    final group = _requireGroup(expense.groupId);
+    final group = _requireGroup(groupId);
     _requireCurrentUserMembership(group);
     _validateIdempotencyKey(idempotencyKey);
-    _validateExpense(group, expense);
+    _validateCommonExpenseRequest(group, request);
 
-    final fingerprint = jsonEncode(expense.toJson());
+    final fingerprint = jsonEncode(<String, Object?>{
+      'group_id': groupId,
+      ...request.toJson(),
+    });
     final existing = _expenseRequests[idempotencyKey];
     if (existing != null) {
       if (existing.fingerprint != fingerprint) {
@@ -375,10 +347,33 @@ class FakeGroupRepository implements GroupRepository {
       return GroupExpense.fromJson(existing.value.toJson());
     }
 
-    final stored = GroupExpense.fromJson(expense.toJson());
-    _expensesByGroup
-        .putIfAbsent(expense.groupId, () => <GroupExpense>[])
-        .add(stored);
+    final expenseId = _newExpenseId();
+    final split = _buildSplitResult(
+      group: group,
+      request: request,
+      expenseId: expenseId,
+    );
+    final timestamp = _timestamp();
+    final stored = GroupExpense(
+      id: expenseId,
+      groupId: groupId,
+      receiptId: request.receiptId,
+      payerUserId: request.payerUserId,
+      createdBy: currentUserId,
+      title: request.title.trim(),
+      note: request.note,
+      expenseDate: request.expenseDate,
+      totalAmountInMinor: request.totalAmountInMinor,
+      currency: request.currency,
+      splitType: request.split.type,
+      isFinanciallyLocked: false,
+      shares: split.shares,
+      lineItemAssignments: split.lineItemAssignments,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      deletedAt: null,
+    );
+    _expensesByGroup.putIfAbsent(groupId, () => <GroupExpense>[]).add(stored);
     _expenseRequests[idempotencyKey] = _IdempotentValue<GroupExpense>(
       fingerprint: fingerprint,
       value: stored,
@@ -505,42 +500,190 @@ class FakeGroupRepository implements GroupRepository {
     }
   }
 
-  void _validateExpense(GroupDetail group, GroupExpense expense) {
-    final shareTotal = expense.shares.fold<int>(
-      0,
-      (total, share) => total + share.amountInMinor,
-    );
-    final hasInvalidShare = expense.shares.any(
-      (share) =>
-          share.expenseId != expense.id ||
-          share.amountInMinor < 0 ||
-          share.status != ShareStatus.open ||
-          share.settledAt != null ||
-          !_isActiveMember(group, share.userId),
-    );
-    final hasInvalidAssignment = expense.lineItemAssignments.any(
-      (assignment) =>
-          assignment.expenseId != expense.id ||
-          assignment.amountInMinor < 0 ||
-          !_isActiveMember(group, assignment.userId),
-    );
-    if (expense.totalAmountInMinor <= 0 ||
-        expense.currency != group.currency ||
-        !_isActiveMember(group, expense.payerUserId) ||
-        shareTotal != expense.totalAmountInMinor ||
-        hasInvalidShare ||
-        hasInvalidAssignment ||
-        (expense.splitType == SplitType.itemized &&
-            expense.receiptId == null) ||
-        (expense.splitType != SplitType.itemized &&
-            expense.lineItemAssignments.isNotEmpty)) {
+  void _validateCommonExpenseRequest(
+    GroupDetail group,
+    CreateGroupExpenseRequest request,
+  ) {
+    if (request.title.trim().isEmpty ||
+        request.totalAmountInMinor <= 0 ||
+        request.currency != group.currency ||
+        !_isActiveMember(group, request.payerUserId) ||
+        DateTime.tryParse(request.expenseDate)?.isUtc != true) {
       throw _apiException(
-        statusCode: 422,
-        code: 'invalid_split_total',
-        message: 'Payların toplamı masraf toplamına eşit olmalıdır.',
+        statusCode: 400,
+        code: 'invalid_request',
+        message: 'Masraf bilgileri geçersiz.',
       );
     }
+    if (request.split.type == SplitType.itemized && request.receiptId == null) {
+      throw _apiException(
+        statusCode: 409,
+        code: 'receipt_not_synced',
+        message: 'Fiş buluta senkronize edilmeden kalem bazlı bölüştürülemez.',
+      );
+    }
+    if (request.receiptId case final receiptId?) {
+      if (!_preparedReceiptLineAmounts.containsKey(receiptId)) {
+        throw _apiException(
+          statusCode: 409,
+          code: 'receipt_not_synced',
+          message: 'Fiş buluta senkronize edilmemiş.',
+        );
+      }
+    }
   }
+
+  _BuiltSplitResult _buildSplitResult({
+    required GroupDetail group,
+    required CreateGroupExpenseRequest request,
+    required String expenseId,
+  }) {
+    final names = <String, String>{
+      for (final member in group.members)
+        if (member.leftAt == null) member.userId: member.displayName,
+    };
+    final amountsByUser = <String, int>{};
+    final assignments = <ReceiptLineItemAssignment>[];
+
+    void addAmount(String userId, int amountInMinor) {
+      if (!names.containsKey(userId) || amountInMinor < 0) {
+        throw _invalidSplitTotal();
+      }
+      amountsByUser[userId] = (amountsByUser[userId] ?? 0) + amountInMinor;
+    }
+
+    switch (request.split) {
+      case EqualSplitRequest(:final memberIds):
+        _validateUniqueMembers(group, memberIds);
+        final amounts = splitEqualInMinor(
+          request.totalAmountInMinor,
+          memberIds.length,
+        );
+        for (var index = 0; index < memberIds.length; index++) {
+          addAmount(memberIds[index], amounts[index]);
+        }
+      case PercentageSplitRequest(:final shares):
+        _validateUniqueMembers(
+          group,
+          shares.map((share) => share.userId).toList(growable: false),
+        );
+        final basisPoints = shares
+            .map((share) => share.percentageBasisPoints)
+            .toList(growable: false);
+        if (basisPoints.fold<int>(0, (sum, value) => sum + value) != 10000) {
+          throw _apiException(
+            statusCode: 422,
+            code: 'invalid_percentage_total',
+            message: 'Yüzde toplamı 10000 basis point olmalıdır.',
+          );
+        }
+        final amounts = splitByBasisPointsInMinor(
+          request.totalAmountInMinor,
+          basisPoints,
+        );
+        for (var index = 0; index < shares.length; index++) {
+          addAmount(shares[index].userId, amounts[index]);
+        }
+      case FixedAmountSplitRequest(:final shares):
+        _validateUniqueMembers(
+          group,
+          shares.map((share) => share.userId).toList(growable: false),
+        );
+        for (final share in shares) {
+          addAmount(share.userId, share.amountInMinor);
+        }
+      case ItemizedSplitRequest(:final lineItems, :final extraAmountShares):
+        final receiptId = request.receiptId!;
+        final preparedLines = _preparedReceiptLineAmounts[receiptId];
+        if (preparedLines == null) {
+          throw _apiException(
+            statusCode: 409,
+            code: 'receipt_not_synced',
+            message: 'Fiş buluta senkronize edilmemiş.',
+          );
+        }
+        final requestedLineIds = lineItems
+            .map((item) => item.receiptLineItemId)
+            .toSet();
+        final unassignedLineIds = preparedLines.keys
+            .where((lineId) => !requestedLineIds.contains(lineId))
+            .toList(growable: false);
+        if (unassignedLineIds.isNotEmpty ||
+            requestedLineIds.length != lineItems.length) {
+          throw GroupApiException(
+            statusCode: 422,
+            error: GroupApiError(
+              detail: GroupApiErrorDetail(
+                code: 'unassigned_line_items',
+                message: 'Atanmayan ürünler bulunuyor.',
+                unassignedReceiptLineItemIds: unassignedLineIds,
+              ),
+            ),
+          );
+        }
+        for (final lineItem in lineItems) {
+          final expectedAmount = preparedLines[lineItem.receiptLineItemId];
+          if (expectedAmount == null || lineItem.shares.isEmpty) {
+            throw _invalidSplitTotal();
+          }
+          var lineTotal = 0;
+          for (final share in lineItem.shares) {
+            addAmount(share.userId, share.amountInMinor);
+            lineTotal += share.amountInMinor;
+            assignments.add(
+              ReceiptLineItemAssignment(
+                expenseId: expenseId,
+                receiptLineItemId: lineItem.receiptLineItemId,
+                userId: share.userId,
+                amountInMinor: share.amountInMinor,
+                quantityShareMilli: share.quantityShareMilli,
+              ),
+            );
+          }
+          if (lineTotal != expectedAmount) throw _invalidSplitTotal();
+        }
+        for (final share in extraAmountShares) {
+          addAmount(share.userId, share.amountInMinor);
+        }
+    }
+
+    final total = amountsByUser.values.fold<int>(
+      0,
+      (sum, amount) => sum + amount,
+    );
+    if (amountsByUser.isEmpty || total != request.totalAmountInMinor) {
+      throw _invalidSplitTotal();
+    }
+    return _BuiltSplitResult(
+      shares: amountsByUser.entries
+          .map(
+            (entry) => ExpenseShare(
+              expenseId: expenseId,
+              userId: entry.key,
+              displayName: names[entry.key]!,
+              amountInMinor: entry.value,
+              status: ShareStatus.open,
+              settledAt: null,
+            ),
+          )
+          .toList(growable: false),
+      lineItemAssignments: assignments,
+    );
+  }
+
+  void _validateUniqueMembers(GroupDetail group, List<String> memberIds) {
+    if (memberIds.isEmpty ||
+        memberIds.toSet().length != memberIds.length ||
+        memberIds.any((userId) => !_isActiveMember(group, userId))) {
+      throw _invalidSplitTotal();
+    }
+  }
+
+  GroupApiException _invalidSplitTotal() => _apiException(
+    statusCode: 422,
+    code: 'invalid_split_total',
+    message: 'Payların toplamı masraf toplamına eşit olmalıdır.',
+  );
 
   void _validateIdempotencyKey(String key) {
     if (key.length < 8 || key.length > 128) {
@@ -565,6 +708,26 @@ class FakeGroupRepository implements GroupRepository {
     _nextGroupSequence += 1;
     return '10000000-0000-4000-8000-$suffix';
   }
+
+  String _newReceiptId() => _nextUuid('20000000', _nextReceiptSequence++);
+
+  String _newReceiptLineItemId() =>
+      _nextUuid('30000000', _nextReceiptLineSequence++);
+
+  String _newExpenseId() => _nextUuid('40000000', _nextExpenseSequence++);
+
+  String _nextUuid(String prefix, int sequence) =>
+      '$prefix-0000-4000-8000-${sequence.toString().padLeft(12, '0')}';
+}
+
+class _BuiltSplitResult {
+  const _BuiltSplitResult({
+    required this.shares,
+    required this.lineItemAssignments,
+  });
+
+  final List<ExpenseShare> shares;
+  final List<ReceiptLineItemAssignment> lineItemAssignments;
 }
 
 class _IdempotentValue<T> {
@@ -589,5 +752,23 @@ GroupApiException _apiException({
         fieldErrors: fieldErrors,
       ),
     ),
+  );
+}
+
+FakeGroupRepository _createDefaultFakeGroupRepository() {
+  return FakeGroupRepository(
+    currentUserId: currentUserId,
+    currentUserDisplayName: 'Zafer Tuna',
+    latency: const Duration(milliseconds: 250),
+    groups: const [twoMemberGroup, fourMemberGroup],
+    expensesByGroup: const {
+      twoMemberGroupId: [fastSplitTransferExpense, itemizedMarketExpense],
+    },
+    debtSummariesByGroup: const {
+      twoMemberGroupId: currentUserCreditorDebtSummary,
+    },
+    settlementsByGroup: const {
+      twoMemberGroupId: [sampleSettlement],
+    },
   );
 }

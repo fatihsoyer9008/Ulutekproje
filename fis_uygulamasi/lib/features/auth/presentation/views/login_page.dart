@@ -6,7 +6,9 @@ import '../controllers/auth_session_controller.dart';
 import '../widgets/auth_widgets.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({this.redirectPath, super.key});
+
+  final String? redirectPath;
 
   @override
   ConsumerState<LoginPage> createState() => _LoginPageState();
@@ -118,7 +120,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (!mounted) return;
     final state = ref.read(authSessionControllerProvider);
     if (success) {
-      context.go('/home');
+      context.go(widget.redirectPath ?? '/home');
     } else if (state.status == AuthStatus.emailVerificationRequired) {
       context.go('/verify-email?from=login');
     }
@@ -128,7 +130,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final success = await ref
         .read(authSessionControllerProvider.notifier)
         .signInWithGoogle();
-    if (success && mounted) context.go('/home');
+    if (success && mounted) context.go(widget.redirectPath ?? '/home');
   }
 }
 

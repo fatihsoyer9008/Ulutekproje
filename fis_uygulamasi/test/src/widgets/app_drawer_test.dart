@@ -5,6 +5,42 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('Gruplarım, Profil ve Ayarlar ve tema seçeneklerini korur', (
+    tester,
+  ) async {
+    var groupsOpened = false;
+    var profileOpened = false;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            drawer: AppDrawer(
+              onProfilePressed: () => profileOpened = true,
+              onGroupsPressed: () => groupsOpened = true,
+            ),
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: Scaffold.of(context).openDrawer,
+                child: const Text('Menü'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Menü'));
+    await tester.pumpAndSettle();
+    expect(find.text('Gruplarım'), findsOneWidget);
+    expect(find.text('Profil ve Ayarlar'), findsOneWidget);
+    expect(find.text('Tema Değiştir'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('drawer_groups_tile')));
+    await tester.pumpAndSettle();
+    expect(groupsOpened, isTrue);
+    expect(profileOpened, isFalse);
+  });
+
   testWidgets('changes theme after drawer finishes closing', (tester) async {
     final container = ProviderContainer();
     final scaffoldKey = GlobalKey<ScaffoldState>();

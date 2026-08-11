@@ -1,4 +1,5 @@
 import 'package:app_main/features/groups/data/fake_group_repository.dart';
+import 'package:app_main/features/groups/domain/group_expense_requests.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -174,11 +175,13 @@ void main() {
       );
 
       final first = await repository.createExpense(
-        fastSplitTransferExpense,
+        groupId: twoMemberGroupId,
+        request: _fastExpenseRequest(),
         idempotencyKey: 'expense-request-1',
       );
       final retry = await repository.createExpense(
-        fastSplitTransferExpense,
+        groupId: twoMemberGroupId,
+        request: _fastExpenseRequest(),
         idempotencyKey: 'expense-request-1',
       );
 
@@ -191,16 +194,15 @@ void main() {
         groups: const <GroupDetail>[twoMemberGroup],
       );
       await repository.createExpense(
-        fastSplitTransferExpense,
+        groupId: twoMemberGroupId,
+        request: _fastExpenseRequest(),
         idempotencyKey: 'expense-request-2',
       );
-      final changedJson = Map<String, Object?>.from(
-        fastSplitTransferExpense.toJson(),
-      )..['title'] = 'Değiştirilen başlık';
 
       await expectLater(
         repository.createExpense(
-          GroupExpense.fromJson(changedJson),
+          groupId: twoMemberGroupId,
+          request: _fastExpenseRequest(title: 'Değiştirilen başlık'),
           idempotencyKey: 'expense-request-2',
         ),
         throwsA(
@@ -213,4 +215,19 @@ void main() {
       );
     });
   });
+}
+
+CreateGroupExpenseRequest _fastExpenseRequest({
+  String title = 'Aylık market alışverişi',
+}) {
+  return CreateGroupExpenseRequest(
+    receiptId: null,
+    payerUserId: currentUserId,
+    title: title,
+    note: null,
+    expenseDate: '2026-08-10T12:00:00Z',
+    totalAmountInMinor: 12500,
+    currency: 'TRY',
+    split: const EqualSplitRequest(memberIds: [currentUserId, secondUserId]),
+  );
 }
