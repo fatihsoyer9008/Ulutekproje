@@ -21,6 +21,8 @@ import '../../features/backup/data/transaction_json_import_service.dart';
 import '../../core/database/database_providers.dart';
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../screens/expense_screen.dart';
+import '../../features/groups/presentation/groups_page.dart';
+
 import 'finance_home.dart';
 
 GoRouter createAppRouter({
@@ -49,6 +51,7 @@ GoRouter createAppRouter({
         '/home',
         '/profile',
         '/categories',
+        '/groups',
         NotificationNavigationController.expenseReceiptRoute,
       }.contains(location);
 
@@ -63,6 +66,9 @@ GoRouter createAppRouter({
       }
       if (auth.status == AuthStatus.unauthenticated && isProtectedPage) {
         return '/welcome';
+      }
+      if (auth.status == AuthStatus.guest && location == '/groups') {
+        return '/login';
       }
       if (auth.status == AuthStatus.authenticated &&
           (isAuthPage || location == '/startup')) {
@@ -127,15 +133,14 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/profile',
-        builder: (_, _) => ProfilePage(
-          transactionImportService: transactionImportService,
-          aiAssistantClient: AiAssistantClient(ref.read(apiClientProvider)),
-        ),
+        builder: (_, _) =>
+            ProfilePage(transactionImportService: transactionImportService),
       ),
       GoRoute(
         path: '/categories',
         builder: (_, _) => const CategoryManagementPage(),
       ),
+      GoRoute(path: '/groups', builder: (_, _) => const GroupsPage()),
     ],
   );
 }
@@ -213,6 +218,8 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
           parseReceipt: widget.parseReceipt,
           parseReceiptImage: widget.parseReceiptImage,
           onProfilePressed: () => context.push('/profile'),
+          onGroupsPressed: () => context.push('/groups'),
+          onGuestGroupsPressed: () => context.go('/login'),
           pendingOfflineTaskCount: pendingTaskCount,
           enableAccountMenu: true,
           enablePersistentSavings: widget.enableDatabaseFeatures,

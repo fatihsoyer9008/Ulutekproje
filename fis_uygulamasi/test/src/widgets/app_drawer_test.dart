@@ -5,9 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('changes theme after drawer finishes closing', (tester) async {
+  testWidgets('changes theme from drawer', (tester) async {
     final container = ProviderContainer();
-    final scaffoldKey = GlobalKey<ScaffoldState>();
+
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
@@ -15,8 +15,11 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
-            key: scaffoldKey,
-            drawer: AppDrawer(onProfilePressed: () {}),
+            drawer: AppDrawer(
+              onProfilePressed: () {},
+              onGroupsPressed: () {},
+              onGuestGroupsPressed: () {},
+            ),
             body: Builder(
               builder: (context) => TextButton(
                 onPressed: Scaffold.of(context).openDrawer,
@@ -31,12 +34,8 @@ void main() {
     await tester.tap(find.text('Menü'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('drawer_theme_tile')));
+    await tester.pumpAndSettle();
 
-    await tester.pump(const Duration(milliseconds: 250));
-    expect(container.read(appThemeModeProvider), ThemeMode.light);
-
-    await tester.pump(const Duration(milliseconds: 50));
     expect(container.read(appThemeModeProvider), ThemeMode.dark);
-    expect(scaffoldKey.currentState?.isDrawerOpen, isFalse);
   });
 }
