@@ -3,58 +3,24 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/group_models.dart';
+import 'fake_debt_summary_repository.dart';
+import 'fake_group_expense_repository.dart';
+import 'group_repository.dart';
 
-abstract interface class GroupRepository {
-  Future<GroupsResponse> listGroups({bool includeArchived = false});
-
-  Future<GroupDetail> getGroup(String groupId);
-
-  Future<GroupDetail> createGroup({
-    required String name,
-    String? description,
-    String currency = 'TRY',
-  });
-
-  Future<GroupDetail> updateGroup({
-    required String groupId,
-    String? name,
-    String? description,
-    bool clearDescription = false,
-  });
-
-  Future<void> archiveGroup(String groupId);
-
-  Future<GroupMember> addMember({
-    required String groupId,
-    required String userId,
-    required String displayName,
-    GroupRole role = GroupRole.member,
-  });
-
-  Future<List<GroupExpense>> listExpenses(String groupId);
-
-  Future<GroupExpense> getExpense({
-    required String groupId,
-    required String expenseId,
-  });
-
-  Future<GroupExpense> createExpense(
-    GroupExpense expense, {
-    required String idempotencyKey,
-  });
-
-  Future<DebtSummary> getDebtSummary(String groupId);
-
-  Future<List<Settlement>> listSettlements(String groupId);
-
-  Future<Settlement> createSettlement(
-    Settlement settlement, {
-    required String idempotencyKey,
-  });
-}
+export 'fake_debt_summary_repository.dart';
+export 'fake_group_expense_repository.dart';
+export 'group_repository.dart';
 
 final groupRepositoryProvider = Provider<GroupRepository>(
   (ref) => FakeGroupRepository(),
+);
+
+final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(
+  (ref) => FakeGroupExpenseRepository(ref.watch(groupRepositoryProvider)),
+);
+
+final debtSummaryRepositoryProvider = Provider<DebtSummaryRepository>(
+  (ref) => FakeDebtSummaryRepository(ref.watch(groupRepositoryProvider)),
 );
 
 final groupsProvider = FutureProvider<GroupsResponse>(
@@ -66,11 +32,13 @@ final groupDetailProvider = FutureProvider.family<GroupDetail, String>(
 );
 
 final groupExpensesProvider = FutureProvider.family<List<GroupExpense>, String>(
-  (ref, groupId) => ref.watch(groupRepositoryProvider).listExpenses(groupId),
+  (ref, groupId) =>
+      ref.watch(groupExpenseRepositoryProvider).listExpenses(groupId),
 );
 
 final groupDebtSummaryProvider = FutureProvider.family<DebtSummary, String>(
-  (ref, groupId) => ref.watch(groupRepositoryProvider).getDebtSummary(groupId),
+  (ref, groupId) =>
+      ref.watch(debtSummaryRepositoryProvider).getDebtSummary(groupId),
 );
 
 final groupSettlementsProvider =
