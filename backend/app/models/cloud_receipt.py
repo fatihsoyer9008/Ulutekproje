@@ -99,6 +99,11 @@ class CloudReceipt(Base):
         passive_deletes=True,
         order_by="CloudReceiptLineItem.position",
     )
+    group_expenses = relationship(
+        "GroupExpense",
+        back_populates="receipt",
+        passive_deletes=True,
+    )
 
 
 class CloudReceiptLineItem(Base):

@@ -406,7 +406,16 @@ uygulanmadan önce backend ekibi tarafından onaylanmalıdır:
 - Daha önce ayrılmış bir kullanıcı yeniden eklenirse yeni üyelik satırı
   oluşturulmaz; mevcut satır `joined_at` güncellenip `left_at = null` yapılarak
   tekrar aktifleştirilir.
-
+- `GroupExpense.payer_user_id` ve `ExpenseShare.user_id`, ortak finansal
+  geçmişi koruyan tarihsel UUID alanlarıdır ve bilinçli olarak `users.id`
+  foreign key'i değildir.
+- Masraf oluşturulurken payer ve pay sahiplerinin aktif grup üyesi olduğu
+  servis katmanında doğrulanır.
+- Kullanıcı hesabı fiziksel olarak silinse bile tarihsel UUID ve masraf/pay
+  tutarları korunur; kullanıcının e-posta, görünen ad ve diğer kişisel verileri
+  korunmaz.
+- Silinmiş kullanıcı için API `display_name` alanını `"Silinmiş kullanıcı"`
+  olarak üretir.
 ## Grup Endpointleri
 
 ### Grup Oluşturma
