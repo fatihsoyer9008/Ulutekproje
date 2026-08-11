@@ -45,10 +45,16 @@ class GroupRepository:
         group_id: uuid.UUID,
         *,
         include_members: bool = False,
+        for_update: bool = False,
     ) -> Group | None:
         statement = select(Group).where(Group.id == group_id)
         if include_members:
-            statement = statement.options(selectinload(Group.members))
+            statement = statement.options(
+                selectinload(Group.members).selectinload(GroupMember.user)
+            )
+        if for_update:
+            statement = statement.with_for_update()
+        statement = statement.execution_options(populate_existing=True)
         return await self.session.scalar(statement)
 
     async def list_for_user(
@@ -64,7 +70,11 @@ class GroupRepository:
                 GroupMember.user_id == user_id,
                 GroupMember.left_at.is_(None),
             )
+            .options(
+                selectinload(Group.members).selectinload(GroupMember.user)
+            )
             .order_by(Group.created_at, Group.id)
+            .execution_options(populate_existing=True)
         )
         if not include_archived:
             statement = statement.where(Group.archived_at.is_(None))

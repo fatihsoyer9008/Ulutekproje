@@ -2,11 +2,18 @@ import logging
 from contextlib import asynccontextmanager
 from time import perf_counter
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, status
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routers.assistant import router as assistant_router
 from app.api.routers.auth import router as auth_router
+from app.api.routers.groups import router as groups_router
 from app.api.routers.receipts import router as receipt_router
 from app.api.routers.sync import router as sync_router
 from app.core.config import settings
@@ -126,8 +133,51 @@ app = FastAPI(
 app.add_middleware(ReceiptImageBodyLimitMiddleware)
 app.include_router(assistant_router)
 app.include_router(auth_router)
+app.include_router(groups_router)
 app.include_router(receipt_router)
 app.include_router(sync_router)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def api_http_exception_handler(
+    request: Request,
+    exc: StarletteHTTPException,
+) -> Response:
+    if (
+        request.url.path == "/api/v1/groups"
+        or request.url.path.startswith("/api/v1/groups/")
+    ) and exc.status_code == status.HTTP_401_UNAUTHORIZED:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "detail": {
+                    "code": "unauthorized",
+                    "message": "Geçerli bir oturum gereklidir.",
+                }
+            },
+            headers=exc.headers,
+        )
+    return await http_exception_handler(request, exc)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+) -> Response:
+    if request.url.path == "/api/v1/groups" or request.url.path.startswith(
+        "/api/v1/groups/"
+    ):
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "detail": {
+                    "code": "invalid_request",
+                    "message": "Grup isteği geçersiz.",
+                }
+            },
+        )
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.middleware("http")
@@ -187,6 +237,7 @@ async def prevent_sensitive_response_caching(
         (
             "/api/v1/auth/",
             "/api/v1/assistant/",
+            "/api/v1/groups",
         )
     ):
         response.headers["Cache-Control"] = "no-store"
