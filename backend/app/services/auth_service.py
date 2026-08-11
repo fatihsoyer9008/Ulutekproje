@@ -19,6 +19,7 @@ from app.core.security import (
 from app.models.oauth_account import OAuthProvider
 from app.models.one_time_token import OneTimeToken, OneTimeTokenPurpose
 from app.models.user import User, UserStatus
+from app.repositories.groups import GroupRepository
 from app.repositories.oauth_accounts import OAuthAccountRepository
 from app.repositories.sessions import SessionRepository
 from app.repositories.tokens import OneTimeTokenRepository
@@ -64,6 +65,7 @@ class AuthService:
         self.db = db
         self.email_sender = email_sender
         self.users = UserRepository(db)
+        self.groups = GroupRepository(db)
         self.tokens = OneTimeTokenRepository(db)
         self.sessions = SessionRepository(db)
         self.oauth_accounts = OAuthAccountRepository(db)
@@ -261,6 +263,10 @@ class AuthService:
                 raise AccountDeletionFailed(
                     "Apple account revocation failed"
                 ) from exc
+        await self.groups.prepare_for_user_deletion(
+            user_id=user.id,
+            archived_at=utc_now(),
+        )
         await self.db.flush()
         await self.db.delete(user)
         await self.db.commit()

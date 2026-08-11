@@ -1,10 +1,11 @@
 import asyncio
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -12,8 +13,12 @@ from app.api.dependencies import get_email_sender, get_rate_limiter
 from app.core.database import Base, get_db_session
 from app.core.rate_limit import NoOpRateLimiter
 from app.main import app
+from app.models.group import Group, GroupMember, GroupRole
+from app.models.group_expense import ExpenseSplitType
 from app.models.refresh_session import RefreshSession
 from app.models.user import User
+from app.repositories.group_expenses import GroupExpenseRepository
+from app.repositories.groups import GroupRepository
 
 
 class CapturingEmailSender:
@@ -46,6 +51,13 @@ async def auth_context():
         "sqlite+aiosqlite:///:memory:",
         poolclass=StaticPool,
     )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     session_factory = async_sessionmaker(
         engine,
         class_=AsyncSession,
@@ -318,9 +330,11 @@ async def test_registration_responses_do_not_enumerate_accounts(auth_context) ->
     )
 
     assert duplicate.status_code == unknown.status_code == 202
-    assert duplicate.json() == unknown.json() == {
-        "message": "If the address is eligible, a verification email will be sent."
-    }
+    assert (
+        duplicate.json()
+        == unknown.json()
+        == {"message": "If the address is eligible, a verification email will be sent."}
+    )
     assert len(sender.verification_tokens) == sent_before_duplicate + 1
 
 
@@ -448,3 +462,244 @@ async def test_delete_account_requires_password_and_deletes_user(auth_context) -
 
     async with session_factory() as session:
         assert (await session.scalars(select(User))).one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_delete_account_transfers_owned_group_and_archives_empty_group(
+    auth_context,
+) -> None:
+    client, sender, session_factory = auth_context
+    password = "A-strong-test-password-123"
+    await _register_and_verify(client, sender, password=password)
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "user@example.com", "password": password},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    async with session_factory() as session:
+        owner = await session.scalar(
+            select(User).where(User.email == "user@example.com")
+        )
+        assert owner is not None
+        admin = User(email="successor@example.com")
+        session.add(admin)
+        await session.flush()
+
+        repository = GroupRepository(session)
+        promotable_group = await repository.create(
+            name="Devredilecek Grup",
+            created_by=owner.id,
+        )
+        await repository.add_member(
+            group_id=promotable_group.id,
+            user_id=admin.id,
+            role=GroupRole.admin,
+        )
+        empty_group = await repository.create(
+            name="Arsivlenecek Grup",
+            created_by=owner.id,
+        )
+        await session.commit()
+        owner_id = owner.id
+        admin_id = admin.id
+        promotable_group_id = promotable_group.id
+        empty_group_id = empty_group.id
+
+    deleted = await client.request(
+        "DELETE",
+        "/api/v1/auth/me",
+        headers=headers,
+        json={"current_password": password},
+    )
+    assert deleted.status_code == 204
+
+    async with session_factory() as session:
+        assert await session.get(User, owner_id) is None
+        repository = GroupRepository(session)
+        stored_promotable = await repository.get_by_id(
+            promotable_group_id,
+            include_members=True,
+        )
+        stored_empty = await repository.get_by_id(
+            empty_group_id,
+            include_members=True,
+        )
+
+        assert stored_promotable is not None
+        assert stored_promotable.created_by is None
+        assert len(stored_promotable.members) == 1
+        assert stored_promotable.members[0].user_id == admin_id
+        assert stored_promotable.members[0].role == GroupRole.owner
+
+        assert stored_empty is not None
+        assert stored_empty.created_by is None
+        assert stored_empty.archived_at is not None
+        assert stored_empty.members == []
+
+        old_memberships = list(
+            (
+                await session.scalars(
+                    select(GroupMember).where(GroupMember.user_id == owner_id)
+                )
+            ).all()
+        )
+        assert old_memberships == []
+        assert await session.get(Group, promotable_group_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_account_preserves_expense_when_user_is_payer(
+    auth_context,
+) -> None:
+    client, sender, session_factory = auth_context
+    password = "A-strong-test-password-123"
+    await _register_and_verify(client, sender, password=password)
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "user@example.com", "password": password},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    async with session_factory() as session:
+        payer = await session.scalar(
+            select(User).where(User.email == "user@example.com")
+        )
+        assert payer is not None
+
+        survivor = User(email="expense-survivor@example.com")
+        session.add(survivor)
+        await session.flush()
+
+        groups = GroupRepository(session)
+        group = await groups.create(
+            name="Korunacak Masraf Grubu",
+            created_by=payer.id,
+        )
+        await groups.add_member(
+            group_id=group.id,
+            user_id=survivor.id,
+            role=GroupRole.member,
+        )
+
+        expense = await GroupExpenseRepository(session).create(
+            group_id=group.id,
+            payer_user_id=payer.id,
+            title="Hesap silme testi",
+            note=None,
+            expense_date=datetime(2026, 8, 11, 12, 0, tzinfo=UTC),
+            total_amount_in_minor=10_000,
+            currency="TRY",
+            split_type=ExpenseSplitType.equal,
+            shares=[
+                (payer.id, 5_000),
+                (survivor.id, 5_000),
+            ],
+        )
+        await session.commit()
+
+        payer_id = payer.id
+        survivor_id = survivor.id
+        expense_id = expense.id
+
+    deleted = await client.request(
+        "DELETE",
+        "/api/v1/auth/me",
+        headers=headers,
+        json={"current_password": password},
+    )
+    assert deleted.status_code == 204
+
+    async with session_factory() as session:
+        assert await session.get(User, payer_id) is None
+
+        stored = await GroupExpenseRepository(session).get_by_id(expense_id)
+        assert stored is not None
+        assert stored.payer_user_id == payer_id
+        assert {share.user_id for share in stored.shares} == {
+            payer_id,
+            survivor_id,
+        }
+        assert sum(share.amount_in_minor for share in stored.shares) == 10_000
+
+
+@pytest.mark.asyncio
+async def test_delete_account_preserves_share_only_participant(
+    auth_context,
+) -> None:
+    client, sender, session_factory = auth_context
+    password = "A-strong-test-password-123"
+    deleting_email = "share-only@example.com"
+
+    await _register_and_verify(
+        client,
+        sender,
+        email=deleting_email,
+        password=password,
+    )
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": deleting_email, "password": password},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    async with session_factory() as session:
+        deleting_user = await session.scalar(
+            select(User).where(User.email == deleting_email)
+        )
+        assert deleting_user is not None
+
+        group_owner = User(email="share-group-owner@example.com")
+        session.add(group_owner)
+        await session.flush()
+
+        groups = GroupRepository(session)
+        group = await groups.create(
+            name="Pay Katılımcısı Grubu",
+            created_by=group_owner.id,
+        )
+        await groups.add_member(
+            group_id=group.id,
+            user_id=deleting_user.id,
+            role=GroupRole.member,
+        )
+
+        expense = await GroupExpenseRepository(session).create(
+            group_id=group.id,
+            payer_user_id=group_owner.id,
+            title="Pay sahibi silme testi",
+            note=None,
+            expense_date=datetime(2026, 8, 11, 13, 0, tzinfo=UTC),
+            total_amount_in_minor=8_000,
+            currency="TRY",
+            split_type=ExpenseSplitType.equal,
+            shares=[
+                (group_owner.id, 4_000),
+                (deleting_user.id, 4_000),
+            ],
+        )
+        await session.commit()
+
+        deleting_user_id = deleting_user.id
+        group_owner_id = group_owner.id
+        expense_id = expense.id
+
+    deleted = await client.request(
+        "DELETE",
+        "/api/v1/auth/me",
+        headers=headers,
+        json={"current_password": password},
+    )
+    assert deleted.status_code == 204
+
+    async with session_factory() as session:
+        assert await session.get(User, deleting_user_id) is None
+
+        stored = await GroupExpenseRepository(session).get_by_id(expense_id)
+        assert stored is not None
+        assert stored.payer_user_id == group_owner_id
+        assert {share.user_id for share in stored.shares} == {
+            group_owner_id,
+            deleting_user_id,
+        }
+        assert sum(share.amount_in_minor for share in stored.shares) == 8_000
