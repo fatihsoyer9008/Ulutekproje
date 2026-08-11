@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:app_main/features/groups/data/fake_group_repository.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,6 +44,31 @@ void main() {
       expect(emptyGroupsResponse.toJson(), <String, Object?>{
         'groups': <Object?>[],
       });
+    });
+
+    test('keeps raw JSON files aligned with typed fixtures', () {
+      expect(
+        _readJsonFixture('docs/fixtures/groups/group.json'),
+        Group.fromJson(twoMemberGroup.toJson()).toJson(),
+      );
+      expect(
+        _readJsonFixture('docs/fixtures/groups/group_member.json'),
+        twoMemberGroup.members[1].toJson(),
+      );
+      expect(
+        _readJsonFixture('docs/fixtures/groups/group_expense.json'),
+        fastSplitTransferExpense.toJson(),
+      );
+      expect(
+        _readJsonFixture('docs/fixtures/groups/expense_share.json'),
+        fastSplitTransferExpense.shares[1].toJson(),
+      );
+      expect(
+        _readJsonFixture(
+          'docs/fixtures/group_debts/debt_summary_2_members.json',
+        ),
+        currentUserDebtorDebtSummary.toJson(),
+      );
     });
 
     test('exposes loading and contract-shaped API error states', () {
@@ -88,6 +116,42 @@ void main() {
       final response = await container.read(groupsProvider.future);
 
       expect(response.groups.single.id, twoMemberGroupId);
+    });
+
+    test('overrides expense and debt repositories independently', () async {
+      final expenseSource = FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+        expensesByGroup: const <String, List<GroupExpense>>{
+          twoMemberGroupId: <GroupExpense>[fastSplitTransferExpense],
+        },
+      );
+      final debtSource = FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+        debtSummariesByGroup: const <String, DebtSummary>{
+          twoMemberGroupId: currentUserCreditorDebtSummary,
+        },
+      );
+      final container = ProviderContainer(
+        overrides: <Override>[
+          groupExpenseRepositoryProvider.overrideWithValue(
+            FakeGroupExpenseRepository(expenseSource),
+          ),
+          debtSummaryRepositoryProvider.overrideWithValue(
+            FakeDebtSummaryRepository(debtSource),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final expenses = await container.read(
+        groupExpensesProvider(twoMemberGroupId).future,
+      );
+      final debtSummary = await container.read(
+        groupDebtSummaryProvider(twoMemberGroupId).future,
+      );
+
+      expect(expenses.single.toJson(), fastSplitTransferExpense.toJson());
+      expect(debtSummary.toJson(), currentUserCreditorDebtSummary.toJson());
     });
 
     test('surfaces configured API errors through the async provider', () async {
@@ -213,4 +277,23 @@ void main() {
       );
     });
   });
+}
+
+Map<String, Object?> _readJsonFixture(String relativePath) {
+  var directory = Directory.current.absolute;
+  while (true) {
+    final fixture = File(
+      '${directory.path}${Platform.pathSeparator}$relativePath',
+    );
+    if (fixture.existsSync()) {
+      return Map<String, Object?>.from(
+        jsonDecode(fixture.readAsStringSync()) as Map<Object?, Object?>,
+      );
+    }
+    final parent = directory.parent;
+    if (parent.path == directory.path) {
+      throw StateError('Repository root not found for $relativePath');
+    }
+    directory = parent;
+  }
 }
