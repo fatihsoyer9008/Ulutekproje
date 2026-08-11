@@ -8,9 +8,16 @@ import '../../features/auth/presentation/controllers/auth_session_controller.dar
 const _themeChangeDelay = Duration(milliseconds: 300);
 
 class AppDrawer extends ConsumerWidget {
-  const AppDrawer({required this.onProfilePressed, super.key});
+  const AppDrawer({
+    required this.onProfilePressed,
+    required this.onGroupsPressed,
+    required this.onGuestGroupsPressed,
+    super.key,
+  });
 
   final VoidCallback onProfilePressed;
+  final VoidCallback onGroupsPressed;
+  final VoidCallback onGuestGroupsPressed;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -70,6 +77,30 @@ class AppDrawer extends ConsumerWidget {
               ),
             ),
             const Divider(height: 1),
+
+            ListTile(
+              key: const Key('drawer_groups_tile'),
+              leading: const Icon(Icons.groups_outlined),
+              title: const Text('Gruplarım'),
+              subtitle: Text(
+                isGuest
+                    ? 'Gruplarınızı görmek için giriş yapın'
+                    : 'Ortak harcamalarınızı yönetin',
+              ),
+              trailing: isGuest ? const Icon(Icons.lock_outline_rounded) : null,
+              onTap: () {
+                Navigator.of(context).pop();
+
+                if (isGuest) {
+                  onGuestGroupsPressed();
+                } else {
+                  onGroupsPressed();
+                }
+              },
+            ),
+
+            const Divider(height: 24),
+
             ListTile(
               key: const Key('drawer_profile_tile'),
               leading: const Icon(Icons.person_outline_rounded),
