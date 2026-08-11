@@ -91,3 +91,15 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    created_groups = relationship(
+        "Group",
+        back_populates="creator",
+        passive_deletes=True,
+        foreign_keys="Group.created_by",
+    )
+    group_memberships = relationship(
+        "GroupMember",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
