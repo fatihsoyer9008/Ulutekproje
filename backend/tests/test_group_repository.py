@@ -4,13 +4,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import pytest_asyncio
 from sqlalchemy import event, func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
 from app.models import GroupMember, GroupRole, User
-from app.repositories.groups import GroupRepository
+from app.repositories.groups import GroupMemberAlreadyExists, GroupRepository
 
 
 @pytest_asyncio.fixture
@@ -74,15 +73,61 @@ async def test_create_group_adds_creator_as_owner(
 
 
 @pytest.mark.asyncio
-async def test_group_member_pair_is_unique(repository_context) -> None:
+async def test_active_group_member_cannot_be_added_twice(repository_context) -> None:
     session, repository, owner, _, member = repository_context
     group = await repository.create(name="Test Grubu", created_by=owner.id)
     await repository.add_member(group_id=group.id, user_id=member.id)
     await session.commit()
 
-    with pytest.raises(IntegrityError):
+    with pytest.raises(
+        GroupMemberAlreadyExists,
+        match="member_already_exists",
+    ):
         await repository.add_member(group_id=group.id, user_id=member.id)
-    await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_former_group_member_is_reactivated_in_place(
+    repository_context,
+) -> None:
+    session, repository, owner, _, member = repository_context
+    group = await repository.create(name="Yeniden Katilma", created_by=owner.id)
+    membership = await repository.add_member(
+        group_id=group.id,
+        user_id=member.id,
+    )
+    await session.commit()
+
+    left_at = datetime(2026, 8, 10, 10, 0, tzinfo=UTC)
+    await repository.mark_member_left(
+        group_id=group.id,
+        user_id=member.id,
+        left_at=left_at,
+    )
+    await session.commit()
+
+    rejoined_at = datetime(2026, 8, 11, 9, 30, tzinfo=UTC)
+    reactivated = await repository.add_member(
+        group_id=group.id,
+        user_id=member.id,
+        role=GroupRole.admin,
+        joined_at=rejoined_at,
+    )
+    await session.commit()
+
+    assert reactivated is membership
+    assert reactivated.left_at is None
+    assert reactivated.joined_at == rejoined_at
+    assert reactivated.role == GroupRole.admin
+    membership_count = await session.scalar(
+        select(func.count())
+        .select_from(GroupMember)
+        .where(
+            GroupMember.group_id == group.id,
+            GroupMember.user_id == member.id,
+        )
+    )
+    assert membership_count == 1
 
 
 @pytest.mark.asyncio

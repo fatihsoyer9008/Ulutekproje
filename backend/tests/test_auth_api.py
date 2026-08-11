@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -12,8 +12,10 @@ from app.api.dependencies import get_email_sender, get_rate_limiter
 from app.core.database import Base, get_db_session
 from app.core.rate_limit import NoOpRateLimiter
 from app.main import app
+from app.models.group import Group, GroupMember, GroupRole
 from app.models.refresh_session import RefreshSession
 from app.models.user import User
+from app.repositories.groups import GroupRepository
 
 
 class CapturingEmailSender:
@@ -46,6 +48,13 @@ async def auth_context():
         "sqlite+aiosqlite:///:memory:",
         poolclass=StaticPool,
     )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     session_factory = async_sessionmaker(
         engine,
         class_=AsyncSession,
@@ -448,3 +457,87 @@ async def test_delete_account_requires_password_and_deletes_user(auth_context) -
 
     async with session_factory() as session:
         assert (await session.scalars(select(User))).one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_delete_account_transfers_owned_group_and_archives_empty_group(
+    auth_context,
+) -> None:
+    client, sender, session_factory = auth_context
+    password = "A-strong-test-password-123"
+    await _register_and_verify(client, sender, password=password)
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "user@example.com", "password": password},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    async with session_factory() as session:
+        owner = await session.scalar(
+            select(User).where(User.email == "user@example.com")
+        )
+        assert owner is not None
+        admin = User(email="successor@example.com")
+        session.add(admin)
+        await session.flush()
+
+        repository = GroupRepository(session)
+        promotable_group = await repository.create(
+            name="Devredilecek Grup",
+            created_by=owner.id,
+        )
+        await repository.add_member(
+            group_id=promotable_group.id,
+            user_id=admin.id,
+            role=GroupRole.admin,
+        )
+        empty_group = await repository.create(
+            name="Arsivlenecek Grup",
+            created_by=owner.id,
+        )
+        await session.commit()
+        owner_id = owner.id
+        admin_id = admin.id
+        promotable_group_id = promotable_group.id
+        empty_group_id = empty_group.id
+
+    deleted = await client.request(
+        "DELETE",
+        "/api/v1/auth/me",
+        headers=headers,
+        json={"current_password": password},
+    )
+    assert deleted.status_code == 204
+
+    async with session_factory() as session:
+        assert await session.get(User, owner_id) is None
+        repository = GroupRepository(session)
+        stored_promotable = await repository.get_by_id(
+            promotable_group_id,
+            include_members=True,
+        )
+        stored_empty = await repository.get_by_id(
+            empty_group_id,
+            include_members=True,
+        )
+
+        assert stored_promotable is not None
+        assert stored_promotable.created_by is None
+        assert len(stored_promotable.members) == 1
+        assert stored_promotable.members[0].user_id == admin_id
+        assert stored_promotable.members[0].role == GroupRole.owner
+
+        assert stored_empty is not None
+        assert stored_empty.created_by is None
+        assert stored_empty.archived_at is not None
+        assert stored_empty.members == []
+
+        old_memberships = list(
+            (
+                await session.scalars(
+                    select(GroupMember).where(GroupMember.user_id == owner_id)
+                )
+            ).all()
+        )
+        assert old_memberships == []
+        assert await session.get(Group, promotable_group_id) is not None

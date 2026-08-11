@@ -5,6 +5,8 @@ import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
+from app.models import GroupMember
+
 MIGRATION_PATH = (
     Path(__file__).resolve().parents[1]
     / "alembic"
@@ -68,6 +70,20 @@ def test_group_migration_upgrade_and_downgrade() -> None:
             "group_id",
             "user_id",
         ]
+        member_columns = {
+            column["name"]: column
+            for column in inspector.get_columns("group_members")
+        }
+        assert member_columns["role"]["type"].length == 16
+        assert GroupMember.__table__.c.role.type.length == 16
+        model_role_check = next(
+            constraint
+            for constraint in GroupMember.__table__.constraints
+            if constraint.name == "ck_group_members_role"
+        )
+        assert "owner" in str(model_role_check.sqltext)
+        assert "admin" in str(model_role_check.sqltext)
+        assert "member" in str(model_role_check.sqltext)
 
         group_foreign_keys = {
             tuple(foreign_key["constrained_columns"]): foreign_key

@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -70,6 +71,10 @@ class Group(Base):
 class GroupMember(Base):
     __tablename__ = "group_members"
     __table_args__ = (
+        CheckConstraint(
+            "role IN ('owner', 'admin', 'member')",
+            name="ck_group_members_role",
+        ),
         Index("ix_group_members_user_id", "user_id"),
         Index("ix_group_members_group_left_at", "group_id", "left_at"),
     )
@@ -89,8 +94,9 @@ class GroupMember(Base):
             GroupRole,
             name="ck_group_members_role",
             native_enum=False,
-            create_constraint=True,
+            create_constraint=False,
             validate_strings=True,
+            length=16,
         ),
         nullable=False,
         default=GroupRole.member,

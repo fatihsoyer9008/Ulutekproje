@@ -1,11 +1,15 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.group import Group, GroupMember, GroupRole
+
+
+class GroupMemberAlreadyExists(ValueError):
+    """Raised when an active membership already exists for the user."""
 
 
 class GroupRepository:
@@ -72,12 +76,25 @@ class GroupRepository:
         group_id: uuid.UUID,
         user_id: uuid.UUID,
         role: GroupRole = GroupRole.member,
+        joined_at: datetime | None = None,
     ) -> GroupMember:
+        existing = await self.get_member(group_id=group_id, user_id=user_id)
+        if existing is not None:
+            if existing.left_at is None:
+                raise GroupMemberAlreadyExists("member_already_exists")
+            existing.left_at = None
+            existing.joined_at = joined_at or datetime.now(UTC)
+            existing.role = role
+            await self.session.flush()
+            return existing
+
         member = GroupMember(
             group_id=group_id,
             user_id=user_id,
             role=role,
         )
+        if joined_at is not None:
+            member.joined_at = joined_at
         self.session.add(member)
         await self.session.flush()
         return member
