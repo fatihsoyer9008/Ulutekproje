@@ -12,3 +12,6 @@ skills-lock.json
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local Dart/Flutter tool state
+/.dart-localappdata/

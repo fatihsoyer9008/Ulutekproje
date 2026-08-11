@@ -409,8 +409,15 @@ uygulanmadan önce backend ekibi tarafından onaylanmalıdır:
 - `GroupExpense.payer_user_id` ve `ExpenseShare.user_id`, ortak finansal
   geçmişi koruyan tarihsel UUID alanlarıdır ve bilinçli olarak `users.id`
   foreign key'i değildir.
-- Masraf oluşturulurken payer ve pay sahiplerinin aktif grup üyesi olduğu
-  servis katmanında doğrulanır.
+- `ExpenseLineItemAssignment.receipt_line_item_id` de tarihsel UUID olarak
+  saklanır ve bilinçli olarak `cloud_receipt_line_items.id` foreign key'i
+  değildir. Fiş, ürün veya fiş sahibi silinse bile ürün atama tutarları
+  korunur.
+- Yeni assignment yazılmadan önce receipt sahipliği, ürünün receipt'e
+  bağlılığı ve ürünün daha önce başka bir masrafta kullanılmadığı servis
+  katmanında doğrulanır.
+- Masraf oluşturulurken işlemi yapan kullanıcı, payer ve pay sahiplerinin
+  aktif grup üyesi olduğu servis katmanında doğrulanır.
 - Kullanıcı hesabı fiziksel olarak silinse bile tarihsel UUID ve masraf/pay
   tutarları korunur; kullanıcının e-posta, görünen ad ve diğer kişisel verileri
   korunmaz.
