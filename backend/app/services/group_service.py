@@ -9,7 +9,8 @@ from app.group_schemas import (
     GroupSummaryResponse,
 )
 from app.models.group import Group, GroupMember, GroupRole
-from app.repositories.groups import GroupRepository
+from app.repositories.groups import GroupMemberAlreadyExists, GroupRepository
+from app.repositories.users import UserRepository
 
 
 class GroupServiceError(ValueError):
@@ -114,6 +115,113 @@ class GroupService:
             group.updated_at = archived_at
             await self.session.commit()
 
+    async def add_member(
+        self,
+        *,
+        group_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        user_id: uuid.UUID,
+        role: GroupRole,
+    ) -> GroupMemberResponse:
+        group = await self._get_authorized_group(
+            group_id=group_id, actor_user_id=actor_user_id, for_update=True
+        )
+        actor = _active_membership(group, actor_user_id)
+        if actor is None or actor.role not in {GroupRole.admin, GroupRole.owner}:
+            raise GroupServiceError("group_forbidden")
+        if role is GroupRole.owner or (
+            role is GroupRole.admin and actor.role is not GroupRole.owner
+        ):
+            raise GroupServiceError("group_forbidden")
+        if await UserRepository(self.session).get_by_id(user_id) is None:
+            raise GroupServiceError("user_not_found")
+        try:
+            member = await self.repository.add_member(
+                group_id=group_id, user_id=user_id, role=role
+            )
+        except GroupMemberAlreadyExists:
+            raise GroupServiceError("member_already_exists") from None
+        await self.session.refresh(member, attribute_names=["user"])
+        response = _member_response(member)
+        await self.session.commit()
+        return response
+
+    async def remove_member(
+        self,
+        *,
+        group_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> None:
+        group = await self._get_authorized_group(
+            group_id=group_id, actor_user_id=actor_user_id, for_update=True
+        )
+        actor = _active_membership(group, actor_user_id)
+        target = _active_membership(group, user_id)
+        if target is None:
+            raise GroupServiceError("member_not_found")
+        if actor_user_id != user_id:
+            role_rank = {GroupRole.member: 1, GroupRole.admin: 2, GroupRole.owner: 3}
+            if actor is None or role_rank[actor.role] <= role_rank[target.role]:
+                raise GroupServiceError("group_forbidden")
+        if (
+            target.role is GroupRole.owner
+            and sum(
+                member.role is GroupRole.owner
+                for member in group.members
+                if member.left_at is None
+            )
+            == 1
+        ):
+            raise GroupServiceError("last_owner_required")
+        target.left_at = datetime.now(UTC)
+        await self.session.commit()
+
+    async def update_member_role(
+        self,
+        *,
+        group_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        user_id: uuid.UUID,
+        role: GroupRole,
+    ) -> GroupMemberResponse:
+        group = await self._get_authorized_group(
+            group_id=group_id,
+            actor_user_id=actor_user_id,
+            require_owner=True,
+            for_update=True,
+        )
+        actor = _active_membership(group, actor_user_id)
+        target = _active_membership(group, user_id)
+        if target is None:
+            raise GroupServiceError("member_not_found")
+        if target.role is role:
+            return _member_response(target)
+
+        active_owners = [
+            member
+            for member in group.members
+            if member.left_at is None and member.role is GroupRole.owner
+        ]
+        if target.role is GroupRole.owner and len(active_owners) == 1:
+            raise GroupServiceError("last_owner_required")
+
+        target.role = role
+        # A single owner's promotion of another member is an atomic transfer,
+        # rather than temporarily leaving two owners behind.
+        if (
+            role is GroupRole.owner
+            and actor is not None
+            and actor.user_id != target.user_id
+            and len(active_owners) == 1
+        ):
+            actor.role = GroupRole.admin
+
+        await self.session.flush()
+        response = _member_response(target)
+        await self.session.commit()
+        return response
+
     async def _get_authorized_group(
         self,
         *,
@@ -171,6 +279,17 @@ def _display_name(member: GroupMember) -> str:
     if member.user is None:
         return "Silinmiş kullanıcı"
     return member.user.display_name or "Kullanıcı"
+
+
+def _member_response(member: GroupMember) -> GroupMemberResponse:
+    return GroupMemberResponse(
+        group_id=member.group_id,
+        user_id=member.user_id,
+        display_name=_display_name(member),
+        role=member.role,
+        joined_at=_as_utc(member.joined_at),
+        left_at=_as_utc(member.left_at),
+    )
 
 
 def _group_summary(

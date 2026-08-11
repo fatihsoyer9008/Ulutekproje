@@ -56,6 +56,23 @@ class GroupMemberResponse(BaseModel):
     left_at: datetime | None
 
 
+class GroupMemberCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: uuid.UUID
+    role: GroupRole = GroupRole.member
+
+
+class GroupMemberRoleUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: GroupRole
+
+
+class GroupMemberEnvelope(BaseModel):
+    member: GroupMemberResponse
+
+
 class GroupSummaryResponse(BaseModel):
     id: uuid.UUID
     name: str

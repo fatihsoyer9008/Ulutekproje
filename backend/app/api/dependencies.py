@@ -12,8 +12,10 @@ from app.core.oauth_crypto import OAuthTokenCipher
 from app.core.rate_limit import RateLimiter
 from app.core.redis import get_redis
 from app.core.security import AccessTokenError, decode_access_token
+from app.models.group import GroupMember, GroupRole
 from app.models.refresh_session import RefreshSession
 from app.models.user import User, UserStatus
+from app.repositories.groups import GroupRepository
 from app.services.apple_oauth import AppleOAuthProvider
 from app.services.email_service import EmailSender, create_email_sender
 from app.services.google_oauth import GoogleOAuthVerifier
@@ -121,3 +123,72 @@ async def get_current_user(
     ):
         raise unauthorized
     return user
+
+
+async def _require_group_role(
+    *,
+    group_id: uuid.UUID,
+    user: User,
+    db: AsyncSession,
+    allowed_roles: frozenset[GroupRole],
+    message: str,
+) -> GroupMember:
+    repository = GroupRepository(db)
+    if await repository.get_by_id(group_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "group_not_found", "message": "Grup bulunamadı."},
+        )
+    membership = await repository.get_member(group_id=group_id, user_id=user.id)
+    if (
+        membership is None
+        or membership.left_at is not None
+        or membership.role not in allowed_roles
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "group_forbidden", "message": message},
+        )
+    return membership
+
+
+async def require_group_member(
+    group_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupMember:
+    return await _require_group_role(
+        group_id=group_id,
+        user=user,
+        db=db,
+        allowed_roles=frozenset(GroupRole),
+        message="Bu işlem için grubun aktif bir üyesi olmalısınız.",
+    )
+
+
+async def require_group_admin(
+    group_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupMember:
+    return await _require_group_role(
+        group_id=group_id,
+        user=user,
+        db=db,
+        allowed_roles=frozenset({GroupRole.admin, GroupRole.owner}),
+        message="Bu işlem için admin veya owner yetkisi gereklidir.",
+    )
+
+
+async def require_group_owner(
+    group_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupMember:
+    return await _require_group_role(
+        group_id=group_id,
+        user=user,
+        db=db,
+        allowed_roles=frozenset({GroupRole.owner}),
+        message="Bu işlem için owner yetkisi gereklidir.",
+    )

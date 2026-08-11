@@ -3,14 +3,23 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import (
+    get_current_user,
+    require_group_admin,
+    require_group_member,
+    require_group_owner,
+)
 from app.core.database import get_db_session
 from app.group_schemas import (
     GroupCreateRequest,
+    GroupMemberCreateRequest,
+    GroupMemberEnvelope,
+    GroupMemberRoleUpdateRequest,
     GroupResponse,
     GroupsResponse,
     GroupUpdateRequest,
 )
+from app.models.group import GroupMember
 from app.models.user import User
 from app.services.group_service import GroupService, GroupServiceError
 
@@ -24,6 +33,16 @@ _ERRORS = {
     "group_forbidden": (
         status.HTTP_403_FORBIDDEN,
         "Bu grup için yetkiniz yok.",
+    ),
+    "user_not_found": (status.HTTP_404_NOT_FOUND, "Kullanıcı bulunamadı."),
+    "member_not_found": (status.HTTP_404_NOT_FOUND, "Grup üyesi bulunamadı."),
+    "member_already_exists": (
+        status.HTTP_409_CONFLICT,
+        "Kullanıcı zaten grubun üyesi.",
+    ),
+    "last_owner_required": (
+        status.HTTP_409_CONFLICT,
+        "Son owner gruptan ayrılamaz. Önce owner devri yapmalı veya başka bir owner atamalısınız.",
     ),
 }
 
@@ -121,6 +140,73 @@ async def archive_group(
     except GroupServiceError as error:
         _raise_group_error(error)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{group_id}/members",
+    response_model=GroupMemberEnvelope,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_group_member(
+    group_id: uuid.UUID,
+    payload: GroupMemberCreateRequest,
+    actor_membership: GroupMember = Depends(require_group_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupMemberEnvelope:
+    try:
+        member = await GroupService(db).add_member(
+            group_id=group_id,
+            actor_user_id=actor_membership.user_id,
+            user_id=payload.user_id,
+            role=payload.role,
+        )
+    except GroupServiceError as error:
+        _raise_group_error(error)
+    return GroupMemberEnvelope(member=member)
+
+
+@router.delete(
+    "/{group_id}/members/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_group_member(
+    group_id: uuid.UUID,
+    user_id: uuid.UUID,
+    actor_membership: GroupMember = Depends(require_group_member),
+    db: AsyncSession = Depends(get_db_session),
+) -> Response:
+    try:
+        await GroupService(db).remove_member(
+            group_id=group_id,
+            actor_user_id=actor_membership.user_id,
+            user_id=user_id,
+        )
+    except GroupServiceError as error:
+        _raise_group_error(error)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/{group_id}/members/{user_id}",
+    response_model=GroupMemberEnvelope,
+)
+async def update_group_member_role(
+    group_id: uuid.UUID,
+    user_id: uuid.UUID,
+    payload: GroupMemberRoleUpdateRequest,
+    actor_membership: GroupMember = Depends(require_group_owner),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupMemberEnvelope:
+    try:
+        member = await GroupService(db).update_member_role(
+            group_id=group_id,
+            actor_user_id=actor_membership.user_id,
+            user_id=user_id,
+            role=payload.role,
+        )
+    except GroupServiceError as error:
+        _raise_group_error(error)
+    return GroupMemberEnvelope(member=member)
 
 
 def _parse_group_id(value: str) -> uuid.UUID:
