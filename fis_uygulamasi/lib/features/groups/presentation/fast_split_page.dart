@@ -41,9 +41,10 @@ class _FastSplitPageState extends State<FastSplitPage> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _totalController = TextEditingController();
-  final Map<String, TextEditingController> _shareControllers = {};
+  final Map<String, TextEditingController> _percentageControllers = {};
+  final Map<String, TextEditingController> _fixedAmountControllers = {};
   late final Set<String> _selectedMemberIds;
-  late String _payerUserId;
+  String? _payerUserId;
   SplitType _splitType = SplitType.equal;
   bool _submitting = false;
 
@@ -57,9 +58,10 @@ class _FastSplitPageState extends State<FastSplitPage> {
     _selectedMemberIds = _activeMembers.map((member) => member.userId).toSet();
     _payerUserId = _activeMembers.any((m) => m.userId == widget.currentUserId)
         ? widget.currentUserId
-        : _activeMembers.first.userId;
+        : (_activeMembers.isEmpty ? null : _activeMembers.first.userId);
     for (final member in _activeMembers) {
-      _shareControllers[member.userId] = TextEditingController();
+      _percentageControllers[member.userId] = TextEditingController();
+      _fixedAmountControllers[member.userId] = TextEditingController();
     }
   }
 
@@ -67,7 +69,10 @@ class _FastSplitPageState extends State<FastSplitPage> {
   void dispose() {
     _titleController.dispose();
     _totalController.dispose();
-    for (final controller in _shareControllers.values) {
+    for (final controller in [
+      ..._percentageControllers.values,
+      ..._fixedAmountControllers.values,
+    ]) {
       controller.dispose();
     }
     super.dispose();
@@ -137,7 +142,7 @@ class _FastSplitPageState extends State<FastSplitPage> {
                       child: Text(member.displayName),
                     ),
                 ],
-                onChanged: (value) => setState(() => _payerUserId = value!),
+                onChanged: (value) => setState(() => _payerUserId = value),
               ),
               const SizedBox(height: 20),
               SegmentedButton<SplitType>(
@@ -211,7 +216,7 @@ class _FastSplitPageState extends State<FastSplitPage> {
               width: 112,
               child: TextFormField(
                 key: Key('share_${member.userId}'),
-                controller: _shareControllers[member.userId],
+                controller: _controllerFor(member.userId),
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
@@ -272,13 +277,18 @@ class _FastSplitPageState extends State<FastSplitPage> {
 
   Map<String, int> get _percentageBasisPoints => {
     for (final id in _orderedSelectedIds)
-      id: _parseDecimalToHundredths(_shareControllers[id]!.text) ?? 0,
+      id: _parseDecimalToHundredths(_percentageControllers[id]!.text) ?? 0,
   };
 
   Map<String, int> get _fixedAmounts => {
     for (final id in _orderedSelectedIds)
-      id: parseTurkishLiraToMinor(_shareControllers[id]!.text) ?? 0,
+      id: parseTurkishLiraToMinor(_fixedAmountControllers[id]!.text) ?? 0,
   };
+
+  TextEditingController _controllerFor(String userId) =>
+      _splitType == SplitType.percentage
+      ? _percentageControllers[userId]!
+      : _fixedAmountControllers[userId]!;
 
   int? _parseDecimalToHundredths(String value) {
     final normalized = value.trim().replaceAll(',', '.');
@@ -295,7 +305,7 @@ class _FastSplitPageState extends State<FastSplitPage> {
     }
     if (!force &&
         _orderedSelectedIds.any(
-          (id) => _shareControllers[id]!.text.isNotEmpty,
+          (id) => _percentageControllers[id]!.text.isNotEmpty,
         )) {
       return;
     }
@@ -303,7 +313,7 @@ class _FastSplitPageState extends State<FastSplitPage> {
     var remainder = 10000.remainder(_orderedSelectedIds.length);
     for (final id in _orderedSelectedIds) {
       final points = base + (remainder-- > 0 ? 1 : 0);
-      _shareControllers[id]!.text = points % 100 == 0
+      _percentageControllers[id]!.text = points % 100 == 0
           ? '${points ~/ 100}'
           : (points / 100).toStringAsFixed(2);
     }
@@ -313,6 +323,10 @@ class _FastSplitPageState extends State<FastSplitPage> {
     if (!_formKey.currentState!.validate()) return;
     if (_orderedSelectedIds.isEmpty) {
       _showError('En az bir katılımcı seçin.');
+      return;
+    }
+    if (_payerUserId == null) {
+      _showError('Ödeyen bir grup üyesi seçin.');
       return;
     }
     final calculation = _calculation;
@@ -329,7 +343,7 @@ class _FastSplitPageState extends State<FastSplitPage> {
       await widget.onSubmit(
         FastSplitFormValue(
           title: _titleController.text.trim(),
-          payerUserId: _payerUserId,
+          payerUserId: _payerUserId!,
           calculation: calculation,
           percentageBasisPoints: _percentageBasisPoints,
         ),

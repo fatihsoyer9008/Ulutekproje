@@ -56,6 +56,14 @@ class FastSplitCalculator {
     required Map<String, int> percentageBasisPoints,
   }) {
     _validateTotalAndMembers(totalAmountInMinor, memberIds);
+    _validateShareKeys(memberIds, percentageBasisPoints.keys);
+    if (percentageBasisPoints.values.any(
+      (basisPoints) => basisPoints < 0 || basisPoints > 10000,
+    )) {
+      throw const FormatException(
+        'Yüzde payları 0 ile 10.000 basis point arasında olmalıdır.',
+      );
+    }
     final totalBasisPoints = memberIds.fold<int>(
       0,
       (total, id) => total + (percentageBasisPoints[id] ?? 0),
@@ -96,6 +104,10 @@ class FastSplitCalculator {
     required Map<String, int> amountsInMinor,
   }) {
     _validateTotalAndMembers(totalAmountInMinor, memberIds);
+    _validateShareKeys(memberIds, amountsInMinor.keys);
+    if (amountsInMinor.values.any((amount) => amount < 0)) {
+      throw const FormatException('Sabit pay tutarı negatif olamaz.');
+    }
     return FastSplitCalculation(
       type: SplitType.fixedAmount,
       totalAmountInMinor: totalAmountInMinor,
@@ -112,6 +124,24 @@ class FastSplitCalculator {
     }
     if (memberIds.isEmpty) {
       throw const FormatException('En az bir katılımcı seçilmelidir.');
+    }
+    if (memberIds.any((id) => id.trim().isEmpty)) {
+      throw const FormatException('Katılımcı kimliği boş olamaz.');
+    }
+    if (memberIds.toSet().length != memberIds.length) {
+      throw const FormatException('Katılımcı kimlikleri tekrarlanamaz.');
+    }
+  }
+
+  static void _validateShareKeys(
+    List<String> memberIds,
+    Iterable<String> shareUserIds,
+  ) {
+    final selectedMembers = memberIds.toSet();
+    if (shareUserIds.any((id) => !selectedMembers.contains(id))) {
+      throw const FormatException(
+        'Seçili olmayan katılımcı için pay girilemez.',
+      );
     }
   }
 }

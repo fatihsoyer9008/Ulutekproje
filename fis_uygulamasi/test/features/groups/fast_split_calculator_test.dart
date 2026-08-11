@@ -51,5 +51,58 @@ void main() {
       expect(result.differenceInMinor, 1);
       expect(result.isBalanced, isFalse);
     });
+
+    test('negatif ve aralık dışı domain girdilerini reddeder', () {
+      expect(
+        () => FastSplitCalculator.fixedAmount(
+          totalAmountInMinor: 100,
+          memberIds: const ['a'],
+          amountsInMinor: const {'a': -1},
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => FastSplitCalculator.percentage(
+          totalAmountInMinor: 100,
+          memberIds: const ['a', 'b'],
+          percentageBasisPoints: const {'a': 10001, 'b': -1},
+        ),
+        throwsFormatException,
+      );
+    });
+
+    test('boş ve tekrarlanan kullanıcı kimliklerini reddeder', () {
+      for (final ids in <List<String>>[
+        ['', 'b'],
+        ['a', 'a'],
+      ]) {
+        expect(
+          () => FastSplitCalculator.equal(
+            totalAmountInMinor: 100,
+            memberIds: ids,
+          ),
+          throwsFormatException,
+        );
+      }
+    });
+
+    test('seçili üyeler dışında verilen payları reddeder', () {
+      expect(
+        () => FastSplitCalculator.fixedAmount(
+          totalAmountInMinor: 100,
+          memberIds: const ['a'],
+          amountsInMinor: const {'a': 100, 'b': 0},
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => FastSplitCalculator.percentage(
+          totalAmountInMinor: 100,
+          memberIds: const ['a'],
+          percentageBasisPoints: const {'a': 10000, 'b': 0},
+        ),
+        throwsFormatException,
+      );
+    });
   });
 }
