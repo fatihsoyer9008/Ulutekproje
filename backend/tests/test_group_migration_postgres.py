@@ -11,6 +11,7 @@ from sqlalchemy.engine import URL, make_url
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_REVISION = "20260811_0007"
 PRE_GROUP_REVISION = "20260806_0004"
+PRE_ASSIGNMENT_REVISION = "20260811_0006"
 
 GROUP_TABLES = (
     "groups",
@@ -25,6 +26,13 @@ LEGACY_TABLE_KEYS = (
     ("cloud_transactions", "id", "transaction_id"),
     ("cloud_receipts", "id", "receipt_id"),
     ("cloud_receipt_line_items", "id", "line_item_id"),
+)
+
+PRE_ASSIGNMENT_TABLE_KEYS = (
+    ("groups", "id", "group_id"),
+    ("group_members", "group_id", "group_id"),
+    ("group_expenses", "id", "expense_id"),
+    ("expense_shares", "expense_id", "expense_id"),
 )
 
 
@@ -228,6 +236,95 @@ async def _legacy_snapshot(
                 "row": dict(row),
             }
 
+        return snapshot
+    finally:
+        await connection.close()
+
+
+async def _seed_pre_assignment_group_data(
+    database_url: URL,
+    identifiers: dict[str, uuid.UUID],
+) -> None:
+    connection = await asyncpg.connect(_asyncpg_dsn(database_url))
+    try:
+        identifiers["group_id"] = uuid.uuid4()
+        identifiers["expense_id"] = uuid.uuid4()
+
+        await connection.execute(
+            """
+            INSERT INTO groups (id, name, description, currency, created_by)
+            VALUES ($1, 'Existing Group', 'Created before assignment migration',
+                    'TRY', $2)
+            """,
+            identifiers["group_id"],
+            identifiers["user_id"],
+        )
+        await connection.execute(
+            """
+            INSERT INTO group_members (group_id, user_id, role)
+            VALUES ($1, $2, 'owner')
+            """,
+            identifiers["group_id"],
+            identifiers["user_id"],
+        )
+        await connection.execute(
+            """
+            INSERT INTO group_expenses (
+                id,
+                group_id,
+                receipt_id,
+                payer_user_id,
+                title,
+                note,
+                expense_date,
+                total_amount_in_minor,
+                currency,
+                split_type
+            )
+            VALUES (
+                $1, $2, $3, $4, 'Existing Expense',
+                'Must survive the assignment migration',
+                TIMESTAMPTZ '2026-08-10 12:30:00+03',
+                34990, 'TRY', 'itemized'
+            )
+            """,
+            identifiers["expense_id"],
+            identifiers["group_id"],
+            identifiers["receipt_id"],
+            identifiers["user_id"],
+        )
+        await connection.execute(
+            """
+            INSERT INTO expense_shares (
+                expense_id, user_id, amount_in_minor, status
+            )
+            VALUES ($1, $2, 34990, 'open')
+            """,
+            identifiers["expense_id"],
+            identifiers["user_id"],
+        )
+    finally:
+        await connection.close()
+
+
+async def _pre_assignment_snapshot(
+    database_url: URL,
+    identifiers: dict[str, uuid.UUID],
+) -> dict[str, object]:
+    connection = await asyncpg.connect(_asyncpg_dsn(database_url))
+    try:
+        snapshot: dict[str, object] = {}
+        for table_name, id_column, identifier_key in PRE_ASSIGNMENT_TABLE_KEYS:
+            rows = await connection.fetch(
+                f'SELECT * FROM "{table_name}" WHERE "{id_column}" = $1',
+                identifiers[identifier_key],
+            )
+            count = await connection.fetchval(f'SELECT count(*) FROM "{table_name}"')
+            assert rows
+            snapshot[table_name] = {
+                "count": count,
+                "rows": [dict(row) for row in rows],
+            }
         return snapshot
     finally:
         await connection.close()
@@ -579,6 +676,22 @@ async def _assert_constraints_and_group_cascade(
         )
         await _assert_constraint_violation(
             connection,
+            asyncpg.UniqueViolationError,
+            "pk_expense_shares",
+            """
+            INSERT INTO expense_shares (
+                expense_id,
+                user_id,
+                amount_in_minor,
+                status
+            )
+            VALUES ($1, $2, 34990, 'open')
+            """,
+            expense_id,
+            user_id,
+        )
+        await _assert_constraint_violation(
+            connection,
             asyncpg.CheckViolationError,
             "ck_expense_line_item_assignments_amount_nonnegative",
             """
@@ -594,6 +707,24 @@ async def _assert_constraints_and_group_cascade(
             expense_id,
             line_item_id,
             uuid.uuid4(),
+        )
+        await _assert_constraint_violation(
+            connection,
+            asyncpg.UniqueViolationError,
+            "pk_expense_line_item_assignments",
+            """
+            INSERT INTO expense_line_item_assignments (
+                expense_id,
+                receipt_line_item_id,
+                user_id,
+                amount_in_minor,
+                quantity_share_milli
+            )
+            VALUES ($1, $2, $3, 34990, 1000)
+            """,
+            expense_id,
+            line_item_id,
+            user_id,
         )
         await _assert_constraint_violation(
             connection,
@@ -954,6 +1085,106 @@ async def test_group_migrations_preserve_legacy_data_on_postgresql() -> None:
                 identifiers,
             )
             assert after_second_upgrade == before_upgrade
+        finally:
+            await admin_connection.execute(
+                "SELECT pg_terminate_backend(pid) "
+                "FROM pg_stat_activity "
+                "WHERE datname = $1 AND pid <> pg_backend_pid()",
+                temporary_database,
+            )
+            await admin_connection.execute(
+                f'DROP DATABASE IF EXISTS "{temporary_database}"'
+            )
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_assignment_migration_preserves_existing_group_data() -> None:
+    """Upgrade/downgrade 0007 without losing rows created at revision 0006."""
+    base_url = _postgres_test_url()
+    temporary_database = f"group_assignment_upgrade_{uuid.uuid4().hex}"
+    admin_url = base_url.set(database="postgres")
+    migration_url = base_url.set(database=temporary_database)
+    migration_url_string = migration_url.render_as_string(hide_password=False)
+
+    admin_connection = await asyncpg.connect(_asyncpg_dsn(admin_url))
+    try:
+        await admin_connection.execute(f'CREATE DATABASE "{temporary_database}"')
+        try:
+            _run_alembic(
+                migration_url_string,
+                "upgrade",
+                PRE_ASSIGNMENT_REVISION,
+            )
+            identifiers = await _seed_legacy_data(migration_url)
+            await _seed_pre_assignment_group_data(migration_url, identifiers)
+
+            legacy_before = await _legacy_snapshot(migration_url, identifiers)
+            group_before = await _pre_assignment_snapshot(
+                migration_url,
+                identifiers,
+            )
+
+            _run_alembic(migration_url_string, "upgrade", "head")
+            current = _run_alembic(migration_url_string, "current")
+            assert f"{EXPECTED_REVISION} (head)" in current
+            assert await _legacy_snapshot(migration_url, identifiers) == legacy_before
+            assert (
+                await _pre_assignment_snapshot(migration_url, identifiers)
+                == group_before
+            )
+
+            connection = await asyncpg.connect(_asyncpg_dsn(migration_url))
+            try:
+                assignment_table = await connection.fetchval(
+                    "SELECT to_regclass('public.expense_line_item_assignments')"
+                )
+                assert assignment_table == "expense_line_item_assignments"
+                await connection.execute(
+                    """
+                    INSERT INTO expense_line_item_assignments (
+                        expense_id,
+                        receipt_line_item_id,
+                        user_id,
+                        amount_in_minor,
+                        quantity_share_milli
+                    )
+                    VALUES ($1, $2, $3, 34990, 1000)
+                    """,
+                    identifiers["expense_id"],
+                    identifiers["line_item_id"],
+                    identifiers["user_id"],
+                )
+            finally:
+                await connection.close()
+
+            _run_alembic(
+                migration_url_string,
+                "downgrade",
+                PRE_ASSIGNMENT_REVISION,
+            )
+            connection = await asyncpg.connect(_asyncpg_dsn(migration_url))
+            try:
+                assignment_table = await connection.fetchval(
+                    "SELECT to_regclass('public.expense_line_item_assignments')"
+                )
+                assert assignment_table is None
+            finally:
+                await connection.close()
+
+            assert await _legacy_snapshot(migration_url, identifiers) == legacy_before
+            assert (
+                await _pre_assignment_snapshot(migration_url, identifiers)
+                == group_before
+            )
+
+            _run_alembic(migration_url_string, "upgrade", "head")
+            assert await _legacy_snapshot(migration_url, identifiers) == legacy_before
+            assert (
+                await _pre_assignment_snapshot(migration_url, identifiers)
+                == group_before
+            )
         finally:
             await admin_connection.execute(
                 "SELECT pg_terminate_backend(pid) "
