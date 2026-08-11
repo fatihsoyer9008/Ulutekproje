@@ -193,3 +193,23 @@ Apple revoke endpoint'inde iptal edilir.
 Aynı e-postaya sahip mevcut bir hesap provider e-postasına güvenilerek sessizce
 birleştirilmez. Böyle bir durumda kullanıcı önce mevcut hesabıyla giriş yapmalı
 ve ilerideki açık account-linking akışını kullanmalıdır.
+# Debt simplification domain service
+
+The Task 3.2 algorithm is a standalone domain service and uses integer minor
+currency units only:
+
+```python
+from app.domain.debts import DebtBalance, DebtSimplificationService
+
+balances = [
+    DebtBalance("alice", "Alice", -9_000),
+    DebtBalance("bob", "Bob", 4_000),
+    DebtBalance("carol", "Carol", 5_000),
+]
+
+transfers = DebtSimplificationService.simplify(balances)
+# (
+#   DebtTransfer(from_user_id="alice", to_user_id="carol", amount_in_minor=5_000),
+#   DebtTransfer(from_user_id="alice", to_user_id="bob", amount_in_minor=4_000),
+# )
+```

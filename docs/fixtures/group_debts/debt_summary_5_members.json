@@ -1,0 +1,49 @@
+{
+  "group_id": "10000000-0000-4000-8000-000000000003",
+  "currency": "TRY",
+  "balances": [
+    {
+      "user_id": "00000000-0000-4000-8000-000000000001",
+      "display_name": "Zafer Tuna",
+      "net_amount_in_minor": -12000
+    },
+    {
+      "user_id": "00000000-0000-4000-8000-000000000002",
+      "display_name": "Abdullah Seydi",
+      "net_amount_in_minor": -7000
+    },
+    {
+      "user_id": "00000000-0000-4000-8000-000000000003",
+      "display_name": "Erdoğan",
+      "net_amount_in_minor": 7000
+    },
+    {
+      "user_id": "00000000-0000-4000-8000-000000000004",
+      "display_name": "Ayşe Nur",
+      "net_amount_in_minor": 7000
+    },
+    {
+      "user_id": "00000000-0000-4000-8000-000000000005",
+      "display_name": "Elifnur",
+      "net_amount_in_minor": 5000
+    }
+  ],
+  "suggested_transfers": [
+    {
+      "from_user_id": "00000000-0000-4000-8000-000000000001",
+      "to_user_id": "00000000-0000-4000-8000-000000000003",
+      "amount_in_minor": 7000
+    },
+    {
+      "from_user_id": "00000000-0000-4000-8000-000000000002",
+      "to_user_id": "00000000-0000-4000-8000-000000000004",
+      "amount_in_minor": 7000
+    },
+    {
+      "from_user_id": "00000000-0000-4000-8000-000000000001",
+      "to_user_id": "00000000-0000-4000-8000-000000000005",
+      "amount_in_minor": 5000
+    }
+  ],
+  "generated_at": "2026-08-11T09:15:00Z"
+}
