@@ -66,6 +66,13 @@ class Group(Base):
         passive_deletes=True,
         order_by="GroupMember.joined_at",
     )
+    expenses = relationship(
+        "GroupExpense",
+        back_populates="group",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="GroupExpense.expense_date",
+    )
 
 
 class GroupMember(Base):

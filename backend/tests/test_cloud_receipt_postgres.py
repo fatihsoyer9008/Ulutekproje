@@ -37,7 +37,7 @@ async def test_cloud_receipt_migration_is_at_head(
     revision = await postgres_connection.scalar(
         text("SELECT version_num FROM alembic_version")
     )
-    assert revision == "20260810_0005"
+    assert revision == "20260811_0006"
 
     table_names = set(
         (
