@@ -114,6 +114,15 @@ class GroupExpense(Base):
         passive_deletes=True,
         order_by="ExpenseShare.user_id",
     )
+    line_item_assignments: Mapped[list["ExpenseLineItemAssignment"]] = relationship(
+        back_populates="expense",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by=(
+            "ExpenseLineItemAssignment.receipt_line_item_id, "
+            "ExpenseLineItemAssignment.user_id"
+        ),
+    )
 
 
 class ExpenseShare(Base):
@@ -155,3 +164,45 @@ class ExpenseShare(Base):
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     expense: Mapped[GroupExpense] = relationship(back_populates="shares")
+
+
+class ExpenseLineItemAssignment(Base):
+    __tablename__ = "expense_line_item_assignments"
+    __table_args__ = (
+        CheckConstraint(
+            "amount_in_minor >= 0",
+            name="ck_expense_line_item_assignments_amount_nonnegative",
+        ),
+        CheckConstraint(
+            "quantity_share_milli IS NULL OR quantity_share_milli > 0",
+            name="ck_expense_line_item_assignments_quantity_positive",
+        ),
+        Index(
+            "ix_expense_line_item_assignments_receipt_line_item_id",
+            "receipt_line_item_id",
+        ),
+        Index(
+            "ix_expense_line_item_assignments_user_id",
+            "user_id",
+        ),
+    )
+
+    expense_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("group_expenses.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    # Historical UUID intentionally outlives the receipt line-item row.
+    # Receipt ownership and line-item existence are validated before writes.
+    receipt_line_item_id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True,
+    )
+    # Historical UUID intentionally outlives the User row.
+    # Active membership is validated by the service before writes.
+    user_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    amount_in_minor: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+    )
+    quantity_share_milli: Mapped[int | None] = mapped_column(BigInteger)
+
+    expense: Mapped[GroupExpense] = relationship(back_populates="line_item_assignments")
