@@ -2,6 +2,7 @@ from app.models.cloud_receipt import CloudReceipt, CloudReceiptLineItem
 from app.models.cloud_transaction import CloudTransaction
 from app.models.group import Group, GroupMember, GroupRole
 from app.models.group_expense import (
+    ExpenseLineItemAssignment,
     ExpenseShare,
     ExpenseShareStatus,
     ExpenseSplitType,
@@ -17,6 +18,7 @@ __all__ = [
     "CloudReceipt",
     "CloudReceiptLineItem",
     "CloudTransaction",
+    "ExpenseLineItemAssignment",
     "ExpenseShare",
     "ExpenseShareStatus",
     "ExpenseSplitType",

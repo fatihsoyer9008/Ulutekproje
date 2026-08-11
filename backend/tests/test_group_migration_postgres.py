@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.engine import URL, make_url
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_REVISION = "20260811_0006"
+EXPECTED_REVISION = "20260811_0007"
 
 
 def _postgres_test_url() -> URL:
@@ -212,9 +212,13 @@ async def test_group_migration_full_chain_on_postgresql() -> None:
                 shares_table = await downgraded.fetchval(
                     "SELECT to_regclass('public.expense_shares')"
                 )
+                assignments_table = await downgraded.fetchval(
+                    "SELECT to_regclass(" "'public.expense_line_item_assignments'" ")"
+                )
                 assert groups_table is None
                 assert expenses_table is None
                 assert shares_table is None
+                assert assignments_table is None
             finally:
                 await downgraded.close()
 
