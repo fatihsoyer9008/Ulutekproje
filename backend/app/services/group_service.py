@@ -1,0 +1,217 @@
+import uuid
+from datetime import UTC, datetime
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.group_schemas import (
+    GroupDetailResponse,
+    GroupMemberResponse,
+    GroupSummaryResponse,
+)
+from app.models.group import Group, GroupMember, GroupRole
+from app.repositories.groups import GroupRepository
+
+
+class GroupServiceError(ValueError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+class GroupService:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.repository = GroupRepository(session)
+
+    async def create(
+        self,
+        *,
+        actor_user_id: uuid.UUID,
+        name: str,
+        description: str | None,
+        currency: str,
+    ) -> GroupDetailResponse:
+        group = await self.repository.create(
+            name=name,
+            description=description,
+            currency=currency,
+            created_by=actor_user_id,
+        )
+        stored = await self.repository.get_by_id(group.id, include_members=True)
+        if stored is None:  # pragma: no cover - database invariant guard
+            raise RuntimeError("created group could not be reloaded")
+        response = _group_detail(stored, actor_user_id)
+        await self.session.commit()
+        return response
+
+    async def list_for_user(
+        self,
+        *,
+        actor_user_id: uuid.UUID,
+        include_archived: bool,
+    ) -> list[GroupSummaryResponse]:
+        groups = await self.repository.list_for_user(
+            actor_user_id,
+            include_archived=include_archived,
+        )
+        return [_group_summary(group, actor_user_id) for group in groups]
+
+    async def get_detail(
+        self,
+        *,
+        group_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+    ) -> GroupDetailResponse:
+        group = await self._get_authorized_group(
+            group_id=group_id,
+            actor_user_id=actor_user_id,
+        )
+        return _group_detail(group, actor_user_id)
+
+    async def update(
+        self,
+        *,
+        group_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        changes: dict[str, object],
+    ) -> GroupDetailResponse:
+        group = await self._get_authorized_group(
+            group_id=group_id,
+            actor_user_id=actor_user_id,
+            require_owner=True,
+            for_update=True,
+        )
+        if "name" in changes:
+            group.name = str(changes["name"])
+        if "description" in changes:
+            description = changes["description"]
+            group.description = str(description) if description is not None else None
+        group.updated_at = datetime.now(UTC)
+        await self.session.flush()
+
+        stored = await self.repository.get_by_id(group.id, include_members=True)
+        if stored is None:  # pragma: no cover - database invariant guard
+            raise RuntimeError("updated group could not be reloaded")
+        response = _group_detail(stored, actor_user_id)
+        await self.session.commit()
+        return response
+
+    async def archive(
+        self,
+        *,
+        group_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+    ) -> None:
+        group = await self._get_authorized_group(
+            group_id=group_id,
+            actor_user_id=actor_user_id,
+            require_owner=True,
+            for_update=True,
+        )
+        if group.archived_at is None:
+            archived_at = datetime.now(UTC)
+            group.archived_at = archived_at
+            group.updated_at = archived_at
+            await self.session.commit()
+
+    async def _get_authorized_group(
+        self,
+        *,
+        group_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        require_owner: bool = False,
+        for_update: bool = False,
+    ) -> Group:
+        group = await self.repository.get_by_id(
+            group_id,
+            include_members=True,
+            for_update=for_update,
+        )
+        if group is None:
+            raise GroupServiceError("group_not_found")
+
+        membership = _active_membership(group, actor_user_id)
+        if membership is None or (
+            require_owner and membership.role is not GroupRole.owner
+        ):
+            raise GroupServiceError("group_forbidden")
+        return group
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _active_members(group: Group) -> list[GroupMember]:
+    return sorted(
+        (member for member in group.members if member.left_at is None),
+        key=lambda member: (_as_utc(member.joined_at), str(member.user_id)),
+    )
+
+
+def _active_membership(
+    group: Group,
+    user_id: uuid.UUID,
+) -> GroupMember | None:
+    return next(
+        (
+            member
+            for member in group.members
+            if member.user_id == user_id and member.left_at is None
+        ),
+        None,
+    )
+
+
+def _display_name(member: GroupMember) -> str:
+    if member.user is None:
+        return "Silinmiş kullanıcı"
+    return member.user.display_name or "Kullanıcı"
+
+
+def _group_summary(
+    group: Group,
+    current_user_id: uuid.UUID,
+) -> GroupSummaryResponse:
+    members = _active_members(group)
+    current_membership = next(
+        (member for member in members if member.user_id == current_user_id),
+        None,
+    )
+    if current_membership is None:  # pragma: no cover - repository invariant guard
+        raise GroupServiceError("group_forbidden")
+    return GroupSummaryResponse(
+        id=group.id,
+        name=group.name,
+        description=group.description,
+        currency=group.currency,
+        member_count=len(members),
+        current_user_role=current_membership.role,
+        created_by=group.created_by,
+        created_at=_as_utc(group.created_at),
+        updated_at=_as_utc(group.updated_at),
+        archived_at=_as_utc(group.archived_at),
+    )
+
+
+def _group_detail(
+    group: Group,
+    current_user_id: uuid.UUID,
+) -> GroupDetailResponse:
+    summary = _group_summary(group, current_user_id)
+    members = [
+        GroupMemberResponse(
+            group_id=member.group_id,
+            user_id=member.user_id,
+            display_name=_display_name(member),
+            role=member.role,
+            joined_at=_as_utc(member.joined_at),
+            left_at=None,
+        )
+        for member in _active_members(group)
+    ]
+    return GroupDetailResponse(**summary.model_dump(), members=members)
