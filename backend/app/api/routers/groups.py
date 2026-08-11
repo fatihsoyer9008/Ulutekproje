@@ -9,6 +9,7 @@ from app.api.dependencies import (
     require_group_member,
     require_group_owner,
 )
+from app.core.config import settings
 from app.core.database import get_db_session
 from app.group_schemas import (
     GroupCreateRequest,
@@ -53,6 +54,15 @@ def _raise_group_error(error: GroupServiceError) -> None:
         status_code=status_code,
         detail={"code": error.code, "message": message},
     ) from None
+
+
+def require_direct_member_add_enabled() -> None:
+    """Hide the local/mock member-add route in production."""
+    if settings.app_env.casefold() == "production":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "group_not_found", "message": "Grup bulunamadı."},
+        )
 
 
 @router.post(
@@ -146,6 +156,7 @@ async def archive_group(
     "/{group_id}/members",
     response_model=GroupMemberEnvelope,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_direct_member_add_enabled)],
 )
 async def add_group_member(
     group_id: uuid.UUID,
@@ -163,6 +174,26 @@ async def add_group_member(
     except GroupServiceError as error:
         _raise_group_error(error)
     return GroupMemberEnvelope(member=member)
+
+
+@router.delete(
+    "/{group_id}/members/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def leave_group(
+    group_id: uuid.UUID,
+    actor_membership: GroupMember = Depends(require_group_member),
+    db: AsyncSession = Depends(get_db_session),
+) -> Response:
+    try:
+        await GroupService(db).remove_member(
+            group_id=group_id,
+            actor_user_id=actor_membership.user_id,
+            user_id=actor_membership.user_id,
+        )
+    except GroupServiceError as error:
+        _raise_group_error(error)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete(

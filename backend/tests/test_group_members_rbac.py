@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 
+from app.core.config import settings
 from app.models import GroupMember, GroupRole
 from app.repositories.groups import GroupRepository
 
@@ -214,3 +215,106 @@ async def test_owner_can_promote_and_demote_when_an_owner_remains(
     assert promoted.json()["member"]["role"] == "admin"
     assert demoted.status_code == 200
     assert demoted.json()["member"]["role"] == "member"
+
+
+@pytest.mark.asyncio
+async def test_direct_member_add_is_hidden_in_production(
+    group_api_context,
+    monkeypatch,
+) -> None:
+    client, factory, _, owner, member, _, _ = group_api_context
+    group_id = await _create_owner_only_group(factory, owner)
+    monkeypatch.setattr(settings, "app_env", "production")
+
+    response = await client.post(
+        f"/api/v1/groups/{group_id}/members",
+        json={"user_id": str(member.id), "role": "member"},
+    )
+
+    _assert_error(response, 404, "group_not_found")
+
+
+@pytest.mark.asyncio
+async def test_direct_member_add_is_available_in_development(
+    group_api_context,
+    monkeypatch,
+) -> None:
+    client, factory, _, owner, member, _, _ = group_api_context
+    group_id = await _create_owner_only_group(factory, owner)
+    monkeypatch.setattr(settings, "app_env", "development")
+
+    response = await client.post(
+        f"/api/v1/groups/{group_id}/members",
+        json={"user_id": str(member.id), "role": "member"},
+    )
+
+    assert response.status_code == 201
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("departing_role", [GroupRole.member, GroupRole.admin])
+async def test_member_and_admin_can_leave_through_me_route(
+    group_api_context,
+    departing_role,
+) -> None:
+    client, factory, current, owner, member, _, _ = group_api_context
+    async with factory() as session:
+        repository = GroupRepository(session)
+        group = await repository.create(name="Self Leave", created_by=owner.id)
+        await repository.add_member(
+            group_id=group.id,
+            user_id=member.id,
+            role=departing_role,
+        )
+        await session.commit()
+        group_id = group.id
+    current["value"] = member
+
+    response = await client.delete(f"/api/v1/groups/{group_id}/members/me")
+
+    assert response.status_code == 204
+    async with factory() as session:
+        membership = await session.get(GroupMember, (group_id, member.id))
+        assert membership is not None and membership.left_at is not None
+
+
+@pytest.mark.asyncio
+async def test_last_owner_cannot_leave_through_me_route(group_api_context) -> None:
+    client, factory, current, owner, _, _, _ = group_api_context
+    group_id = await _create_owner_only_group(factory, owner)
+    current["value"] = owner
+
+    response = await client.delete(f"/api/v1/groups/{group_id}/members/me")
+
+    _assert_error(response, 409, "last_owner_required")
+
+
+@pytest.mark.asyncio
+async def test_me_route_ignores_other_user_id_and_leaves_authenticated_user(
+    group_api_context,
+) -> None:
+    client, factory, current, owner, member, admin, _ = group_api_context
+    group_id = await _group_with_roles(factory, owner, admin, member)
+    current["value"] = admin
+
+    response = await client.delete(
+        f"/api/v1/groups/{group_id}/members/me",
+        params={"user_id": str(member.id)},
+    )
+
+    assert response.status_code == 204
+    async with factory() as session:
+        admin_membership = await session.get(GroupMember, (group_id, admin.id))
+        member_membership = await session.get(GroupMember, (group_id, member.id))
+        assert admin_membership is not None and admin_membership.left_at is not None
+        assert member_membership is not None and member_membership.left_at is None
+
+
+async def _create_owner_only_group(session_factory, owner):
+    async with session_factory() as session:
+        group = await GroupRepository(session).create(
+            name="Owner Only",
+            created_by=owner.id,
+        )
+        await session.commit()
+        return group.id
