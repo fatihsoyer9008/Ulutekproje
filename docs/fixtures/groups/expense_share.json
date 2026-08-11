@@ -1,0 +1,8 @@
+{
+  "expense_id": "40000000-0000-4000-8000-000000000001",
+  "user_id": "00000000-0000-4000-8000-000000000002",
+  "display_name": "Abdullah Seydi",
+  "amount_in_minor": 6250,
+  "status": "open",
+  "settled_at": null
+}
