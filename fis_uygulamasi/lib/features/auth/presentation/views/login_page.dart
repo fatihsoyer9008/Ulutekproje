@@ -3,10 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../controllers/auth_session_controller.dart';
+import '../routing/auth_redirect.dart';
 import '../widgets/auth_widgets.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({this.redirectLocation, super.key});
+
+  final String? redirectLocation;
 
   @override
   ConsumerState<LoginPage> createState() => _LoginPageState();
@@ -95,6 +98,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ),
             ),
             OutlinedButton.icon(
+              key: const Key('google_login_button'),
               onPressed: state.isLoading ? null : _googleLogin,
               icon: const Icon(Icons.g_mobiledata_rounded, size: 28),
               label: const Text('Google ile Giriş Yap'),
@@ -118,9 +122,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (!mounted) return;
     final state = ref.read(authSessionControllerProvider);
     if (success) {
-      context.go('/home');
+      context.go(widget.redirectLocation ?? '/home');
     } else if (state.status == AuthStatus.emailVerificationRequired) {
-      context.go('/verify-email?from=login');
+      final queryParameters = <String, String>{'from': 'login'};
+      final redirect = safeGroupsRedirect(widget.redirectLocation);
+      if (redirect != null) queryParameters['redirect'] = redirect;
+      context.go(
+        Uri(
+          path: '/verify-email',
+          queryParameters: queryParameters,
+        ).toString(),
+      );
     }
   }
 
@@ -128,7 +140,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final success = await ref
         .read(authSessionControllerProvider.notifier)
         .signInWithGoogle();
-    if (success && mounted) context.go('/home');
+    if (success && mounted) {
+      context.go(widget.redirectLocation ?? '/home');
+    }
   }
 }
 

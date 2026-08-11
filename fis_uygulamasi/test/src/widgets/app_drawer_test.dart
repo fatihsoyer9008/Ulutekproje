@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   testWidgets('changes theme from drawer', (tester) async {
     final container = ProviderContainer();
+    final scaffoldKey = GlobalKey<ScaffoldState>();
 
     addTearDown(container.dispose);
 
@@ -15,6 +16,7 @@ void main() {
         container: container,
         child: MaterialApp(
           home: Scaffold(
+            key: scaffoldKey,
             drawer: AppDrawer(
               onProfilePressed: () {},
               onGroupsPressed: () {},
@@ -34,8 +36,14 @@ void main() {
     await tester.tap(find.text('Menü'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('drawer_theme_tile')));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(container.read(appThemeModeProvider), ThemeMode.light);
+    expect(scaffoldKey.currentState?.isDrawerOpen, isFalse);
+
+    await tester.pump(const Duration(milliseconds: 50));
 
     expect(container.read(appThemeModeProvider), ThemeMode.dark);
+    expect(scaffoldKey.currentState?.isDrawerOpen, isFalse);
   });
 }

@@ -3,12 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../controllers/auth_session_controller.dart';
+import '../routing/auth_redirect.dart';
 import '../widgets/auth_widgets.dart';
 
 class EmailVerificationPage extends ConsumerStatefulWidget {
-  const EmailVerificationPage({this.token, super.key});
+  const EmailVerificationPage({this.token, this.redirectLocation, super.key});
 
   final String? token;
+  final String? redirectLocation;
 
   @override
   ConsumerState<EmailVerificationPage> createState() =>
@@ -33,7 +35,7 @@ class _EmailVerificationPageState extends ConsumerState<EmailVerificationPage> {
         .read(authSessionControllerProvider.notifier)
         .verifyEmailToken(token);
     if (!mounted) return;
-    if (authenticated) context.go('/home');
+    if (authenticated) context.go(widget.redirectLocation ?? '/home');
   }
 
   @override
@@ -86,7 +88,12 @@ class _EmailVerificationPageState extends ConsumerState<EmailVerificationPage> {
                     ref
                         .read(authSessionControllerProvider.notifier)
                         .leaveEmailVerification();
-                    context.go('/login');
+                    final redirect = widget.redirectLocation;
+                    context.go(
+                      redirect == null
+                          ? '/login'
+                          : groupsLoginLocation(redirect),
+                    );
                   },
             child: const Text('Giriş ekranına dön'),
           ),
@@ -106,6 +113,6 @@ class _EmailVerificationPageState extends ConsumerState<EmailVerificationPage> {
         .read(authSessionControllerProvider.notifier)
         .confirmEmailVerification();
     if (!mounted) return;
-    if (authenticated) context.go('/home');
+    if (authenticated) context.go(widget.redirectLocation ?? '/home');
   }
 }
