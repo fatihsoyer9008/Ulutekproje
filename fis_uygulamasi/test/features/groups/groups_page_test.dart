@@ -2,8 +2,10 @@ import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
 import 'package:app_main/features/groups/data/fake_group_repository.dart';
+import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:app_main/features/groups/presentation/groups_page.dart';
+import 'package:app_main/features/groups/presentation/fast_split_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -39,6 +41,16 @@ void main() {
     await _pumpGroupsPage(tester, repository);
 
     expect(find.textContaining('alacak'), findsOneWidget);
+  });
+
+  testWidgets('grup kartı mevcut Fast Split akışını açar', (tester) async {
+    final repository = FakeGroupRepository(groups: const [twoMemberGroup]);
+    await _pumpGroupsPage(tester, repository);
+
+    await tester.tap(find.byKey(Key('group_card_$twoMemberGroupId')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(FastSplitPage), findsOneWidget);
   });
 
   testWidgets('net tutar sıfırsa dengede durumu gösterilir', (tester) async {

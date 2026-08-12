@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:app_main/features/groups/data/fake_group_repository.dart';
+import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

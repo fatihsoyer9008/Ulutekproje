@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../transaction_draft/model/turkish_money.dart';
 import '../application/fast_split_calculator.dart';
 import '../domain/group_models.dart';
+import 'itemized_split_page.dart';
 
 typedef FastSplitSubmit = Future<void> Function(FastSplitFormValue value);
 
@@ -26,12 +27,16 @@ class FastSplitPage extends StatefulWidget {
     required this.group,
     required this.currentUserId,
     required this.onSubmit,
+    this.itemizedReceipt,
+    this.onItemizedSubmit,
     super.key,
   });
 
   final GroupDetail group;
   final String currentUserId;
   final FastSplitSubmit onSubmit;
+  final ItemizedSplitReceipt? itemizedReceipt;
+  final ItemizedSplitSubmit? onItemizedSubmit;
 
   @override
   State<FastSplitPage> createState() => _FastSplitPageState();
@@ -185,6 +190,13 @@ class _FastSplitPageState extends State<FastSplitPage> {
                       )
                     : const Icon(Icons.check_rounded),
                 label: const Text('Harcamayı Kaydet'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                key: const Key('open_itemized_split'),
+                onPressed: _openItemizedSplit,
+                icon: const Icon(Icons.receipt_long_outlined),
+                label: const Text('Kalem Bazlı Bölüştür'),
               ),
             ],
           ),
@@ -354,6 +366,35 @@ class _FastSplitPageState extends State<FastSplitPage> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  Future<void> _openItemizedSplit() async {
+    final receipt = widget.itemizedReceipt;
+    if (receipt == null || receipt.lineItems.isEmpty) {
+      _showError(
+        'Kalem bazlı bölüşüm için ürünleri buluta eşitlenmiş bir fiş gerekir. '
+        'Eşit, yüzde veya tutar bölüşümünü kullanabilirsiniz.',
+      );
+      return;
+    }
+    if (!receipt.isCloudSynced || widget.onItemizedSubmit == null) {
+      _showError(
+        'Fiş veya ürünler henüz buluta eşitlenmedi. '
+        'Eşit, yüzde veya tutar bölüşümünü kullanabilirsiniz.',
+      );
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ItemizedSplitPage(
+          group: widget.group,
+          currentUserId: widget.currentUserId,
+          receipt: receipt,
+          initialTitle: _titleController.text.trim(),
+          onSubmit: widget.onItemizedSubmit!,
+        ),
+      ),
+    );
   }
 
   void _showError(String message) {
