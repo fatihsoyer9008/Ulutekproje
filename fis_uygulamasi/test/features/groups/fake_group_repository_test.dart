@@ -45,6 +45,41 @@ void main() {
         'groups': <Object?>[],
       });
     });
+    test('preserves typed extra amount metadata and shares', () {
+      final expense = GroupExpense.fromJson(itemizedMarketExpense.toJson());
+
+      expect(expense.extraAmounts, hasLength(1));
+
+      final extraAmount = expense.extraAmounts.single;
+
+      expect(extraAmount.id, '50000000-0000-4000-8000-000000000001');
+      expect(extraAmount.expenseId, itemizedMarketExpense.id);
+      expect(extraAmount.type, ExpenseExtraAmountType.tax);
+      expect(extraAmount.label, 'KDV');
+      expect(extraAmount.amountInMinor, 500);
+      expect(extraAmount.shares, hasLength(2));
+      expect(
+        extraAmount.shares
+            .map((share) => share.amountInMinor)
+            .toList(growable: false),
+        <int>[250, 250],
+      );
+      expect(extraAmount.toJson()['type'], 'tax');
+      expect(
+        extraAmount.shares.first.toJson()['extra_amount_id'],
+        extraAmount.id,
+      );
+    });
+    test('accepts a null creator for legacy expenses', () {
+      final legacyJson = Map<String, Object?>.from(
+        itemizedMarketExpense.toJson(),
+      )..['created_by'] = null;
+
+      final expense = GroupExpense.fromJson(legacyJson);
+
+      expect(expense.createdBy, isNull);
+      expect(expense.toJson()['created_by'], isNull);
+    });
 
     test('keeps raw JSON files aligned with typed fixtures', () {
       expect(
