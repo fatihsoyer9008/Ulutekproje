@@ -1,6 +1,9 @@
+import hashlib
+import json
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
@@ -12,7 +15,12 @@ from app.api.dependencies import (
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.group_schemas import (
+    ExpenseShareResponse,
+    FastSplitType,
     GroupCreateRequest,
+    GroupExpenseCreateRequest,
+    GroupExpenseEnvelope,
+    GroupExpenseResponse,
     GroupMemberCreateRequest,
     GroupMemberEnvelope,
     GroupMemberRoleUpdateRequest,
@@ -21,10 +29,145 @@ from app.group_schemas import (
     GroupUpdateRequest,
 )
 from app.models.group import GroupMember
+from app.models.group_expense import ExpenseSplitType, GroupExpense
 from app.models.user import User
+from app.services.group_expense_service import (
+    FastSplitValidationError,
+    GroupExpenseService,
+)
 from app.services.group_service import GroupService, GroupServiceError
 
 router = APIRouter(prefix="/api/v1/groups", tags=["groups"])
+
+_EXPENSE_ERRORS = {
+    "group_not_found": (404, "Grup bulunamadı."),
+    "group_forbidden": (403, "Bu grup için yetkiniz yok."),
+    "member_not_found": (422, "Ödeyen ve tüm katılımcılar aktif grup üyesi olmalıdır."),
+    "currency_mismatch": (422, "Masraf para birimi grup para birimiyle eşleşmelidir."),
+    "invalid_amount": (
+        422,
+        "Masraf ve pay tutarları geçerli pozitif değerler olmalıdır.",
+    ),
+    "invalid_split_type": (422, "Split türü EQUAL, PERCENTAGE veya EXACT olmalıdır."),
+    "percentage_total_must_be_100": (
+        422,
+        "Pay yüzdelerinin toplamı tam olarak %100.00 olmalıdır.",
+    ),
+    "exact_total_must_match_expense": (
+        422,
+        "Sabit payların toplamı masraf tutarına eşit olmalıdır.",
+    ),
+    "idempotency_key_reused": (
+        409,
+        "Idempotency-Key farklı bir istek için daha önce kullanılmış.",
+    ),
+}
+
+
+def _expense_response(expense: GroupExpense) -> GroupExpenseEnvelope:
+    external_type = {
+        ExpenseSplitType.equal: FastSplitType.equal,
+        ExpenseSplitType.percentage: FastSplitType.percentage,
+        ExpenseSplitType.fixed_amount: FastSplitType.exact,
+    }[expense.split_type]
+    return GroupExpenseEnvelope(
+        expense=GroupExpenseResponse(
+            id=expense.id,
+            group_id=expense.group_id,
+            paid_by_id=expense.payer_user_id,
+            created_by_id=expense.created_by_id,
+            title=expense.title,
+            note=expense.note,
+            expense_date=expense.expense_date,
+            total_amount_in_minor=expense.total_amount_in_minor,
+            currency=expense.currency,
+            split_type=external_type,
+            shares=[
+                ExpenseShareResponse(
+                    user_id=s.user_id, amount_in_minor=s.amount_in_minor
+                )
+                for s in sorted(expense.shares, key=lambda share: str(share.user_id))
+            ],
+        )
+    )
+
+
+@router.post(
+    "/{group_id}/expenses",
+    response_model=GroupExpenseEnvelope,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_group_expense(
+    group_id: uuid.UUID,
+    payload: GroupExpenseCreateRequest,
+    response: Response,
+    actor_membership: GroupMember = Depends(require_group_member),
+    idempotency_key: str | None = Header(
+        default=None, alias="Idempotency-Key", min_length=1, max_length=255
+    ),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupExpenseEnvelope:
+    request_hash = hashlib.sha256(
+        json.dumps(
+            payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+    split_type = {
+        FastSplitType.equal: ExpenseSplitType.equal,
+        FastSplitType.percentage: ExpenseSplitType.percentage,
+        FastSplitType.exact: ExpenseSplitType.fixed_amount,
+    }[payload.split_type]
+    participants = [
+        (
+            item.user_id,
+            item.percentage
+            if payload.split_type is FastSplitType.percentage
+            else item.amount_in_minor,
+        )
+        for item in payload.participants
+    ]
+    service = GroupExpenseService(db)
+    try:
+        expense, replayed = await service.create_fast_split(
+            group_id=group_id,
+            actor_user_id=actor_membership.user_id,
+            payer_user_id=payload.paid_by_id,
+            title=payload.title,
+            note=payload.note,
+            expense_date=payload.expense_date,
+            total_amount_in_minor=payload.total_amount_in_minor,
+            currency=payload.currency,
+            split_type=split_type,
+            participants=participants,
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=request_hash,
+        )
+        await db.commit()
+    except FastSplitValidationError as error:
+        code, message = _EXPENSE_ERRORS[error.code]
+        raise HTTPException(
+            code, detail={"code": error.code, "message": message}
+        ) from None
+    except IntegrityError:
+        await db.rollback()
+        if not idempotency_key:
+            raise
+        expense = await service.repository.get_by_idempotency_key(
+            group_id=group_id,
+            created_by_id=actor_membership.user_id,
+            key=idempotency_key,
+        )
+        if expense is None or expense.idempotency_request_hash != request_hash:
+            message = _EXPENSE_ERRORS["idempotency_key_reused"][1]
+            raise HTTPException(
+                409, detail={"code": "idempotency_key_reused", "message": message}
+            ) from None
+        replayed = True
+    if replayed:
+        response.status_code = status.HTTP_200_OK
+        response.headers["Idempotency-Replayed"] = "true"
+    return _expense_response(expense)
+
 
 _ERRORS = {
     "group_not_found": (

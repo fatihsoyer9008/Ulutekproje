@@ -3,6 +3,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import ROUND_FLOOR, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,10 +38,146 @@ class ItemizedExpenseValidationError(ValueError):
         self.unassigned_receipt_line_item_ids = tuple(unassigned_receipt_line_item_ids)
 
 
+class FastSplitValidationError(ValueError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+def calculate_equal_shares(
+    total_amount_in_minor: int, participant_ids: Sequence[uuid.UUID]
+) -> list[tuple[uuid.UUID, int]]:
+    if total_amount_in_minor <= 0 or not participant_ids:
+        raise FastSplitValidationError("invalid_amount")
+    ordered = sorted(participant_ids, key=str)
+    quotient, remainder = divmod(total_amount_in_minor, len(ordered))
+    return [
+        (user_id, quotient + (index < remainder))
+        for index, user_id in enumerate(ordered)
+    ]
+
+
+def calculate_percentage_shares(
+    total_amount_in_minor: int,
+    percentages: Sequence[tuple[uuid.UUID, Decimal]],
+) -> list[tuple[uuid.UUID, int]]:
+    if total_amount_in_minor <= 0 or not percentages:
+        raise FastSplitValidationError("invalid_amount")
+    if sum((value for _, value in percentages), Decimal(0)) != Decimal("100"):
+        raise FastSplitValidationError("percentage_total_must_be_100")
+    ordered = sorted(percentages, key=lambda item: str(item[0]))
+    raw = [Decimal(total_amount_in_minor) * value / 100 for _, value in ordered]
+    amounts = [int(value.to_integral_value(rounding=ROUND_FLOOR)) for value in raw]
+    remainder = total_amount_in_minor - sum(amounts)
+    # Stable UUID ordering makes the penny rule reproducible on every platform.
+    for index in range(remainder):
+        amounts[index] += 1
+    return [(item[0], amounts[index]) for index, item in enumerate(ordered)]
+
+
+def validate_exact_shares(
+    total_amount_in_minor: int,
+    shares: Sequence[tuple[uuid.UUID, int]],
+) -> list[tuple[uuid.UUID, int]]:
+    if (
+        total_amount_in_minor <= 0
+        or not shares
+        or any(value < 0 for _, value in shares)
+    ):
+        raise FastSplitValidationError("invalid_amount")
+    if sum(value for _, value in shares) != total_amount_in_minor:
+        raise FastSplitValidationError("exact_total_must_match_expense")
+    return sorted(shares, key=lambda item: str(item[0]))
+
+
 class GroupExpenseService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repository = GroupExpenseRepository(session)
+
+    async def create_fast_split(
+        self,
+        *,
+        group_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        payer_user_id: uuid.UUID,
+        title: str,
+        expense_date: datetime,
+        total_amount_in_minor: int,
+        currency: str,
+        split_type: ExpenseSplitType,
+        participants: Sequence[tuple[uuid.UUID, Decimal | int | None]],
+        note: str | None = None,
+        idempotency_key: str | None = None,
+        idempotency_request_hash: str | None = None,
+    ) -> tuple[GroupExpense, bool]:
+        if idempotency_key:
+            existing = await self.repository.get_by_idempotency_key(
+                group_id=group_id, created_by_id=actor_user_id, key=idempotency_key
+            )
+            if existing is not None:
+                if existing.idempotency_request_hash != idempotency_request_hash:
+                    raise FastSplitValidationError("idempotency_key_reused")
+                return existing, True
+        group = await self.session.get(Group, group_id)
+        if group is None:
+            raise FastSplitValidationError("group_not_found")
+        if group.archived_at is not None:
+            raise FastSplitValidationError("group_forbidden")
+        if currency.upper() != group.currency.upper():
+            raise FastSplitValidationError("currency_mismatch")
+        participant_ids = [user_id for user_id, _ in participants]
+        required_ids = {actor_user_id, payer_user_id, *participant_ids}
+        active = set(
+            (
+                await self.session.scalars(
+                    select(GroupMember.user_id).where(
+                        GroupMember.group_id == group_id,
+                        GroupMember.user_id.in_(tuple(required_ids)),
+                        GroupMember.left_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        if required_ids - active:
+            raise FastSplitValidationError("member_not_found")
+        if split_type is ExpenseSplitType.equal:
+            shares = calculate_equal_shares(total_amount_in_minor, participant_ids)
+        elif split_type is ExpenseSplitType.percentage:
+            shares = calculate_percentage_shares(
+                total_amount_in_minor,
+                [
+                    (user_id, value)
+                    for user_id, value in participants
+                    if isinstance(value, Decimal)
+                ],
+            )
+        elif split_type is ExpenseSplitType.fixed_amount:
+            shares = validate_exact_shares(
+                total_amount_in_minor,
+                [
+                    (user_id, value)
+                    for user_id, value in participants
+                    if isinstance(value, int)
+                ],
+            )
+        else:
+            raise FastSplitValidationError("invalid_split_type")
+        expense = await self.repository.create(
+            group_id=group_id,
+            payer_user_id=payer_user_id,
+            created_by_id=actor_user_id,
+            title=title,
+            note=note,
+            expense_date=expense_date,
+            total_amount_in_minor=total_amount_in_minor,
+            currency=currency,
+            split_type=split_type,
+            shares=shares,
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=idempotency_request_hash,
+        )
+        return expense, False
 
     async def create_itemized(
         self,
@@ -141,15 +278,15 @@ class GroupExpenseService:
             ):
                 raise ItemizedExpenseValidationError("invalid_request")
 
-            amounts_by_line_item[
-                assignment.receipt_line_item_id
-            ] += assignment.amount_in_minor
+            amounts_by_line_item[assignment.receipt_line_item_id] += (
+                assignment.amount_in_minor
+            )
             amounts_by_user[assignment.user_id] += assignment.amount_in_minor
 
             if assignment.quantity_share_milli is not None:
-                quantities_by_line_item[
-                    assignment.receipt_line_item_id
-                ] += assignment.quantity_share_milli
+                quantities_by_line_item[assignment.receipt_line_item_id] += (
+                    assignment.quantity_share_milli
+                )
 
         for user_id, amount_in_minor in extra_amount_shares:
             if amount_in_minor < 0:
@@ -219,6 +356,7 @@ class GroupExpenseService:
             group_id=group_id,
             receipt_id=receipt_id,
             payer_user_id=payer_user_id,
+            created_by_id=actor_user_id,
             title=title,
             note=note,
             expense_date=expense_date,

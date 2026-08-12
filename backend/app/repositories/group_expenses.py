@@ -23,6 +23,7 @@ class GroupExpenseRepository:
         *,
         group_id: uuid.UUID,
         payer_user_id: uuid.UUID,
+        created_by_id: uuid.UUID | None = None,
         title: str,
         expense_date: datetime,
         total_amount_in_minor: int,
@@ -34,11 +35,16 @@ class GroupExpenseRepository:
         ] = (),
         receipt_id: uuid.UUID | None = None,
         note: str | None = None,
+        idempotency_key: str | None = None,
+        idempotency_request_hash: str | None = None,
     ) -> GroupExpense:
         expense = GroupExpense(
             group_id=group_id,
             receipt_id=receipt_id,
             payer_user_id=payer_user_id,
+            created_by_id=created_by_id or payer_user_id,
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=idempotency_request_hash,
             title=title,
             note=note,
             expense_date=expense_date,
@@ -71,6 +77,21 @@ class GroupExpenseRepository:
         self.session.add(expense)
         await self.session.flush()
         return expense
+
+    async def get_by_idempotency_key(
+        self, *, group_id: uuid.UUID, created_by_id: uuid.UUID, key: str
+    ) -> GroupExpense | None:
+        statement = (
+            select(GroupExpense)
+            .where(
+                GroupExpense.group_id == group_id,
+                GroupExpense.created_by_id == created_by_id,
+                GroupExpense.idempotency_key == key,
+                GroupExpense.deleted_at.is_(None),
+            )
+            .options(selectinload(GroupExpense.shares))
+        )
+        return await self.session.scalar(statement)
 
     async def get_by_id(
         self,
