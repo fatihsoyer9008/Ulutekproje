@@ -320,8 +320,11 @@ class FakeGroupRepository implements GroupRepository {
     FastSplitExpenseRequest request, {
     required String idempotencyKey,
   }) {
-    final now = _timestamp();
-    final expenseId = 'local-expense-${_clock().microsecondsSinceEpoch}';
+    final replayCandidate = _expenseRequests[idempotencyKey]?.value;
+    final now = replayCandidate?.createdAt ?? _timestamp();
+    final expenseId =
+        replayCandidate?.id ??
+        'local-expense-${_clock().microsecondsSinceEpoch}';
     final group = _requireGroup(request.groupId);
     final members = {for (final member in group.members) member.userId: member};
     final calculation = switch (request.splitType) {
@@ -384,8 +387,11 @@ class FakeGroupRepository implements GroupRepository {
     ItemizedExpenseRequest request, {
     required String idempotencyKey,
   }) {
-    final now = _timestamp();
-    final expenseId = 'local-expense-${_clock().microsecondsSinceEpoch}';
+    final replayCandidate = _expenseRequests[idempotencyKey]?.value;
+    final now = replayCandidate?.createdAt ?? _timestamp();
+    final expenseId =
+        replayCandidate?.id ??
+        'local-expense-${_clock().microsecondsSinceEpoch}';
     final extraAmountId = '$expenseId-extra-1';
     final group = _requireGroup(request.groupId);
     final members = {for (final member in group.members) member.userId: member};

@@ -286,6 +286,69 @@ void main() {
       expect(await repository.listExpenses(twoMemberGroupId), hasLength(1));
     });
 
+    test('replays generated fast and itemized expenses idempotently', () async {
+      final repository = FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      );
+      const fastRequest = FastSplitExpenseRequest(
+        groupId: twoMemberGroupId,
+        title: 'Akşam yemeği',
+        payerUserId: currentUserId,
+        expenseDate: '2026-08-12T20:00:00Z',
+        totalAmountInMinor: 10000,
+        currency: 'TRY',
+        splitType: SplitType.equal,
+        orderedMemberIds: [currentUserId, secondUserId],
+      );
+      const itemizedRequest = ItemizedExpenseRequest(
+        groupId: twoMemberGroupId,
+        receiptId: '20000000-0000-4000-8000-000000000001',
+        title: 'Market',
+        payerUserId: currentUserId,
+        expenseDate: '2026-08-12T12:00:00Z',
+        totalAmountInMinor: 12500,
+        currency: 'TRY',
+        lineShares: [
+          ItemizedLineShareInput(
+            receiptLineItemId: '30000000-0000-4000-8000-000000000001',
+            userId: currentUserId,
+            amountInMinor: 6000,
+            quantityShareMilli: 1000,
+          ),
+          ItemizedLineShareInput(
+            receiptLineItemId: '30000000-0000-4000-8000-000000000001',
+            userId: secondUserId,
+            amountInMinor: 6000,
+            quantityShareMilli: 1000,
+          ),
+        ],
+        extraShares: [
+          ItemizedExtraShareInput(userId: currentUserId, amountInMinor: 500),
+        ],
+      );
+
+      final fastFirst = await repository.createFastSplit(
+        fastRequest,
+        idempotencyKey: 'generated-fast-1',
+      );
+      final fastReplay = await repository.createFastSplit(
+        fastRequest,
+        idempotencyKey: 'generated-fast-1',
+      );
+      final itemizedFirst = await repository.createItemizedSplit(
+        itemizedRequest,
+        idempotencyKey: 'generated-itemized-1',
+      );
+      final itemizedReplay = await repository.createItemizedSplit(
+        itemizedRequest,
+        idempotencyKey: 'generated-itemized-1',
+      );
+
+      expect(fastReplay.toJson(), fastFirst.toJson());
+      expect(itemizedReplay.toJson(), itemizedFirst.toJson());
+      expect(await repository.listExpenses(twoMemberGroupId), hasLength(2));
+    });
+
     test('rejects a changed body using the same idempotency key', () async {
       final repository = FakeGroupRepository(
         groups: const <GroupDetail>[twoMemberGroup],

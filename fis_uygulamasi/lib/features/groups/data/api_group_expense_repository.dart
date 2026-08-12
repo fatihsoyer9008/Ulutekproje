@@ -147,6 +147,15 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
     GroupExpense expense, {
     required String idempotencyKey,
   }) {
+    if (expense.splitType == SplitType.percentage ||
+        expense.splitType == SplitType.itemized) {
+      throw ArgumentError.value(
+        expense.splitType,
+        'splitType',
+        'Yüzdelik ve kalem bazlı masraflar kendi istek modelleriyle '
+            'gönderilmelidir.',
+      );
+    }
     return createFastSplit(
       FastSplitExpenseRequest(
         groupId: expense.groupId,
@@ -157,9 +166,12 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
         currency: expense.currency,
         splitType: expense.splitType,
         orderedMemberIds: [for (final share in expense.shares) share.userId],
-        fixedAmountsInMinor: {
-          for (final share in expense.shares) share.userId: share.amountInMinor,
-        },
+        fixedAmountsInMinor: expense.splitType == SplitType.fixedAmount
+            ? {
+                for (final share in expense.shares)
+                  share.userId: share.amountInMinor,
+              }
+            : const {},
       ),
       idempotencyKey: idempotencyKey,
     );

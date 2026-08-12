@@ -92,6 +92,36 @@ void main() {
     expect(extraAmount['amount_in_minor'], 6500);
     expect(extraAmount['shares'], hasLength(1));
   });
+
+  test(
+    'generic create rejects splits whose source data cannot be recovered',
+    () {
+      final repository = ApiGroupExpenseRepository(
+        _client((_) => throw StateError('HTTP request should not be sent')),
+      );
+      final percentageJson = Map<String, Object?>.from(
+        fastSplitTransferExpense.toJson(),
+      )..['split_type'] = 'percentage';
+      final itemizedJson = Map<String, Object?>.from(
+        itemizedMarketExpense.toJson(),
+      );
+
+      expect(
+        () => repository.createExpense(
+          GroupExpense.fromJson(percentageJson),
+          idempotencyKey: 'generic-percentage-1',
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => repository.createExpense(
+          GroupExpense.fromJson(itemizedJson),
+          idempotencyKey: 'generic-itemized-1',
+        ),
+        throwsArgumentError,
+      );
+    },
+  );
 }
 
 ApiClient _client(ResponseBody Function(RequestOptions) handler) {
