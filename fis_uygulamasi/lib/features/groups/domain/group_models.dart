@@ -4,6 +4,8 @@ enum SplitType { equal, percentage, fixedAmount, itemized }
 
 enum ShareStatus { open }
 
+enum ExpenseExtraAmountType { tax, tip, serviceFee, other }
+
 GroupRole _groupRoleFromJson(String value) => GroupRole.values.firstWhere(
   (role) => role.name == value,
   orElse: () => throw FormatException('Unknown group_role: $value'),
@@ -25,6 +27,25 @@ String _splitTypeToJson(SplitType value) {
     SplitType.percentage => 'percentage',
     SplitType.fixedAmount => 'fixed_amount',
     SplitType.itemized => 'itemized',
+  };
+}
+
+ExpenseExtraAmountType _expenseExtraAmountTypeFromJson(String value) {
+  return switch (value) {
+    'tax' => ExpenseExtraAmountType.tax,
+    'tip' => ExpenseExtraAmountType.tip,
+    'service_fee' => ExpenseExtraAmountType.serviceFee,
+    'other' => ExpenseExtraAmountType.other,
+    _ => throw FormatException('Unknown expense_extra_amount_type: $value'),
+  };
+}
+
+String _expenseExtraAmountTypeToJson(ExpenseExtraAmountType value) {
+  return switch (value) {
+    ExpenseExtraAmountType.tax => 'tax',
+    ExpenseExtraAmountType.tip => 'tip',
+    ExpenseExtraAmountType.serviceFee => 'service_fee',
+    ExpenseExtraAmountType.other => 'other',
   };
 }
 
@@ -264,6 +285,75 @@ class ReceiptLineItemAssignment {
   };
 }
 
+class ExpenseExtraAmountShare {
+  const ExpenseExtraAmountShare({
+    required this.extraAmountId,
+    required this.userId,
+    required this.amountInMinor,
+  });
+
+  factory ExpenseExtraAmountShare.fromJson(Map<String, Object?> json) {
+    return ExpenseExtraAmountShare(
+      extraAmountId: json['extra_amount_id']! as String,
+      userId: json['user_id']! as String,
+      amountInMinor: json['amount_in_minor']! as int,
+    );
+  }
+
+  final String extraAmountId;
+  final String userId;
+  final int amountInMinor;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'extra_amount_id': extraAmountId,
+    'user_id': userId,
+    'amount_in_minor': amountInMinor,
+  };
+}
+
+class ExpenseExtraAmount {
+  const ExpenseExtraAmount({
+    required this.id,
+    required this.expenseId,
+    required this.type,
+    required this.label,
+    required this.amountInMinor,
+    required this.shares,
+  });
+
+  factory ExpenseExtraAmount.fromJson(Map<String, Object?> json) {
+    return ExpenseExtraAmount(
+      id: json['id']! as String,
+      expenseId: json['expense_id']! as String,
+      type: _expenseExtraAmountTypeFromJson(json['type']! as String),
+      label: json['label'] as String?,
+      amountInMinor: json['amount_in_minor']! as int,
+      shares: (json['shares']! as List<Object?>)
+          .map(
+            (item) =>
+                ExpenseExtraAmountShare.fromJson(item! as Map<String, Object?>),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  final String id;
+  final String expenseId;
+  final ExpenseExtraAmountType type;
+  final String? label;
+  final int amountInMinor;
+  final List<ExpenseExtraAmountShare> shares;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'expense_id': expenseId,
+    'type': _expenseExtraAmountTypeToJson(type),
+    'label': label,
+    'amount_in_minor': amountInMinor,
+    'shares': shares.map((share) => share.toJson()).toList(growable: false),
+  };
+}
+
 class GroupExpense {
   const GroupExpense({
     required this.id,
@@ -280,6 +370,7 @@ class GroupExpense {
     required this.isFinanciallyLocked,
     required this.shares,
     required this.lineItemAssignments,
+    required this.extraAmounts,
     required this.createdAt,
     required this.updatedAt,
     required this.deletedAt,
@@ -291,7 +382,7 @@ class GroupExpense {
       groupId: json['group_id']! as String,
       receiptId: json['receipt_id'] as String?,
       payerUserId: json['payer_user_id']! as String,
-      createdBy: json['created_by']! as String,
+      createdBy: json['created_by'] as String?,
       title: json['title']! as String,
       note: json['note'] as String?,
       expenseDate: json['expense_date']! as String,
@@ -309,6 +400,12 @@ class GroupExpense {
             ),
           )
           .toList(growable: false),
+      extraAmounts: (json['extra_amounts']! as List<Object?>)
+          .map(
+            (item) =>
+                ExpenseExtraAmount.fromJson(item! as Map<String, Object?>),
+          )
+          .toList(growable: false),
       createdAt: json['created_at']! as String,
       updatedAt: json['updated_at']! as String,
       deletedAt: json['deleted_at'] as String?,
@@ -319,7 +416,7 @@ class GroupExpense {
   final String groupId;
   final String? receiptId;
   final String payerUserId;
-  final String createdBy;
+  final String? createdBy;
   final String title;
   final String? note;
   final String expenseDate;
@@ -329,6 +426,7 @@ class GroupExpense {
   final bool isFinanciallyLocked;
   final List<ExpenseShare> shares;
   final List<ReceiptLineItemAssignment> lineItemAssignments;
+  final List<ExpenseExtraAmount> extraAmounts;
   final String createdAt;
   final String updatedAt;
   final String? deletedAt;
@@ -349,6 +447,9 @@ class GroupExpense {
     'shares': shares.map((share) => share.toJson()).toList(growable: false),
     'line_item_assignments': lineItemAssignments
         .map((assignment) => assignment.toJson())
+        .toList(growable: false),
+    'extra_amounts': extraAmounts
+        .map((extraAmount) => extraAmount.toJson())
         .toList(growable: false),
     'created_at': createdAt,
     'updated_at': updatedAt,

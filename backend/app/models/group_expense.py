@@ -32,6 +32,13 @@ class ExpenseShareStatus(str, enum.Enum):
     settled = "settled"
 
 
+class ExpenseExtraAmountType(str, enum.Enum):
+    tax = "tax"
+    tip = "tip"
+    service_fee = "service_fee"
+    other = "other"
+
+
 class GroupExpense(Base):
     __tablename__ = "group_expenses"
     __table_args__ = (
@@ -69,12 +76,14 @@ class GroupExpense(Base):
     receipt_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("cloud_receipts.id", ondelete="SET NULL"),
     )
-    # Historical UUID intentionally outlives the User row.
-    # Active membership is validated by the service before writes.
     payer_user_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     created_by_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     idempotency_key: Mapped[str | None] = mapped_column(String(255))
     idempotency_request_hash: Mapped[str | None] = mapped_column(String(64))
+
+    # Nullable only for rows created before migration 0010.
+    # No User FK is used so financial history survives account deletion.
+    created_by: Mapped[uuid.UUID | None] = mapped_column()
 
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     note: Mapped[str | None] = mapped_column(Text)
@@ -133,6 +142,12 @@ class GroupExpense(Base):
             "ExpenseLineItemAssignment.receipt_line_item_id, "
             "ExpenseLineItemAssignment.user_id"
         ),
+    )
+    extra_amounts: Mapped[list["ExpenseExtraAmount"]] = relationship(
+        back_populates="expense",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ExpenseExtraAmount.id",
     )
 
 
@@ -217,3 +232,88 @@ class ExpenseLineItemAssignment(Base):
     quantity_share_milli: Mapped[int | None] = mapped_column(BigInteger)
 
     expense: Mapped[GroupExpense] = relationship(back_populates="line_item_assignments")
+
+
+class ExpenseExtraAmount(Base):
+    __tablename__ = "expense_extra_amounts"
+    __table_args__ = (
+        CheckConstraint(
+            "type IN ('tax', 'tip', 'service_fee', 'other')",
+            name="ck_expense_extra_amounts_type",
+        ),
+        CheckConstraint(
+            "amount_in_minor > 0",
+            name="ck_expense_extra_amounts_amount_positive",
+        ),
+        CheckConstraint(
+            "type != 'other' OR " "(label IS NOT NULL AND length(trim(label)) > 0)",
+            name="ck_expense_extra_amounts_other_label",
+        ),
+        Index(
+            "ix_expense_extra_amounts_expense_id",
+            "expense_id",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    expense_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("group_expenses.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    type: Mapped[ExpenseExtraAmountType] = mapped_column(
+        Enum(
+            ExpenseExtraAmountType,
+            name="ck_expense_extra_amounts_type",
+            native_enum=False,
+            create_constraint=False,
+            validate_strings=True,
+            length=16,
+        ),
+        nullable=False,
+    )
+    label: Mapped[str | None] = mapped_column(String(255))
+    amount_in_minor: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+    )
+
+    expense: Mapped[GroupExpense] = relationship(
+        back_populates="extra_amounts",
+    )
+    shares: Mapped[list["ExpenseExtraAmountShare"]] = relationship(
+        back_populates="extra_amount",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ExpenseExtraAmountShare.user_id",
+    )
+
+
+class ExpenseExtraAmountShare(Base):
+    __tablename__ = "expense_extra_amount_shares"
+    __table_args__ = (
+        CheckConstraint(
+            "amount_in_minor >= 0",
+            name="ck_expense_extra_amount_shares_amount_nonnegative",
+        ),
+        Index(
+            "ix_expense_extra_amount_shares_user_id",
+            "user_id",
+        ),
+    )
+
+    extra_amount_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("expense_extra_amounts.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    amount_in_minor: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+    )
+
+    extra_amount: Mapped[ExpenseExtraAmount] = relationship(
+        back_populates="shares",
+    )
