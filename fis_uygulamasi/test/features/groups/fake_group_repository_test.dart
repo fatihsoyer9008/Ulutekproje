@@ -249,6 +249,68 @@ void main() {
       );
     });
 
+    test('owner bir member üyeyi gruptan çıkarabilir', () async {
+      final repository = FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+        clock: () => DateTime.utc(2026, 8, 12, 10),
+      );
+
+      await repository.removeMember(
+        groupId: twoMemberGroupId,
+        userId: secondUserId,
+      );
+
+      final group = await repository.getGroup(twoMemberGroupId);
+      final removedMember = group.members.firstWhere(
+        (member) => member.userId == secondUserId,
+      );
+
+      expect(group.memberCount, 1);
+      expect(removedMember.leftAt, '2026-08-12T10:00:00.000Z');
+    });
+
+    test('member başka bir üyeyi gruptan çıkaramaz', () async {
+      final repository = FakeGroupRepository(
+        currentUserId: secondUserId,
+        groups: const <GroupDetail>[twoMemberGroup],
+      );
+
+      await expectLater(
+        repository.removeMember(
+          groupId: twoMemberGroupId,
+          userId: currentUserId,
+        ),
+        throwsA(
+          isA<GroupApiException>().having(
+            (error) => error.code,
+            'code',
+            'group_forbidden',
+          ),
+        ),
+      );
+    });
+
+    test('grup sahibi gruptan çıkarılamaz', () async {
+      final repository = FakeGroupRepository(
+        currentUserId: secondUserId,
+        groups: const <GroupDetail>[twoMemberGroup],
+      );
+
+      await expectLater(
+        repository.removeMember(
+          groupId: twoMemberGroupId,
+          userId: currentUserId,
+        ),
+        throwsA(
+          isA<GroupApiException>().having(
+            (error) => error.code,
+            'code',
+            'group_forbidden',
+          ),
+        ),
+      );
+    });
+
     test('rejects group updates from a member', () async {
       final repository = FakeGroupRepository(
         currentUserId: secondUserId,
@@ -273,11 +335,11 @@ void main() {
       );
 
       final first = await repository.createExpense(
-        fastSplitTransferExpense,
+        _fastSplitRequest(),
         idempotencyKey: 'expense-request-1',
       );
       final retry = await repository.createExpense(
-        fastSplitTransferExpense,
+        _fastSplitRequest(),
         idempotencyKey: 'expense-request-1',
       );
 
@@ -290,16 +352,12 @@ void main() {
         groups: const <GroupDetail>[twoMemberGroup],
       );
       await repository.createExpense(
-        fastSplitTransferExpense,
+        _fastSplitRequest(),
         idempotencyKey: 'expense-request-2',
       );
-      final changedJson = Map<String, Object?>.from(
-        fastSplitTransferExpense.toJson(),
-      )..['title'] = 'Değiştirilen başlık';
-
       await expectLater(
         repository.createExpense(
-          GroupExpense.fromJson(changedJson),
+          _fastSplitRequest(title: 'Değiştirilen başlık'),
           idempotencyKey: 'expense-request-2',
         ),
         throwsA(
@@ -311,7 +369,58 @@ void main() {
         ),
       );
     });
+
+    test('masraf oluşturulduğunda borç özetini günceller', () async {
+      final repository = FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      );
+
+      await repository.createExpense(
+        _fastSplitRequest(),
+        idempotencyKey: 'expense-updates-debt-summary',
+      );
+
+      final summary = await repository.getDebtSummary(twoMemberGroupId);
+
+      expect(summary.balances, hasLength(2));
+      expect(
+        summary.balances
+            .singleWhere((balance) => balance.userId == currentUserId)
+            .netAmountInMinor,
+        6250,
+      );
+      expect(
+        summary.balances
+            .singleWhere((balance) => balance.userId == secondUserId)
+            .netAmountInMinor,
+        -6250,
+      );
+      expect(summary.suggestedTransfers, hasLength(1));
+
+      final transfer = summary.suggestedTransfers.single;
+      expect(transfer.fromUserId, secondUserId);
+      expect(transfer.toUserId, currentUserId);
+      expect(transfer.amountInMinor, 6250);
+    });
   });
+}
+
+CreateGroupExpenseRequest _fastSplitRequest({String? title}) {
+  return CreateGroupExpenseRequest(
+    groupId: fastSplitTransferExpense.groupId,
+    receiptId: fastSplitTransferExpense.receiptId,
+    payerUserId: fastSplitTransferExpense.payerUserId,
+    title: title ?? fastSplitTransferExpense.title,
+    note: fastSplitTransferExpense.note,
+    expenseDate: fastSplitTransferExpense.expenseDate,
+    totalAmountInMinor: fastSplitTransferExpense.totalAmountInMinor,
+    currency: fastSplitTransferExpense.currency,
+    split: ExpenseSplitRequest.equal(
+      memberIds: fastSplitTransferExpense.shares
+          .map((share) => share.userId)
+          .toList(growable: false),
+    ),
+  );
 }
 
 Map<String, Object?> _readJsonFixture(String relativePath) {

@@ -6,6 +6,7 @@ import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../../transaction_draft/model/turkish_money.dart';
 import '../data/fake_group_repository.dart';
 import '../domain/group_models.dart';
+import 'package:go_router/go_router.dart';
 
 class GroupsPage extends ConsumerWidget {
   const GroupsPage({super.key});
@@ -60,6 +61,7 @@ class _GroupCard extends ConsumerWidget {
     return AppCard(
       child: ListTile(
         key: Key('group_card_${group.id}'),
+        onTap: () => context.push('/groups/${Uri.encodeComponent(group.id)}'),
         contentPadding: const EdgeInsets.all(16),
         leading: CircleAvatar(
           backgroundColor: AppColors.mint,
