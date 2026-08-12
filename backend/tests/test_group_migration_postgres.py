@@ -1541,7 +1541,7 @@ async def test_expense_migration_preserves_existing_group_data() -> None:
 
 @pytest.mark.asyncio
 async def test_assignment_migration_preserves_existing_group_data() -> None:
-    """Upgrade/downgrade 0007-0009 without losing rows created at revision 0006."""
+    """Upgrade/downgrade 0007-0010 without losing rows created at revision 0006."""
     base_url = _postgres_test_url()
     temporary_database = f"group_assignment_upgrade_{uuid.uuid4().hex}"
     admin_url = base_url.set(database="postgres")

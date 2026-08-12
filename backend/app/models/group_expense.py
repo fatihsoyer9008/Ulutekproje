@@ -81,7 +81,7 @@ class GroupExpense(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(255))
     idempotency_request_hash: Mapped[str | None] = mapped_column(String(64))
 
-    # Nullable only for rows created before migration 0009.
+    # Nullable only for rows created before migration 0010.
     # No User FK is used so financial history survives account deletion.
     created_by: Mapped[uuid.UUID | None] = mapped_column()
 

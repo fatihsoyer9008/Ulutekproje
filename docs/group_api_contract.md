@@ -114,7 +114,7 @@ ve borç algoritması aynı alan adlarını kullanmalıdır.
 | `group_id` | UUID `String` | Evet | Grup kimliği |
 | `receipt_id` | UUID `String?` | Evet | Fiş yoksa `null` |
 | `payer_user_id` | UUID `String` | Evet | Ödeyen grup üyesi |
-| `created_by` | UUID `String?` | Evet | `0009` öncesi tarihsel masraflarda `null` |
+| `created_by` | UUID `String?` | Evet | `0010` öncesi tarihsel masraflarda `null` |
 | `title` | `String` | Evet | Masraf başlığı |
 | `note` | `String?` | Evet | Not veya `null` |
 | `expense_date` | UTC `String` | Evet | Masraf zamanı |
@@ -722,14 +722,13 @@ Response `204` ve boş body döner.
 - Çıkarılan üyeliğin `left_at` alanı doldurulur. Geçmiş masraf kayıtları
   korunur, fakat kullanıcı artık yeni grup işlemi yapamaz.
 
-## Kalem Bazlı Grup Masrafı Endpoint'i
+## Grup Masrafı Oluşturma Endpoint'i
 
 ### Ortak Masraf Alanları
 
-Bu sürümde `POST /api/v1/groups/{group_id}/expenses` endpoint'i yalnızca
-`itemized` split türünü kabul eder. `equal`, `percentage` ve `fixed_amount`
-request şekilleri planlanan sözleşmeyi gösterir ve bu endpoint'in mevcut
-sürümünde henüz aktif değildir:
+`POST /api/v1/groups/{group_id}/expenses` endpoint'i `equal`, `percentage`,
+`fixed_amount` ve `itemized` split türlerini aktif olarak destekler.
+Request gövdesinin şekli `split.type` alanına göre belirlenir:
 
 ```http
 POST /api/v1/groups/{group_id}/expenses
@@ -764,7 +763,7 @@ Kurallar:
   hesabın güncel silinme durumuna göre değişebilir.
 - Aynı `Idempotency-Key` farklı body ile kullanılırsa `409` döner.
 
-Response `201`:
+İlk başarılı oluşturma için response `201`:
 
 ```json
 {
@@ -772,7 +771,7 @@ Response `201`:
 }
 ```
 
-### Eşit Bölüşüm (planlanan)
+### Eşit Bölüşüm
 
 ```json
 {
@@ -789,7 +788,7 @@ Response `201`:
 Kuruş kalanı request içindeki `member_ids` sırasına göre dağıtılır. Örneğin
 100 kuruş üç kişi arasında `34, 33, 33` olarak paylaşılır.
 
-### Yüzdelik Bölüşüm (planlanan)
+### Yüzdelik Bölüşüm
 
 ```json
 {
@@ -812,7 +811,7 @@ Kuruş kalanı request içindeki `member_ids` sırasına göre dağıtılır. Ö
 `percentage_basis_points` toplamı tam olarak `10000` olmalıdır. Kuruş kalanı
 request sırasına göre dağıtılır.
 
-### Sabit Tutar Bölüşümü (planlanan)
+### Sabit Tutar Bölüşümü
 
 ```json
 {
@@ -907,8 +906,9 @@ Kurallar:
 - UI itemized akıştan önce fişi ve ürünlerini buluta senkronize eder, backend'in
   döndürdüğü cloud `receipt_id` ve `receipt_line_item_id` değerlerini bekler.
 - Senkronizasyon çevrimdışı olduğu veya tamamlanamadığı için cloud kimlikleri
-  yoksa UI itemized ekranını başlatmaz. `equal`, `percentage` ve `fixed_amount`
-  türleri bu endpoint'in mevcut sürümünde kullanılmaz.
+  yoksa UI `itemized` ekranını başlatmaz.
+- `equal`, `percentage` ve `fixed_amount` bölüşümleri fiş olmadan kullanılabilir;
+  bu request'lerde `receipt_id` değeri `null` olabilir.
 - Bir ürün birden fazla üyeye atanabilir.
 - Ürün paylarının toplamı ürünün `price_in_minor` değerine eşit olmalıdır.
 - `extra_amounts`; KDV, bahşiş, servis bedeli veya fiş-ürün toplam farkını
