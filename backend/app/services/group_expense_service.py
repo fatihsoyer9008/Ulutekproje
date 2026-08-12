@@ -206,6 +206,82 @@ class GroupExpenseService:
         extra_amount_shares: Sequence[tuple[uuid.UUID, int]] = (),
         note: str | None = None,
     ) -> GroupExpense:
+        expense, _ = await self._create_itemized(
+            group_id=group_id,
+            receipt_id=receipt_id,
+            actor_user_id=actor_user_id,
+            payer_user_id=payer_user_id,
+            title=title,
+            expense_date=expense_date,
+            total_amount_in_minor=total_amount_in_minor,
+            currency=currency,
+            assignments=assignments,
+            extra_amount_shares=extra_amount_shares,
+            note=note,
+        )
+        return expense
+
+    async def create_itemized_idempotent(
+        self,
+        *,
+        group_id: uuid.UUID,
+        receipt_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        payer_user_id: uuid.UUID,
+        title: str,
+        expense_date: datetime,
+        total_amount_in_minor: int,
+        currency: str,
+        assignments: Sequence[LineItemAssignmentInput],
+        idempotency_key: str,
+        idempotency_request_hash: str,
+        extra_amount_shares: Sequence[tuple[uuid.UUID, int]] = (),
+        note: str | None = None,
+    ) -> tuple[GroupExpense, bool]:
+        return await self._create_itemized(
+            group_id=group_id,
+            receipt_id=receipt_id,
+            actor_user_id=actor_user_id,
+            payer_user_id=payer_user_id,
+            title=title,
+            expense_date=expense_date,
+            total_amount_in_minor=total_amount_in_minor,
+            currency=currency,
+            assignments=assignments,
+            extra_amount_shares=extra_amount_shares,
+            note=note,
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=idempotency_request_hash,
+        )
+
+    async def _create_itemized(
+        self,
+        *,
+        group_id: uuid.UUID,
+        receipt_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        payer_user_id: uuid.UUID,
+        title: str,
+        expense_date: datetime,
+        total_amount_in_minor: int,
+        currency: str,
+        assignments: Sequence[LineItemAssignmentInput],
+        extra_amount_shares: Sequence[tuple[uuid.UUID, int]] = (),
+        note: str | None = None,
+        idempotency_key: str | None = None,
+        idempotency_request_hash: str | None = None,
+    ) -> tuple[GroupExpense, bool]:
+        if idempotency_key:
+            existing = await self.repository.get_by_idempotency_key(
+                group_id=group_id,
+                created_by_id=actor_user_id,
+                key=idempotency_key,
+            )
+            if existing is not None:
+                if existing.idempotency_request_hash != idempotency_request_hash:
+                    raise ItemizedExpenseValidationError("idempotency_key_reused")
+                return existing, True
+
         group = await self.session.get(Group, group_id)
         if group is None:
             raise ItemizedExpenseValidationError("group_not_found")
@@ -239,11 +315,26 @@ class GroupExpenseService:
         line_item_statement = (
             select(CloudReceiptLineItem)
             .where(CloudReceiptLineItem.receipt_id == receipt_id)
+            .order_by(CloudReceiptLineItem.id)
             .with_for_update()
         )
         line_items = list((await self.session.scalars(line_item_statement)).all())
         if not line_items:
-            raise ItemizedExpenseValidationError("invalid_request")
+            raise ItemizedExpenseValidationError("itemized_receipt_has_no_line_items")
+
+        # PostgreSQL row locks serialize itemized writes for the same receipt.
+        # Re-check after acquiring them so a concurrent idempotent retry is
+        # replayed instead of being mistaken for line-item reuse.
+        if idempotency_key:
+            existing = await self.repository.get_by_idempotency_key(
+                group_id=group_id,
+                created_by_id=actor_user_id,
+                key=idempotency_key,
+            )
+            if existing is not None:
+                if existing.idempotency_request_hash != idempotency_request_hash:
+                    raise ItemizedExpenseValidationError("idempotency_key_reused")
+                return existing, True
 
         line_items_by_id = {line_item.id: line_item for line_item in line_items}
         provided_line_item_ids = {
@@ -300,6 +391,9 @@ class GroupExpenseService:
                     assignment.quantity_share_milli
                 )
 
+        extra_share_user_ids = [user_id for user_id, _ in extra_amount_shares]
+        if len(extra_share_user_ids) != len(set(extra_share_user_ids)):
+            raise ItemizedExpenseValidationError("invalid_request")
         for user_id, amount_in_minor in extra_amount_shares:
             if amount_in_minor < 0:
                 raise ItemizedExpenseValidationError("invalid_request")
@@ -364,7 +458,7 @@ class GroupExpenseService:
             for assignment in assignments
         ]
 
-        return await self.repository.create(
+        expense = await self.repository.create(
             group_id=group_id,
             receipt_id=receipt_id,
             payer_user_id=payer_user_id,
@@ -377,4 +471,7 @@ class GroupExpenseService:
             split_type=ExpenseSplitType.itemized,
             shares=share_values,
             line_item_assignments=assignment_values,
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=idempotency_request_hash,
         )
+        return expense, False

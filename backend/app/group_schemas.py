@@ -18,6 +18,7 @@ class FastSplitType(str, enum.Enum):
     equal = "equal"
     percentage = "percentage"
     fixed_amount = "fixed_amount"
+    itemized = "itemized"
 
 
 class ExpenseSplitShareRequest(BaseModel):
@@ -27,14 +28,59 @@ class ExpenseSplitShareRequest(BaseModel):
     amount_in_minor: int | None = Field(default=None, ge=0)
 
 
+class ItemizedLineItemShareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_id: uuid.UUID
+    amount_in_minor: int = Field(ge=0)
+    quantity_share_milli: int | None = Field(default=None, gt=0)
+
+
+class ItemizedLineItemRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    receipt_line_item_id: uuid.UUID
+    shares: list[ItemizedLineItemShareRequest] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unique_users(self) -> "ItemizedLineItemRequest":
+        user_ids = [share.user_id for share in self.shares]
+        if len(user_ids) != len(set(user_ids)):
+            raise ValueError("line-item share users must be unique")
+        return self
+
+
+class ExtraAmountShareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_id: uuid.UUID
+    amount_in_minor: int = Field(ge=0)
+
+
 class ExpenseSplitRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: FastSplitType
     member_ids: list[uuid.UUID] | None = None
     shares: list[ExpenseSplitShareRequest] | None = None
+    line_items: list[ItemizedLineItemRequest] | None = None
+    extra_amount_shares: list[ExtraAmountShareRequest] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_shape(self) -> "ExpenseSplitRequest":
+        if self.type is FastSplitType.itemized:
+            if (
+                not self.line_items
+                or self.member_ids is not None
+                or self.shares is not None
+            ):
+                raise ValueError("itemized split requires line_items only")
+            line_item_ids = [item.receipt_line_item_id for item in self.line_items]
+            if len(line_item_ids) != len(set(line_item_ids)):
+                raise ValueError("itemized receipt line items must be unique")
+            extra_user_ids = [share.user_id for share in self.extra_amount_shares]
+            if len(extra_user_ids) != len(set(extra_user_ids)):
+                raise ValueError("extra amount share users must be unique")
+            return self
+
+        if self.line_items is not None or self.extra_amount_shares:
+            raise ValueError("fast split cannot include itemized fields")
         if self.type is FastSplitType.equal:
             if not self.member_ids or self.shares is not None:
                 raise ValueError("equal split requires member_ids only")
@@ -83,6 +129,12 @@ class GroupExpenseCreateRequest(BaseModel):
     def normalize_currency(cls, value: str) -> str:
         return value.strip().upper()
 
+    @model_validator(mode="after")
+    def validate_itemized_receipt(self) -> "GroupExpenseCreateRequest":
+        if self.split.type is FastSplitType.itemized and self.receipt_id is None:
+            raise ValueError("itemized split requires receipt_id")
+        return self
+
 
 class ExpenseShareResponse(BaseModel):
     expense_id: uuid.UUID
@@ -91,6 +143,14 @@ class ExpenseShareResponse(BaseModel):
     amount_in_minor: int
     status: str
     settled_at: datetime | None
+
+
+class ReceiptLineItemAssignmentResponse(BaseModel):
+    expense_id: uuid.UUID
+    receipt_line_item_id: uuid.UUID
+    user_id: uuid.UUID
+    amount_in_minor: int
+    quantity_share_milli: int | None
 
 
 class GroupExpenseResponse(BaseModel):
@@ -107,7 +167,7 @@ class GroupExpenseResponse(BaseModel):
     split_type: str
     is_financially_locked: bool
     shares: list[ExpenseShareResponse]
-    line_item_assignments: list[dict[str, object]]
+    line_item_assignments: list[ReceiptLineItemAssignmentResponse]
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None

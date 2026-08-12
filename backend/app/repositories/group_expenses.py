@@ -89,7 +89,10 @@ class GroupExpenseRepository:
                 GroupExpense.idempotency_key == key,
                 GroupExpense.deleted_at.is_(None),
             )
-            .options(selectinload(GroupExpense.shares))
+            .options(
+                selectinload(GroupExpense.shares),
+                selectinload(GroupExpense.line_item_assignments),
+            )
         )
         return await self.session.scalar(statement)
 

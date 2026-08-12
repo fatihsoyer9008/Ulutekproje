@@ -28,13 +28,20 @@ from app.group_schemas import (
     GroupResponse,
     GroupsResponse,
     GroupUpdateRequest,
+    ReceiptLineItemAssignmentResponse,
 )
 from app.models.group import GroupMember
-from app.models.group_expense import ExpenseSplitType, GroupExpense
+from app.models.group_expense import (
+    ExpenseLineItemAssignment,
+    ExpenseSplitType,
+    GroupExpense,
+)
 from app.models.user import User
 from app.services.group_expense_service import (
     FastSplitValidationError,
     GroupExpenseService,
+    ItemizedExpenseValidationError,
+    LineItemAssignmentInput,
 )
 from app.services.group_service import GroupService, GroupServiceError
 
@@ -63,6 +70,19 @@ _EXPENSE_ERRORS = {
         "Idempotency-Key farklı bir istek için daha önce kullanılmış.",
     ),
     "receipt_not_synced": (409, "Fiş henüz buluta senkronize edilmemiş."),
+    "invalid_request": (422, "Kalem bazlı paylaşım isteği geçersiz."),
+    "invalid_split_total": (
+        422,
+        "Kalem ve ek tutar payları masraf toplamıyla eşleşmelidir.",
+    ),
+    "unassigned_line_items": (
+        422,
+        "Fişteki tüm ürünler bir veya daha fazla grup üyesine atanmalıdır.",
+    ),
+    "itemized_receipt_has_no_line_items": (
+        422,
+        "Bu fişte ürün satırı yok. equal, percentage veya fixed_amount Fast Split kullanın.",
+    ),
 }
 
 
@@ -70,6 +90,15 @@ async def _expense_response(
     expense: GroupExpense, db: AsyncSession
 ) -> GroupExpenseEnvelope:
     user_ids = [share.user_id for share in expense.shares]
+    line_item_assignments = list(
+        (
+            await db.scalars(
+                select(ExpenseLineItemAssignment).where(
+                    ExpenseLineItemAssignment.expense_id == expense.id
+                )
+            )
+        ).all()
+    )
     names = dict(
         (
             await db.execute(
@@ -102,7 +131,22 @@ async def _expense_response(
                 )
                 for s in sorted(expense.shares, key=lambda share: str(share.user_id))
             ],
-            line_item_assignments=[],
+            line_item_assignments=[
+                ReceiptLineItemAssignmentResponse(
+                    expense_id=expense.id,
+                    receipt_line_item_id=assignment.receipt_line_item_id,
+                    user_id=assignment.user_id,
+                    amount_in_minor=assignment.amount_in_minor,
+                    quantity_share_milli=assignment.quantity_share_milli,
+                )
+                for assignment in sorted(
+                    line_item_assignments,
+                    key=lambda item: (
+                        str(item.receipt_line_item_id),
+                        str(item.user_id),
+                    ),
+                )
+            ],
             created_at=expense.created_at,
             updated_at=expense.updated_at,
             deleted_at=expense.deleted_at,
@@ -140,50 +184,93 @@ async def create_group_expense(
             payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
         ).encode()
     ).hexdigest()
-    split_type = {
-        FastSplitType.equal: ExpenseSplitType.equal,
-        FastSplitType.percentage: ExpenseSplitType.percentage,
-        FastSplitType.fixed_amount: ExpenseSplitType.fixed_amount,
-    }[payload.split.type]
-    if payload.split.type is FastSplitType.equal:
-        participants = [(user_id, None) for user_id in payload.split.member_ids or []]
-    else:
-        participants = [
-            (
-                item.user_id,
-                item.percentage_basis_points
-                if payload.split.type is FastSplitType.percentage
-                else item.amount_in_minor,
-            )
-            for item in payload.split.shares or []
-        ]
     service = GroupExpenseService(db)
     try:
-        expense, replayed = await service.create_fast_split(
-            group_id=group_id,
-            actor_user_id=actor_user_id,
-            payer_user_id=payload.payer_user_id,
-            receipt_id=payload.receipt_id,
-            title=payload.title,
-            note=payload.note,
-            expense_date=payload.expense_date,
-            total_amount_in_minor=payload.total_amount_in_minor,
-            currency=payload.currency,
-            split_type=split_type,
-            participants=participants,
-            idempotency_key=idempotency_key,
-            idempotency_request_hash=request_hash,
-        )
+        if payload.split.type is FastSplitType.itemized:
+            assert payload.receipt_id is not None
+            assignments = [
+                LineItemAssignmentInput(
+                    receipt_line_item_id=line_item.receipt_line_item_id,
+                    user_id=share.user_id,
+                    amount_in_minor=share.amount_in_minor,
+                    quantity_share_milli=share.quantity_share_milli,
+                )
+                for line_item in payload.split.line_items or []
+                for share in line_item.shares
+            ]
+            expense, replayed = await service.create_itemized_idempotent(
+                group_id=group_id,
+                receipt_id=payload.receipt_id,
+                actor_user_id=actor_user_id,
+                payer_user_id=payload.payer_user_id,
+                title=payload.title,
+                note=payload.note,
+                expense_date=payload.expense_date,
+                total_amount_in_minor=payload.total_amount_in_minor,
+                currency=payload.currency,
+                assignments=assignments,
+                extra_amount_shares=[
+                    (share.user_id, share.amount_in_minor)
+                    for share in payload.split.extra_amount_shares
+                ],
+                idempotency_key=idempotency_key,
+                idempotency_request_hash=request_hash,
+            )
+        else:
+            split_type = {
+                FastSplitType.equal: ExpenseSplitType.equal,
+                FastSplitType.percentage: ExpenseSplitType.percentage,
+                FastSplitType.fixed_amount: ExpenseSplitType.fixed_amount,
+            }[payload.split.type]
+            if payload.split.type is FastSplitType.equal:
+                participants = [
+                    (user_id, None) for user_id in payload.split.member_ids or []
+                ]
+            else:
+                participants = [
+                    (
+                        item.user_id,
+                        item.percentage_basis_points
+                        if payload.split.type is FastSplitType.percentage
+                        else item.amount_in_minor,
+                    )
+                    for item in payload.split.shares or []
+                ]
+            expense, replayed = await service.create_fast_split(
+                group_id=group_id,
+                actor_user_id=actor_user_id,
+                payer_user_id=payload.payer_user_id,
+                receipt_id=payload.receipt_id,
+                title=payload.title,
+                note=payload.note,
+                expense_date=payload.expense_date,
+                total_amount_in_minor=payload.total_amount_in_minor,
+                currency=payload.currency,
+                split_type=split_type,
+                participants=participants,
+                idempotency_key=idempotency_key,
+                idempotency_request_hash=request_hash,
+            )
         await db.commit()
-    except FastSplitValidationError as error:
+    except (FastSplitValidationError, ItemizedExpenseValidationError) as error:
         code, message = _EXPENSE_ERRORS[error.code]
         public_code = {
             "percentage_total_must_be_100": "invalid_percentage_total",
             "exact_total_must_match_expense": "invalid_split_total",
             "idempotency_key_reused": "idempotency_conflict",
+            "itemized_receipt_has_no_line_items": "invalid_request",
         }.get(error.code, error.code)
+        detail: dict[str, object] = {"code": public_code, "message": message}
+        if (
+            isinstance(error, ItemizedExpenseValidationError)
+            and error.unassigned_receipt_line_item_ids
+        ):
+            detail["unassigned_receipt_line_item_ids"] = [
+                str(item_id) for item_id in error.unassigned_receipt_line_item_ids
+            ]
         raise HTTPException(
-            code, detail={"code": public_code, "message": message}
+            code,
+            detail=detail,
         ) from None
     except IntegrityError as error:
         await db.rollback()
