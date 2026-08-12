@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../application/fast_split_calculator.dart';
 import '../domain/group_models.dart';
 import 'group_repository.dart';
 
@@ -312,6 +313,137 @@ class FakeGroupRepository implements GroupRepository {
       value: stored,
     );
     return GroupExpense.fromJson(stored.toJson());
+  }
+
+  @override
+  Future<GroupExpense> createFastSplit(
+    FastSplitExpenseRequest request, {
+    required String idempotencyKey,
+  }) {
+    final now = _timestamp();
+    final expenseId = 'local-expense-${_clock().microsecondsSinceEpoch}';
+    final group = _requireGroup(request.groupId);
+    final members = {for (final member in group.members) member.userId: member};
+    final calculation = switch (request.splitType) {
+      SplitType.equal => FastSplitCalculator.equal(
+        totalAmountInMinor: request.totalAmountInMinor,
+        memberIds: request.orderedMemberIds,
+      ),
+      SplitType.percentage => FastSplitCalculator.percentage(
+        totalAmountInMinor: request.totalAmountInMinor,
+        memberIds: request.orderedMemberIds,
+        percentageBasisPoints: request.percentageBasisPoints,
+      ),
+      SplitType.fixedAmount => FastSplitCalculator.fixedAmount(
+        totalAmountInMinor: request.totalAmountInMinor,
+        memberIds: request.orderedMemberIds,
+        amountsInMinor: request.fixedAmountsInMinor,
+      ),
+      SplitType.itemized => throw ArgumentError.value(request.splitType),
+    };
+    final amounts = {
+      for (final share in calculation.shares) share.userId: share.amountInMinor,
+    };
+    return createExpense(
+      GroupExpense(
+        id: expenseId,
+        groupId: request.groupId,
+        receiptId: null,
+        payerUserId: request.payerUserId,
+        createdBy: currentUserId,
+        title: request.title,
+        note: null,
+        expenseDate: request.expenseDate,
+        totalAmountInMinor: request.totalAmountInMinor,
+        currency: request.currency,
+        splitType: request.splitType,
+        isFinanciallyLocked: false,
+        shares: [
+          for (final userId in request.orderedMemberIds)
+            ExpenseShare(
+              expenseId: expenseId,
+              userId: userId,
+              displayName: members[userId]?.displayName ?? 'Silinmiş kullanıcı',
+              amountInMinor: amounts[userId] ?? 0,
+              status: ShareStatus.open,
+              settledAt: null,
+            ),
+        ],
+        lineItemAssignments: const [],
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      ),
+      idempotencyKey: idempotencyKey,
+    );
+  }
+
+  @override
+  Future<GroupExpense> createItemizedSplit(
+    ItemizedExpenseRequest request, {
+    required String idempotencyKey,
+  }) {
+    final now = _timestamp();
+    final expenseId = 'local-expense-${_clock().microsecondsSinceEpoch}';
+    final group = _requireGroup(request.groupId);
+    final members = {for (final member in group.members) member.userId: member};
+    final totals = <String, int>{};
+    for (final share in request.lineShares) {
+      totals.update(
+        share.userId,
+        (value) => value + share.amountInMinor,
+        ifAbsent: () => share.amountInMinor,
+      );
+    }
+    for (final share in request.extraShares) {
+      totals.update(
+        share.userId,
+        (value) => value + share.amountInMinor,
+        ifAbsent: () => share.amountInMinor,
+      );
+    }
+    return createExpense(
+      GroupExpense(
+        id: expenseId,
+        groupId: request.groupId,
+        receiptId: request.receiptId,
+        payerUserId: request.payerUserId,
+        createdBy: currentUserId,
+        title: request.title,
+        note: null,
+        expenseDate: request.expenseDate,
+        totalAmountInMinor: request.totalAmountInMinor,
+        currency: request.currency,
+        splitType: SplitType.itemized,
+        isFinanciallyLocked: false,
+        shares: [
+          for (final entry in totals.entries)
+            ExpenseShare(
+              expenseId: expenseId,
+              userId: entry.key,
+              displayName:
+                  members[entry.key]?.displayName ?? 'Silinmiş kullanıcı',
+              amountInMinor: entry.value,
+              status: ShareStatus.open,
+              settledAt: null,
+            ),
+        ],
+        lineItemAssignments: [
+          for (final share in request.lineShares)
+            ReceiptLineItemAssignment(
+              expenseId: expenseId,
+              receiptLineItemId: share.receiptLineItemId,
+              userId: share.userId,
+              amountInMinor: share.amountInMinor,
+              quantityShareMilli: share.quantityShareMilli,
+            ),
+        ],
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      ),
+      idempotencyKey: idempotencyKey,
+    );
   }
 
   @override

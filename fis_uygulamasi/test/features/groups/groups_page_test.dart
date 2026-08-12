@@ -3,9 +3,11 @@ import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
 import 'package:app_main/features/groups/data/fake_group_repository.dart';
 import 'package:app_main/features/groups/data/group_providers.dart';
+import 'package:app_main/features/groups/application/itemized_split_calculator.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:app_main/features/groups/presentation/groups_page.dart';
 import 'package:app_main/features/groups/presentation/fast_split_page.dart';
+import 'package:app_main/features/groups/presentation/itemized_split_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -51,6 +53,39 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(FastSplitPage), findsOneWidget);
+  });
+
+  testWidgets('cloud fişi grup akışından kalem bazlı ekrana taşır', (
+    tester,
+  ) async {
+    final repository = FakeGroupRepository(groups: const [twoMemberGroup]);
+    const receipt = ItemizedSplitReceipt(
+      receiptId: '20000000-0000-4000-8000-000000000001',
+      totalAmountInMinor: 1000,
+      lineItems: [
+        ItemizedReceiptLine(
+          receiptLineItemId: '30000000-0000-4000-8000-000000000001',
+          name: 'Süt',
+          quantityMilli: 1000,
+          unitPriceInMinor: 1000,
+          totalAmountInMinor: 1000,
+        ),
+      ],
+    );
+    await _pumpGroupsPage(tester, repository, itemizedReceipt: receipt);
+
+    await tester.tap(find.byKey(Key('group_card_$twoMemberGroupId')));
+    await tester.pumpAndSettle();
+    final itemizedButton = find.byKey(const Key('open_itemized_split'));
+    await tester.scrollUntilVisible(
+      itemizedButton,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(itemizedButton);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ItemizedSplitPage), findsOneWidget);
   });
 
   testWidgets('net tutar sıfırsa dengede durumu gösterilir', (tester) async {
@@ -219,6 +254,7 @@ Future<void> _pumpGroupsPage(
   WidgetTester tester,
   FakeGroupRepository repository, {
   DebtSummaryRepository? debtSummaryRepository,
+  ItemizedSplitReceipt? itemizedReceipt,
   bool settle = true,
 }) async {
   final controller = AuthSessionController(_GroupsAuthRepository());
@@ -229,6 +265,10 @@ Future<void> _pumpGroupsPage(
       overrides: [
         authSessionControllerProvider.overrideWith((ref) => controller),
         groupRepositoryProvider.overrideWithValue(repository),
+        if (itemizedReceipt != null)
+          latestItemizedReceiptProvider.overrideWith(
+            (ref) async => itemizedReceipt,
+          ),
         if (debtSummaryRepository != null)
           debtSummaryRepositoryProvider.overrideWithValue(
             debtSummaryRepository,

@@ -1,18 +1,43 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/group_models.dart';
-import 'fake_group_repository.dart';
+import '../presentation/itemized_split_page.dart';
+import '../../auth/presentation/controllers/auth_session_controller.dart';
+import '../../sync/application/sync_coordinator.dart';
+import '../../../core/database/database_providers.dart';
+import 'api_group_expense_repository.dart';
+import 'api_group_repository.dart';
+import 'group_repository.dart';
+import 'receipt_sync_repository.dart';
 
 final groupRepositoryProvider = Provider<GroupRepository>(
-  (ref) => FakeGroupRepository(),
+  (ref) => ApiGroupRepository(ref.watch(apiClientProvider)),
 );
 
 final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(
-  (ref) => FakeGroupExpenseRepository(ref.watch(groupRepositoryProvider)),
+  (ref) => ApiGroupExpenseRepository(ref.watch(apiClientProvider)),
 );
 
+final receiptSyncRepositoryProvider = Provider<ReceiptSyncRepository>(
+  (ref) => ReceiptSyncRepository(
+    apiClient: ref.watch(apiClientProvider),
+    installationIdProvider: ref.watch(installationIdProvider),
+  ),
+);
+
+final latestItemizedReceiptProvider = FutureProvider<ItemizedSplitReceipt?>((
+  ref,
+) async {
+  final transactions = await ref
+      .watch(transactionRepositoryProvider)
+      .getAllTransactions();
+  return ref
+      .watch(receiptSyncRepositoryProvider)
+      .syncLatestReceipt(transactions);
+});
+
 final debtSummaryRepositoryProvider = Provider<DebtSummaryRepository>(
-  (ref) => FakeDebtSummaryRepository(ref.watch(groupRepositoryProvider)),
+  (ref) => ref.watch(groupRepositoryProvider),
 );
 
 final groupsProvider = FutureProvider<GroupsResponse>(

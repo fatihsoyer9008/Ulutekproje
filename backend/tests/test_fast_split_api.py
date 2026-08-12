@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from app.api.routers.groups import _is_idempotency_collision
-from app.models import GroupExpense
+from app.models import CloudReceipt, CloudReceiptLineItem, GroupExpense
 from app.repositories.groups import GroupRepository
 from app.services.group_expense_service import (
     FastSplitValidationError,
@@ -122,6 +122,101 @@ async def test_endpoint_creates_once_and_replays_idempotency_key(
     )
     assert conflict.status_code == 409
     assert conflict.json()["detail"]["code"] == "idempotency_conflict"
+
+
+@pytest.mark.asyncio
+async def test_endpoint_creates_and_replays_itemized_expense(
+    group_api_context,
+) -> None:
+    client, session_factory, _, owner, member, _, _ = group_api_context
+    async with session_factory() as session:
+        group = await GroupRepository(session).create(
+            name="Market", created_by=owner.id
+        )
+        await GroupRepository(session).add_member(group_id=group.id, user_id=member.id)
+        receipt = CloudReceipt(
+            user_id=owner.id,
+            client_record_id=uuid.uuid4(),
+            installation_id_hash="a" * 64,
+            merchant_name="Market",
+            total_amount_in_minor=1_050,
+            currency="TRY",
+            is_parse_successful=True,
+            client_created_at=owner.created_at,
+            client_updated_at=owner.created_at,
+        )
+        receipt.line_items.append(
+            CloudReceiptLineItem(
+                client_record_id=uuid.uuid4(),
+                position=0,
+                name="Süt",
+                price_in_minor=1_000,
+                quantity=1,
+                unit_price_in_minor=1_000,
+            )
+        )
+        session.add(receipt)
+        await session.commit()
+        group_id = group.id
+        receipt_id = receipt.id
+        line_item_id = receipt.line_items[0].id
+
+    payload = {
+        "title": "Market fişi",
+        "expense_date": "2026-08-12T20:00:00Z",
+        "total_amount_in_minor": 1_050,
+        "currency": "TRY",
+        "receipt_id": str(receipt_id),
+        "payer_user_id": str(owner.id),
+        "split": {
+            "type": "itemized",
+            "line_items": [
+                {
+                    "receipt_line_item_id": str(line_item_id),
+                    "shares": [
+                        {
+                            "user_id": str(owner.id),
+                            "amount_in_minor": 500,
+                            "quantity_share_milli": 500,
+                        },
+                        {
+                            "user_id": str(member.id),
+                            "amount_in_minor": 500,
+                            "quantity_share_milli": 500,
+                        },
+                    ],
+                }
+            ],
+            "extra_amount_shares": [{"user_id": str(owner.id), "amount_in_minor": 50}],
+        },
+    }
+    first = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        json=payload,
+        headers={"Idempotency-Key": "itemized-market-1"},
+    )
+    replay = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        json=payload,
+        headers={"Idempotency-Key": "itemized-market-1"},
+    )
+
+    assert first.status_code == 201
+    assert replay.status_code == 200
+    assert replay.headers["idempotency-replayed"] == "true"
+    assert first.json() == replay.json()
+    expense = first.json()["expense"]
+    assert expense["split_type"] == "itemized"
+    assert expense["receipt_id"] == str(receipt_id)
+    assert len(expense["line_item_assignments"]) == 2
+    assert sum(share["amount_in_minor"] for share in expense["shares"]) == 1_050
+
+    detail = await client.get(f"/api/v1/groups/{group_id}/expenses/{expense['id']}")
+    listed = await client.get(f"/api/v1/groups/{group_id}/expenses")
+    assert detail.status_code == 200
+    assert detail.json()["expense"] == expense
+    assert listed.status_code == 200
+    assert listed.json()["expenses"] == [expense]
 
 
 @pytest.mark.asyncio

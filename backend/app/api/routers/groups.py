@@ -22,6 +22,7 @@ from app.group_schemas import (
     GroupExpenseCreateRequest,
     GroupExpenseEnvelope,
     GroupExpenseResponse,
+    GroupExpensesResponse,
     GroupMemberCreateRequest,
     GroupMemberEnvelope,
     GroupMemberRoleUpdateRequest,
@@ -35,6 +36,8 @@ from app.models.user import User
 from app.services.group_expense_service import (
     FastSplitValidationError,
     GroupExpenseService,
+    ItemizedExpenseValidationError,
+    LineItemAssignmentInput,
 )
 from app.services.group_service import GroupService, GroupServiceError
 
@@ -63,6 +66,9 @@ _EXPENSE_ERRORS = {
         "Idempotency-Key farklı bir istek için daha önce kullanılmış.",
     ),
     "receipt_not_synced": (409, "Fiş henüz buluta senkronize edilmemiş."),
+    "invalid_request": (422, "Kalem bazlı bölüştürme isteği geçersiz."),
+    "invalid_split_total": (422, "Payların toplamı fiş toplamıyla eşleşmelidir."),
+    "unassigned_line_items": (422, "Atanmayan fiş ürünleri bulunuyor."),
 }
 
 
@@ -102,12 +108,33 @@ async def _expense_response(
                 )
                 for s in sorted(expense.shares, key=lambda share: str(share.user_id))
             ],
-            line_item_assignments=[],
+            line_item_assignments=[
+                {
+                    "expense_id": assignment.expense_id,
+                    "receipt_line_item_id": assignment.receipt_line_item_id,
+                    "user_id": assignment.user_id,
+                    "amount_in_minor": assignment.amount_in_minor,
+                    "quantity_share_milli": assignment.quantity_share_milli,
+                }
+                for assignment in sorted(
+                    expense.__dict__.get("line_item_assignments", []),
+                    key=lambda item: (
+                        str(item.receipt_line_item_id),
+                        str(item.user_id),
+                    ),
+                )
+            ],
             created_at=expense.created_at,
             updated_at=expense.updated_at,
             deleted_at=expense.deleted_at,
         )
     )
+
+
+async def _expense_value(
+    expense: GroupExpense, db: AsyncSession
+) -> GroupExpenseResponse:
+    return (await _expense_response(expense, db)).expense
 
 
 def _is_idempotency_collision(error: IntegrityError) -> bool:
@@ -117,6 +144,36 @@ def _is_idempotency_collision(error: IntegrityError) -> bool:
             return True
         current = current.__cause__
     return "uq_group_expenses_idempotency" in str(error)
+
+
+@router.get("/{group_id}/expenses", response_model=GroupExpensesResponse)
+async def list_group_expenses(
+    group_id: uuid.UUID,
+    actor_membership: GroupMember = Depends(require_group_member),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupExpensesResponse:
+    del actor_membership
+    expenses = await GroupExpenseService(db).repository.list_for_group(group_id)
+    return GroupExpensesResponse(
+        expenses=[await _expense_value(expense, db) for expense in expenses]
+    )
+
+
+@router.get("/{group_id}/expenses/{expense_id}", response_model=GroupExpenseEnvelope)
+async def get_group_expense(
+    group_id: uuid.UUID,
+    expense_id: uuid.UUID,
+    actor_membership: GroupMember = Depends(require_group_member),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupExpenseEnvelope:
+    del actor_membership
+    expense = await GroupExpenseService(db).repository.get_by_id(expense_id)
+    if expense is None or expense.group_id != group_id:
+        raise HTTPException(
+            404,
+            detail={"code": "expense_not_found", "message": "Masraf bulunamadı."},
+        )
+    return await _expense_response(expense, db)
 
 
 @router.post(
@@ -140,6 +197,73 @@ async def create_group_expense(
             payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
         ).encode()
     ).hexdigest()
+    service = GroupExpenseService(db)
+    if payload.split.type is FastSplitType.itemized:
+        assert payload.receipt_id is not None
+        assignments = [
+            LineItemAssignmentInput(
+                receipt_line_item_id=line_item.receipt_line_item_id,
+                user_id=share.user_id,
+                amount_in_minor=share.amount_in_minor,
+                quantity_share_milli=share.quantity_share_milli,
+            )
+            for line_item in payload.split.line_items or []
+            for share in line_item.shares
+        ]
+        try:
+            expense, replayed = await service.create_itemized(
+                group_id=group_id,
+                receipt_id=payload.receipt_id,
+                actor_user_id=actor_user_id,
+                payer_user_id=payload.payer_user_id,
+                title=payload.title,
+                note=payload.note,
+                expense_date=payload.expense_date,
+                total_amount_in_minor=payload.total_amount_in_minor,
+                currency=payload.currency,
+                assignments=assignments,
+                extra_amount_shares=[
+                    (share.user_id, share.amount_in_minor)
+                    for share in payload.split.extra_amount_shares or []
+                ],
+                idempotency_key=idempotency_key,
+                idempotency_request_hash=request_hash,
+            )
+            await db.commit()
+        except ItemizedExpenseValidationError as error:
+            code, message = _EXPENSE_ERRORS[error.code]
+            public_code = (
+                "idempotency_conflict"
+                if error.code == "idempotency_key_reused"
+                else error.code
+            )
+            detail: dict[str, object] = {"code": public_code, "message": message}
+            if error.unassigned_receipt_line_item_ids:
+                detail["unassigned_receipt_line_item_ids"] = [
+                    str(item_id) for item_id in error.unassigned_receipt_line_item_ids
+                ]
+            raise HTTPException(code, detail=detail) from None
+        except IntegrityError as error:
+            await db.rollback()
+            if not _is_idempotency_collision(error):
+                raise
+            expense = await service.repository.get_by_idempotency_key(
+                group_id=group_id,
+                created_by_id=actor_user_id,
+                key=idempotency_key,
+            )
+            if expense is None or expense.idempotency_request_hash != request_hash:
+                message = _EXPENSE_ERRORS["idempotency_key_reused"][1]
+                raise HTTPException(
+                    409,
+                    detail={"code": "idempotency_conflict", "message": message},
+                ) from None
+            replayed = True
+        if replayed:
+            response.status_code = status.HTTP_200_OK
+            response.headers["Idempotency-Replayed"] = "true"
+        return await _expense_response(expense, db)
+
     split_type = {
         FastSplitType.equal: ExpenseSplitType.equal,
         FastSplitType.percentage: ExpenseSplitType.percentage,
@@ -157,7 +281,6 @@ async def create_group_expense(
             )
             for item in payload.split.shares or []
         ]
-    service = GroupExpenseService(db)
     try:
         expense, replayed = await service.create_fast_split(
             group_id=group_id,

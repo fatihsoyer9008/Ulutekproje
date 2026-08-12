@@ -90,6 +90,7 @@ class GroupExpenseRepository:
                 GroupExpense.deleted_at.is_(None),
             )
             .options(selectinload(GroupExpense.shares))
+            .options(selectinload(GroupExpense.line_item_assignments))
         )
         return await self.session.scalar(statement)
 

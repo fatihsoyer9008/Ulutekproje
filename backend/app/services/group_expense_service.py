@@ -205,7 +205,17 @@ class GroupExpenseService:
         assignments: Sequence[LineItemAssignmentInput],
         extra_amount_shares: Sequence[tuple[uuid.UUID, int]] = (),
         note: str | None = None,
-    ) -> GroupExpense:
+        idempotency_key: str | None = None,
+        idempotency_request_hash: str | None = None,
+    ) -> GroupExpense | tuple[GroupExpense, bool]:
+        if idempotency_key:
+            existing = await self.repository.get_by_idempotency_key(
+                group_id=group_id, created_by_id=actor_user_id, key=idempotency_key
+            )
+            if existing is not None:
+                if existing.idempotency_request_hash != idempotency_request_hash:
+                    raise ItemizedExpenseValidationError("idempotency_key_reused")
+                return existing, True
         group = await self.session.get(Group, group_id)
         if group is None:
             raise ItemizedExpenseValidationError("group_not_found")
@@ -364,7 +374,7 @@ class GroupExpenseService:
             for assignment in assignments
         ]
 
-        return await self.repository.create(
+        expense = await self.repository.create(
             group_id=group_id,
             receipt_id=receipt_id,
             payer_user_id=payer_user_id,
@@ -377,4 +387,7 @@ class GroupExpenseService:
             split_type=ExpenseSplitType.itemized,
             shares=share_values,
             line_item_assignments=assignment_values,
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=idempotency_request_hash,
         )
+        return (expense, False) if idempotency_key else expense

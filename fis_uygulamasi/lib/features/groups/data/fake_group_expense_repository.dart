@@ -28,4 +28,16 @@ class FakeGroupExpenseRepository implements GroupExpenseRepository {
   }) {
     return _delegate.createExpense(expense, idempotencyKey: idempotencyKey);
   }
+
+  @override
+  Future<GroupExpense> createFastSplit(
+    FastSplitExpenseRequest request, {
+    required String idempotencyKey,
+  }) => _delegate.createFastSplit(request, idempotencyKey: idempotencyKey);
+
+  @override
+  Future<GroupExpense> createItemizedSplit(
+    ItemizedExpenseRequest request, {
+    required String idempotencyKey,
+  }) => _delegate.createItemizedSplit(request, idempotencyKey: idempotencyKey);
 }
