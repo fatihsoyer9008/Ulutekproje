@@ -668,7 +668,8 @@ async def test_itemized_expense_is_created_and_idempotently_replayed(
         headers=headers,
         json=payload,
     )
-    assert replay.status_code == 201
+    assert replay.status_code == 200
+    assert replay.headers["idempotency-replayed"] == "true"
     assert expense_data["expense_date"] == "2026-08-12T11:00:00Z"
     assert replay.json()["expense"]["expense_date"] == ("2026-08-12T11:00:00Z")
     assert replay.json() == first.json()
@@ -685,6 +686,30 @@ async def test_itemized_expense_is_created_and_idempotently_replayed(
     assert conflict.status_code == 409
     assert conflict.json()["detail"]["code"] == "idempotency_conflict"
 
+    cross_contract_payload = {
+        "title": "Aynı anahtarla Fast Split",
+        "expense_date": "2026-08-12T11:00:00Z",
+        "total_amount_in_minor": 10_000,
+        "currency": "TRY",
+        "receipt_id": None,
+        "payer_user_id": str(owner.id),
+        "split": {
+            "type": "equal",
+            "member_ids": [
+                str(owner.id),
+                str(member.id),
+            ],
+        },
+    }
+    cross_contract_conflict = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers,
+        json=cross_contract_payload,
+    )
+
+    assert cross_contract_conflict.status_code == 409
+    assert cross_contract_conflict.json()["detail"]["code"] == "idempotency_conflict"
+
     async with session_factory() as session:
         stored_member = await session.get(User, member.id)
         assert stored_member is not None
@@ -696,7 +721,8 @@ async def test_itemized_expense_is_created_and_idempotently_replayed(
         headers=headers,
         json=payload,
     )
-    assert replay_after_member_deletion.status_code == 201
+    assert replay_after_member_deletion.status_code == 200
+    assert replay_after_member_deletion.headers["idempotency-replayed"] == "true"
     assert {
         share["display_name"]
         for share in replay_after_member_deletion.json()["expense"]["shares"]

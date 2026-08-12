@@ -1,7 +1,7 @@
 """Create typed expense extra amounts and shares.
 
-Revision ID: 20260812_0008
-Revises: 20260811_0007
+Revision ID: 20260812_0009
+Revises: 20260812_0008
 Create Date: 2026-08-12
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "20260812_0008"
-down_revision: str | None = "20260811_0007"
+revision: str = "20260812_0009"
+down_revision: str | None = "20260812_0008"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

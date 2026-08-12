@@ -1,7 +1,7 @@
 """Add group expense creator and idempotency records.
 
-Revision ID: 20260812_0009
-Revises: 20260812_0008
+Revision ID: 20260812_0010
+Revises: 20260812_0009
 Create Date: 2026-08-12
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "20260812_0009"
-down_revision: str | None = "20260812_0008"
+revision: str = "20260812_0010"
+down_revision: str | None = "20260812_0009"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
