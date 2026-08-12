@@ -1,6 +1,10 @@
+import hashlib
+import json
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
@@ -12,7 +16,12 @@ from app.api.dependencies import (
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.group_schemas import (
+    ExpenseShareResponse,
+    FastSplitType,
     GroupCreateRequest,
+    GroupExpenseCreateRequest,
+    GroupExpenseEnvelope,
+    GroupExpenseResponse,
     GroupMemberCreateRequest,
     GroupMemberEnvelope,
     GroupMemberRoleUpdateRequest,
@@ -21,10 +30,181 @@ from app.group_schemas import (
     GroupUpdateRequest,
 )
 from app.models.group import GroupMember
+from app.models.group_expense import ExpenseSplitType, GroupExpense
 from app.models.user import User
+from app.services.group_expense_service import (
+    FastSplitValidationError,
+    GroupExpenseService,
+)
 from app.services.group_service import GroupService, GroupServiceError
 
 router = APIRouter(prefix="/api/v1/groups", tags=["groups"])
+
+_EXPENSE_ERRORS = {
+    "group_not_found": (404, "Grup bulunamadı."),
+    "group_forbidden": (403, "Bu grup için yetkiniz yok."),
+    "member_not_found": (422, "Ödeyen ve tüm katılımcılar aktif grup üyesi olmalıdır."),
+    "currency_mismatch": (422, "Masraf para birimi grup para birimiyle eşleşmelidir."),
+    "invalid_amount": (
+        422,
+        "Masraf ve pay tutarları geçerli pozitif değerler olmalıdır.",
+    ),
+    "invalid_split_type": (422, "Split türü EQUAL, PERCENTAGE veya EXACT olmalıdır."),
+    "percentage_total_must_be_100": (
+        422,
+        "Pay yüzdelerinin toplamı tam olarak %100.00 olmalıdır.",
+    ),
+    "exact_total_must_match_expense": (
+        422,
+        "Sabit payların toplamı masraf tutarına eşit olmalıdır.",
+    ),
+    "idempotency_key_reused": (
+        409,
+        "Idempotency-Key farklı bir istek için daha önce kullanılmış.",
+    ),
+    "receipt_not_synced": (409, "Fiş henüz buluta senkronize edilmemiş."),
+}
+
+
+async def _expense_response(
+    expense: GroupExpense, db: AsyncSession
+) -> GroupExpenseEnvelope:
+    user_ids = [share.user_id for share in expense.shares]
+    names = dict(
+        (
+            await db.execute(
+                select(User.id, User.display_name).where(User.id.in_(user_ids))
+            )
+        ).all()
+    )
+    return GroupExpenseEnvelope(
+        expense=GroupExpenseResponse(
+            id=expense.id,
+            group_id=expense.group_id,
+            receipt_id=expense.receipt_id,
+            payer_user_id=expense.payer_user_id,
+            created_by=expense.created_by_id,
+            title=expense.title,
+            note=expense.note,
+            expense_date=expense.expense_date,
+            total_amount_in_minor=expense.total_amount_in_minor,
+            currency=expense.currency,
+            split_type=expense.split_type.value,
+            is_financially_locked=False,
+            shares=[
+                ExpenseShareResponse(
+                    expense_id=expense.id,
+                    user_id=s.user_id,
+                    display_name=names.get(s.user_id) or "Silinmiş kullanıcı",
+                    amount_in_minor=s.amount_in_minor,
+                    status=s.status.value,
+                    settled_at=s.settled_at,
+                )
+                for s in sorted(expense.shares, key=lambda share: str(share.user_id))
+            ],
+            line_item_assignments=[],
+            created_at=expense.created_at,
+            updated_at=expense.updated_at,
+            deleted_at=expense.deleted_at,
+        )
+    )
+
+
+def _is_idempotency_collision(error: IntegrityError) -> bool:
+    current: BaseException | None = error
+    while current is not None:
+        if getattr(current, "constraint_name", None) == "uq_group_expenses_idempotency":
+            return True
+        current = current.__cause__
+    return "uq_group_expenses_idempotency" in str(error)
+
+
+@router.post(
+    "/{group_id}/expenses",
+    response_model=GroupExpenseEnvelope,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_group_expense(
+    group_id: uuid.UUID,
+    payload: GroupExpenseCreateRequest,
+    response: Response,
+    actor_membership: GroupMember = Depends(require_group_member),
+    idempotency_key: str = Header(
+        alias="Idempotency-Key", min_length=8, max_length=128
+    ),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupExpenseEnvelope:
+    actor_user_id = actor_membership.user_id
+    request_hash = hashlib.sha256(
+        json.dumps(
+            payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+    split_type = {
+        FastSplitType.equal: ExpenseSplitType.equal,
+        FastSplitType.percentage: ExpenseSplitType.percentage,
+        FastSplitType.fixed_amount: ExpenseSplitType.fixed_amount,
+    }[payload.split.type]
+    if payload.split.type is FastSplitType.equal:
+        participants = [(user_id, None) for user_id in payload.split.member_ids or []]
+    else:
+        participants = [
+            (
+                item.user_id,
+                item.percentage_basis_points
+                if payload.split.type is FastSplitType.percentage
+                else item.amount_in_minor,
+            )
+            for item in payload.split.shares or []
+        ]
+    service = GroupExpenseService(db)
+    try:
+        expense, replayed = await service.create_fast_split(
+            group_id=group_id,
+            actor_user_id=actor_user_id,
+            payer_user_id=payload.payer_user_id,
+            receipt_id=payload.receipt_id,
+            title=payload.title,
+            note=payload.note,
+            expense_date=payload.expense_date,
+            total_amount_in_minor=payload.total_amount_in_minor,
+            currency=payload.currency,
+            split_type=split_type,
+            participants=participants,
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=request_hash,
+        )
+        await db.commit()
+    except FastSplitValidationError as error:
+        code, message = _EXPENSE_ERRORS[error.code]
+        public_code = {
+            "percentage_total_must_be_100": "invalid_percentage_total",
+            "exact_total_must_match_expense": "invalid_split_total",
+            "idempotency_key_reused": "idempotency_conflict",
+        }.get(error.code, error.code)
+        raise HTTPException(
+            code, detail={"code": public_code, "message": message}
+        ) from None
+    except IntegrityError as error:
+        await db.rollback()
+        if not _is_idempotency_collision(error):
+            raise
+        expense = await service.repository.get_by_idempotency_key(
+            group_id=group_id,
+            created_by_id=actor_user_id,
+            key=idempotency_key,
+        )
+        if expense is None or expense.idempotency_request_hash != request_hash:
+            message = _EXPENSE_ERRORS["idempotency_key_reused"][1]
+            raise HTTPException(
+                409, detail={"code": "idempotency_conflict", "message": message}
+            ) from None
+        replayed = True
+    if replayed:
+        response.status_code = status.HTTP_200_OK
+        response.headers["Idempotency-Replayed"] = "true"
+    return await _expense_response(expense, db)
+
 
 _ERRORS = {
     "group_not_found": (
