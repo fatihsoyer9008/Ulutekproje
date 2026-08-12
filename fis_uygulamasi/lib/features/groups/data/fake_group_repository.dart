@@ -481,6 +481,7 @@ class FakeGroupRepository implements GroupRepository {
       isFinanciallyLocked: false,
       shares: shares,
       lineItemAssignments: const <ReceiptLineItemAssignment>[],
+      extraAmounts: const <ExpenseExtraAmount>[],
       createdAt: timestamp,
       updatedAt: timestamp,
       deletedAt: null,
