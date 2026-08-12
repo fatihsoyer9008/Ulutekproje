@@ -1,7 +1,6 @@
 import enum
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
 
 from pydantic import (
     BaseModel,
@@ -16,16 +15,51 @@ from app.models.group import GroupRole
 
 
 class FastSplitType(str, enum.Enum):
-    equal = "EQUAL"
-    percentage = "PERCENTAGE"
-    exact = "EXACT"
+    equal = "equal"
+    percentage = "percentage"
+    fixed_amount = "fixed_amount"
 
 
-class ExpenseParticipantRequest(BaseModel):
+class ExpenseSplitShareRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     user_id: uuid.UUID
-    percentage: Decimal | None = Field(default=None, ge=0, le=100)
+    percentage_basis_points: int | None = Field(default=None, ge=0, le=10_000)
     amount_in_minor: int | None = Field(default=None, ge=0)
+
+
+class ExpenseSplitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: FastSplitType
+    member_ids: list[uuid.UUID] | None = None
+    shares: list[ExpenseSplitShareRequest] | None = None
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> "ExpenseSplitRequest":
+        if self.type is FastSplitType.equal:
+            if not self.member_ids or self.shares is not None:
+                raise ValueError("equal split requires member_ids only")
+            ids = self.member_ids
+        else:
+            if not self.shares or self.member_ids is not None:
+                raise ValueError("percentage/fixed_amount split requires shares only")
+            ids = [share.user_id for share in self.shares]
+            for share in self.shares:
+                if self.type is FastSplitType.percentage:
+                    if (
+                        share.percentage_basis_points is None
+                        or share.amount_in_minor is not None
+                    ):
+                        raise ValueError(
+                            "percentage requires percentage_basis_points only"
+                        )
+                elif (
+                    share.amount_in_minor is None
+                    or share.percentage_basis_points is not None
+                ):
+                    raise ValueError("fixed_amount requires amount_in_minor only")
+        if len(ids) != len(set(ids)):
+            raise ValueError("split users must be unique")
+        return self
 
 
 class GroupExpenseCreateRequest(BaseModel):
@@ -35,9 +69,9 @@ class GroupExpenseCreateRequest(BaseModel):
     expense_date: datetime
     total_amount_in_minor: int = Field(gt=0)
     currency: str = Field(default="TRY", min_length=3, max_length=3)
-    paid_by_id: uuid.UUID
-    split_type: FastSplitType
-    participants: list[ExpenseParticipantRequest] = Field(min_length=1)
+    receipt_id: uuid.UUID | None = None
+    payer_user_id: uuid.UUID
+    split: ExpenseSplitRequest
 
     @field_validator("title", mode="before")
     @classmethod
@@ -49,40 +83,34 @@ class GroupExpenseCreateRequest(BaseModel):
     def normalize_currency(cls, value: str) -> str:
         return value.strip().upper()
 
-    @model_validator(mode="after")
-    def validate_split_fields(self) -> "GroupExpenseCreateRequest":
-        ids = [item.user_id for item in self.participants]
-        if len(ids) != len(set(ids)):
-            raise ValueError("participants must contain unique users")
-        for item in self.participants:
-            if self.split_type is FastSplitType.percentage:
-                if item.percentage is None or item.amount_in_minor is not None:
-                    raise ValueError("PERCENTAGE requires percentage only")
-            elif self.split_type is FastSplitType.exact:
-                if item.amount_in_minor is None or item.percentage is not None:
-                    raise ValueError("EXACT requires amount_in_minor only")
-            elif item.percentage is not None or item.amount_in_minor is not None:
-                raise ValueError("EQUAL participants cannot specify a share")
-        return self
-
 
 class ExpenseShareResponse(BaseModel):
+    expense_id: uuid.UUID
     user_id: uuid.UUID
+    display_name: str
     amount_in_minor: int
+    status: str
+    settled_at: datetime | None
 
 
 class GroupExpenseResponse(BaseModel):
     id: uuid.UUID
     group_id: uuid.UUID
-    paid_by_id: uuid.UUID
-    created_by_id: uuid.UUID
+    receipt_id: uuid.UUID | None
+    payer_user_id: uuid.UUID
+    created_by: uuid.UUID
     title: str
     note: str | None
     expense_date: datetime
     total_amount_in_minor: int
     currency: str
-    split_type: FastSplitType
+    split_type: str
+    is_financially_locked: bool
     shares: list[ExpenseShareResponse]
+    line_item_assignments: list[dict[str, object]]
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
 
     @field_serializer("expense_date", when_used="json")
     def serialize_expense_date(self, value: datetime) -> str:

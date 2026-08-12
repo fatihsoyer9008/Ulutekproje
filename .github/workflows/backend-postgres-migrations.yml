@@ -59,6 +59,7 @@ jobs:
           tests/test_group_migration_postgres.py
           tests/test_cloud_receipt_postgres.py
           tests/test_expense_line_item_assignment_postgres.py
+          tests/test_fast_split_postgres.py
           tests/test_sync_postgres.py
 
       - name: Run backend static analysis

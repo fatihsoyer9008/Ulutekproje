@@ -49,7 +49,7 @@ def calculate_equal_shares(
 ) -> list[tuple[uuid.UUID, int]]:
     if total_amount_in_minor <= 0 or not participant_ids:
         raise FastSplitValidationError("invalid_amount")
-    ordered = sorted(participant_ids, key=str)
+    ordered = list(participant_ids)
     quotient, remainder = divmod(total_amount_in_minor, len(ordered))
     return [
         (user_id, quotient + (index < remainder))
@@ -59,14 +59,14 @@ def calculate_equal_shares(
 
 def calculate_percentage_shares(
     total_amount_in_minor: int,
-    percentages: Sequence[tuple[uuid.UUID, Decimal]],
+    percentages: Sequence[tuple[uuid.UUID, int]],
 ) -> list[tuple[uuid.UUID, int]]:
     if total_amount_in_minor <= 0 or not percentages:
         raise FastSplitValidationError("invalid_amount")
-    if sum((value for _, value in percentages), Decimal(0)) != Decimal("100"):
+    if sum(value for _, value in percentages) != 10_000:
         raise FastSplitValidationError("percentage_total_must_be_100")
-    ordered = sorted(percentages, key=lambda item: str(item[0]))
-    raw = [Decimal(total_amount_in_minor) * value / 100 for _, value in ordered]
+    ordered = list(percentages)
+    raw = [Decimal(total_amount_in_minor) * value / 10_000 for _, value in ordered]
     amounts = [int(value.to_integral_value(rounding=ROUND_FLOOR)) for value in raw]
     remainder = total_amount_in_minor - sum(amounts)
     # Stable UUID ordering makes the penny rule reproducible on every platform.
@@ -101,12 +101,13 @@ class GroupExpenseService:
         group_id: uuid.UUID,
         actor_user_id: uuid.UUID,
         payer_user_id: uuid.UUID,
+        receipt_id: uuid.UUID | None,
         title: str,
         expense_date: datetime,
         total_amount_in_minor: int,
         currency: str,
         split_type: ExpenseSplitType,
-        participants: Sequence[tuple[uuid.UUID, Decimal | int | None]],
+        participants: Sequence[tuple[uuid.UUID, int | None]],
         note: str | None = None,
         idempotency_key: str | None = None,
         idempotency_request_hash: str | None = None,
@@ -126,6 +127,16 @@ class GroupExpenseService:
             raise FastSplitValidationError("group_forbidden")
         if currency.upper() != group.currency.upper():
             raise FastSplitValidationError("currency_mismatch")
+        if receipt_id is not None:
+            receipt = await self.session.scalar(
+                select(CloudReceipt).where(
+                    CloudReceipt.id == receipt_id,
+                    CloudReceipt.user_id == actor_user_id,
+                    CloudReceipt.deleted_at.is_(None),
+                )
+            )
+            if receipt is None:
+                raise FastSplitValidationError("receipt_not_synced")
         participant_ids = [user_id for user_id, _ in participants]
         required_ids = {actor_user_id, payer_user_id, *participant_ids}
         active = set(
@@ -149,7 +160,7 @@ class GroupExpenseService:
                 [
                     (user_id, value)
                     for user_id, value in participants
-                    if isinstance(value, Decimal)
+                    if isinstance(value, int)
                 ],
             )
         elif split_type is ExpenseSplitType.fixed_amount:
@@ -165,6 +176,7 @@ class GroupExpenseService:
             raise FastSplitValidationError("invalid_split_type")
         expense = await self.repository.create(
             group_id=group_id,
+            receipt_id=receipt_id,
             payer_user_id=payer_user_id,
             created_by_id=actor_user_id,
             title=title,
