@@ -23,6 +23,7 @@ import '../../core/database/database_providers.dart';
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../screens/expense_screen.dart';
 import '../../features/groups/presentation/groups_page.dart';
+import '../../features/groups/presentation/group_detail_page.dart';
 
 import 'finance_home.dart';
 
@@ -50,12 +51,14 @@ GoRouter createAppRouter({
         '/forgot-password',
         '/verify-email',
       }.contains(location);
-      final isProtectedPage = groupsLocation || {
-        '/home',
-        '/profile',
-        '/categories',
-        NotificationNavigationController.expenseReceiptRoute,
-      }.contains(location);
+      final isProtectedPage =
+          groupsLocation ||
+          {
+            '/home',
+            '/profile',
+            '/categories',
+            NotificationNavigationController.expenseReceiptRoute,
+          }.contains(location);
 
       if (auth.status == AuthStatus.initializing) {
         return location == '/startup' || location == '/verify-email'
@@ -162,6 +165,11 @@ GoRouter createAppRouter({
         builder: (_, _) => const CategoryManagementPage(),
       ),
       GoRoute(path: '/groups', builder: (_, _) => const GroupsPage()),
+      GoRoute(
+        path: '/groups/:groupId',
+        builder: (_, state) =>
+            GroupDetailPage(groupId: state.pathParameters['groupId']!),
+      ),
     ],
   );
 }

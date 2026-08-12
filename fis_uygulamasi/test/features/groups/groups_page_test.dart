@@ -10,6 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../../fixtures/group_fixtures.dart';
 
+import 'package:app_main/features/groups/presentation/group_detail_page.dart';
+import 'package:go_router/go_router.dart';
+
 void main() {
   testWidgets('grup kartında ad, üye sayısı ve borç durumu gösterilir', (
     tester,
@@ -26,6 +29,48 @@ void main() {
     expect(find.text('Ev Arkadaşları'), findsOneWidget);
     expect(find.text('2 üye'), findsOneWidget);
     expect(find.textContaining('borç'), findsOneWidget);
+  });
+
+  testWidgets('grup kartına basılınca detay ekranı açılır', (tester) async {
+    final repository = FakeGroupRepository(
+      groups: const [twoMemberGroup],
+      debtSummariesByGroup: const {
+        twoMemberGroupId: currentUserDebtorDebtSummary,
+      },
+    );
+
+    final controller = AuthSessionController(_GroupsAuthRepository());
+    await controller.login('user@example.com', 'password');
+
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(path: '/', builder: (_, _) => const GroupsPage()),
+        GoRoute(
+          path: '/groups/:groupId',
+          builder: (_, state) =>
+              GroupDetailPage(groupId: state.pathParameters['groupId']!),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authSessionControllerProvider.overrideWith((ref) => controller),
+          groupRepositoryProvider.overrideWithValue(repository),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('group_card_$twoMemberGroupId')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('group_detail_name')), findsOneWidget);
+    expect(find.text('Ev Arkadaşları'), findsOneWidget);
+    expect(find.byKey(const Key('group_detail_member_count')), findsOneWidget);
   });
 
   testWidgets('alacaklı kullanıcının net durumu gösterilir', (tester) async {

@@ -46,6 +46,8 @@ abstract interface class GroupRepository
     GroupRole role = GroupRole.member,
   });
 
+  Future<void> removeMember({required String groupId, required String userId});
+
   Future<List<Settlement>> listSettlements(String groupId);
 
   Future<Settlement> createSettlement(

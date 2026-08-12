@@ -214,6 +214,68 @@ void main() {
       );
     });
 
+    test('owner bir member üyeyi gruptan çıkarabilir', () async {
+      final repository = FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+        clock: () => DateTime.utc(2026, 8, 12, 10),
+      );
+
+      await repository.removeMember(
+        groupId: twoMemberGroupId,
+        userId: secondUserId,
+      );
+
+      final group = await repository.getGroup(twoMemberGroupId);
+      final removedMember = group.members.firstWhere(
+        (member) => member.userId == secondUserId,
+      );
+
+      expect(group.memberCount, 1);
+      expect(removedMember.leftAt, '2026-08-12T10:00:00.000Z');
+    });
+
+    test('member başka bir üyeyi gruptan çıkaramaz', () async {
+      final repository = FakeGroupRepository(
+        currentUserId: secondUserId,
+        groups: const <GroupDetail>[twoMemberGroup],
+      );
+
+      await expectLater(
+        repository.removeMember(
+          groupId: twoMemberGroupId,
+          userId: currentUserId,
+        ),
+        throwsA(
+          isA<GroupApiException>().having(
+            (error) => error.code,
+            'code',
+            'group_forbidden',
+          ),
+        ),
+      );
+    });
+
+    test('grup sahibi gruptan çıkarılamaz', () async {
+      final repository = FakeGroupRepository(
+        currentUserId: secondUserId,
+        groups: const <GroupDetail>[twoMemberGroup],
+      );
+
+      await expectLater(
+        repository.removeMember(
+          groupId: twoMemberGroupId,
+          userId: currentUserId,
+        ),
+        throwsA(
+          isA<GroupApiException>().having(
+            (error) => error.code,
+            'code',
+            'group_forbidden',
+          ),
+        ),
+      );
+    });
+
     test('rejects group updates from a member', () async {
       final repository = FakeGroupRepository(
         currentUserId: secondUserId,

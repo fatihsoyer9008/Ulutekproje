@@ -109,7 +109,12 @@ class FakeGroupRepository implements GroupRepository {
     final groups = _groupsById.values
         .where(_hasCurrentUserMembership)
         .where((group) => includeArchived || group.archivedAt == null)
-        .map((group) => Group.fromJson(group.toJson()))
+        .map(
+          (group) => Group.fromJson({
+            ...group.toJson(),
+            'current_user_role': _currentUserRole(group)!.name,
+          }),
+        )
         .toList(growable: false);
     return GroupsResponse(groups: groups);
   }
@@ -119,7 +124,7 @@ class FakeGroupRepository implements GroupRepository {
     await _beforeRequest();
     final group = _requireGroup(groupId);
     _requireCurrentUserMembership(group);
-    return GroupDetail.fromJson(group.toJson());
+    return group.copyWith(currentUserRole: _currentUserRole(group)!);
   }
 
   @override
@@ -292,6 +297,75 @@ class FakeGroupRepository implements GroupRepository {
   }
 
   @override
+  Future<void> removeMember({
+    required String groupId,
+    required String userId,
+  }) async {
+    await _beforeRequest();
+    final group = _requireGroup(groupId);
+    final currentRole = _currentUserRole(group);
+
+    if (currentRole != GroupRole.owner && currentRole != GroupRole.admin) {
+      throw _apiException(
+        statusCode: 403,
+        code: 'group_forbidden',
+        message: 'Bu gruptan üye çıkarma yetkiniz yok.',
+      );
+    }
+
+    final member = group.members
+        .where((item) => item.userId == userId && item.leftAt == null)
+        .firstOrNull;
+
+    if (member == null) {
+      throw _apiException(
+        statusCode: 404,
+        code: 'member_not_found',
+        message: 'Aktif grup üyesi bulunamadı.',
+      );
+    }
+
+    if (member.userId == currentUserId) {
+      throw _apiException(
+        statusCode: 403,
+        code: 'group_forbidden',
+        message: 'Kendinizi bu ekrandan gruptan çıkaramazsınız.',
+      );
+    }
+
+    if (member.role == GroupRole.owner) {
+      throw _apiException(
+        statusCode: 403,
+        code: 'group_forbidden',
+        message: 'Grup sahibi çıkarılamaz.',
+      );
+    }
+
+    if (currentRole == GroupRole.admin && member.role != GroupRole.member) {
+      throw _apiException(
+        statusCode: 403,
+        code: 'group_forbidden',
+        message: 'Admin yalnızca member rolündeki üyeleri çıkarabilir.',
+      );
+    }
+
+    final timestamp = _timestamp();
+    final members = [
+      for (final item in group.members)
+        if (item.userId == userId && item.leftAt == null)
+          GroupMember.fromJson({...item.toJson(), 'left_at': timestamp})
+        else
+          item,
+    ];
+
+    _groupsById[groupId] = group.copyWith(
+      memberCount: members.where((item) => item.leftAt == null).length,
+      members: members,
+      updatedAt: timestamp,
+    );
+  }
+
+  @override
   Future<List<GroupExpense>> listExpenses(String groupId) async {
     await _beforeRequest();
     final group = _requireGroup(groupId);
@@ -416,11 +490,72 @@ class FakeGroupRepository implements GroupRepository {
     _settlementsByGroup
         .putIfAbsent(settlement.groupId, () => <Settlement>[])
         .add(stored);
+    _applySettlementToDebtSummary(stored);
     _settlementRequests[idempotencyKey] = _IdempotentValue<Settlement>(
       fingerprint: fingerprint,
       value: stored,
     );
     return Settlement.fromJson(stored.toJson());
+  }
+
+  void _applySettlementToDebtSummary(Settlement settlement) {
+    final summary = _debtSummariesByGroup[settlement.groupId];
+    if (summary == null) return;
+
+    final balances = summary.balances
+        .map(
+          (balance) => DebtBalance(
+            userId: balance.userId,
+            displayName: balance.displayName,
+            netAmountInMinor:
+                balance.netAmountInMinor +
+                (balance.userId == settlement.fromUserId
+                    ? settlement.amountInMinor
+                    : balance.userId == settlement.toUserId
+                    ? -settlement.amountInMinor
+                    : 0),
+          ),
+        )
+        .toList(growable: false);
+
+    var remainingPayment = settlement.amountInMinor;
+    final transfers = <DebtTransfer>[];
+
+    for (final transfer in summary.suggestedTransfers) {
+      final isMatchingTransfer =
+          transfer.fromUserId == settlement.fromUserId &&
+          transfer.toUserId == settlement.toUserId;
+
+      if (!isMatchingTransfer || remainingPayment == 0) {
+        transfers.add(transfer);
+        continue;
+      }
+
+      final paidAmount = transfer.amountInMinor < remainingPayment
+          ? transfer.amountInMinor
+          : remainingPayment;
+
+      remainingPayment -= paidAmount;
+
+      final remainingTransferAmount = transfer.amountInMinor - paidAmount;
+      if (remainingTransferAmount > 0) {
+        transfers.add(
+          DebtTransfer(
+            fromUserId: transfer.fromUserId,
+            toUserId: transfer.toUserId,
+            amountInMinor: remainingTransferAmount,
+          ),
+        );
+      }
+    }
+
+    _debtSummariesByGroup[settlement.groupId] = DebtSummary(
+      groupId: summary.groupId,
+      currency: summary.currency,
+      balances: balances,
+      suggestedTransfers: transfers,
+      generatedAt: _timestamp(),
+    );
   }
 
   Future<void> _beforeRequest() async {
