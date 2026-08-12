@@ -11,10 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.cloud_receipt import CloudReceipt, CloudReceiptLineItem
 from app.models.group import Group, GroupMember
 from app.models.group_expense import (
+    ExpenseExtraAmountType,
     ExpenseLineItemAssignment,
     ExpenseSplitType,
     GroupExpense,
 )
+from app.models.user import User
 from app.repositories.group_expenses import GroupExpenseRepository
 
 
@@ -24,6 +26,20 @@ class LineItemAssignmentInput:
     user_id: uuid.UUID
     amount_in_minor: int
     quantity_share_milli: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExtraAmountShareInput:
+    user_id: uuid.UUID
+    amount_in_minor: int
+
+
+@dataclass(frozen=True, slots=True)
+class ExtraAmountInput:
+    type: ExpenseExtraAmountType
+    label: str | None
+    amount_in_minor: int
+    shares: Sequence[ExtraAmountShareInput]
 
 
 class ItemizedExpenseValidationError(ValueError):
@@ -191,6 +207,27 @@ class GroupExpenseService:
         )
         return expense, False
 
+    async def get_expense_share_display_names(
+        self,
+        expense: GroupExpense,
+    ) -> dict[uuid.UUID, str]:
+        user_ids = {share.user_id for share in expense.shares}
+        if not user_ids:
+            return {}
+
+        statement = select(User.id, User.display_name).where(
+            User.id.in_(tuple(user_ids))
+        )
+        rows = (await self.session.execute(statement)).all()
+        active_names = {
+            user_id: display_name or "Kullanıcı" for user_id, display_name in rows
+        }
+
+        return {
+            user_id: active_names.get(user_id, "Silinmiş kullanıcı")
+            for user_id in user_ids
+        }
+
     async def create_itemized(
         self,
         *,
@@ -203,19 +240,9 @@ class GroupExpenseService:
         total_amount_in_minor: int,
         currency: str,
         assignments: Sequence[LineItemAssignmentInput],
-        extra_amount_shares: Sequence[tuple[uuid.UUID, int]] = (),
+        extra_amounts: Sequence[ExtraAmountInput] = (),
         note: str | None = None,
-        idempotency_key: str | None = None,
-        idempotency_request_hash: str | None = None,
-    ) -> GroupExpense | tuple[GroupExpense, bool]:
-        if idempotency_key:
-            existing = await self.repository.get_by_idempotency_key(
-                group_id=group_id, created_by_id=actor_user_id, key=idempotency_key
-            )
-            if existing is not None:
-                if existing.idempotency_request_hash != idempotency_request_hash:
-                    raise ItemizedExpenseValidationError("idempotency_key_reused")
-                return existing, True
+    ) -> GroupExpense:
         group = await self.session.get(Group, group_id)
         if group is None:
             raise ItemizedExpenseValidationError("group_not_found")
@@ -310,15 +337,68 @@ class GroupExpenseService:
                     assignment.quantity_share_milli
                 )
 
-        for user_id, amount_in_minor in extra_amount_shares:
-            if amount_in_minor < 0:
+        extra_amount_values: list[
+            tuple[
+                ExpenseExtraAmountType,
+                str | None,
+                int,
+                tuple[tuple[uuid.UUID, int], ...],
+            ]
+        ] = []
+        extra_participant_user_ids: set[uuid.UUID] = set()
+
+        for extra_amount in extra_amounts:
+            if extra_amount.amount_in_minor <= 0:
                 raise ItemizedExpenseValidationError("invalid_request")
-            amounts_by_user[user_id] += amount_in_minor
+
+            normalized_label = (
+                extra_amount.label.strip() if extra_amount.label is not None else None
+            )
+            if normalized_label == "":
+                normalized_label = None
+            if (
+                extra_amount.type is ExpenseExtraAmountType.other
+                and normalized_label is None
+            ):
+                raise ItemizedExpenseValidationError("invalid_request")
+
+            seen_extra_user_ids: set[uuid.UUID] = set()
+            extra_share_values: list[tuple[uuid.UUID, int]] = []
+            extra_share_total = 0
+
+            for share in extra_amount.shares:
+                if share.user_id in seen_extra_user_ids:
+                    raise ItemizedExpenseValidationError("invalid_request")
+                if share.amount_in_minor < 0:
+                    raise ItemizedExpenseValidationError("invalid_request")
+
+                seen_extra_user_ids.add(share.user_id)
+                extra_participant_user_ids.add(share.user_id)
+                extra_share_total += share.amount_in_minor
+                amounts_by_user[share.user_id] += share.amount_in_minor
+                extra_share_values.append(
+                    (
+                        share.user_id,
+                        share.amount_in_minor,
+                    )
+                )
+
+            if extra_share_total != extra_amount.amount_in_minor:
+                raise ItemizedExpenseValidationError("invalid_split_total")
+
+            extra_amount_values.append(
+                (
+                    extra_amount.type,
+                    normalized_label,
+                    extra_amount.amount_in_minor,
+                    tuple(extra_share_values),
+                )
+            )
 
         participant_user_ids = {
             payer_user_id,
             *(assignment.user_id for assignment in assignments),
-            *(user_id for user_id, _ in extra_amount_shares),
+            *extra_participant_user_ids,
         }
         active_member_statement = select(GroupMember.user_id).where(
             GroupMember.group_id == group_id,
@@ -374,7 +454,7 @@ class GroupExpenseService:
             for assignment in assignments
         ]
 
-        expense = await self.repository.create(
+        return await self.repository.create(
             group_id=group_id,
             receipt_id=receipt_id,
             payer_user_id=payer_user_id,
@@ -387,7 +467,5 @@ class GroupExpenseService:
             split_type=ExpenseSplitType.itemized,
             shares=share_values,
             line_item_assignments=assignment_values,
-            idempotency_key=idempotency_key,
-            idempotency_request_hash=idempotency_request_hash,
+            extra_amounts=extra_amount_values,
         )
-        return (expense, False) if idempotency_key else expense

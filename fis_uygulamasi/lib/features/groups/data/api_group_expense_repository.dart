@@ -70,6 +70,10 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
     for (final share in request.lineShares) {
       (sharesByLine[share.receiptLineItemId] ??= []).add(share);
     }
+    final extraAmountInMinor = request.extraShares.fold<int>(
+      0,
+      (total, share) => total + share.amountInMinor,
+    );
     return _create(
       groupId: request.groupId,
       idempotencyKey: idempotencyKey,
@@ -97,11 +101,19 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
                 ],
               },
           ],
-          'extra_amount_shares': [
-            for (final share in request.extraShares)
+          'extra_amounts': [
+            if (extraAmountInMinor > 0)
               <String, Object?>{
-                'user_id': share.userId,
-                'amount_in_minor': share.amountInMinor,
+                'type': 'other',
+                'label': 'Fiş toplam farkı',
+                'amount_in_minor': extraAmountInMinor,
+                'shares': [
+                  for (final share in request.extraShares)
+                    <String, Object?>{
+                      'user_id': share.userId,
+                      'amount_in_minor': share.amountInMinor,
+                    },
+                ],
               },
           ],
         },

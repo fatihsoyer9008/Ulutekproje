@@ -370,6 +370,7 @@ class FakeGroupRepository implements GroupRepository {
             ),
         ],
         lineItemAssignments: const [],
+        extraAmounts: const [],
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
@@ -385,6 +386,7 @@ class FakeGroupRepository implements GroupRepository {
   }) {
     final now = _timestamp();
     final expenseId = 'local-expense-${_clock().microsecondsSinceEpoch}';
+    final extraAmountId = '$expenseId-extra-1';
     final group = _requireGroup(request.groupId);
     final members = {for (final member in group.members) member.userId: member};
     final totals = <String, int>{};
@@ -436,6 +438,27 @@ class FakeGroupRepository implements GroupRepository {
               userId: share.userId,
               amountInMinor: share.amountInMinor,
               quantityShareMilli: share.quantityShareMilli,
+            ),
+        ],
+        extraAmounts: [
+          if (request.extraShares.isNotEmpty)
+            ExpenseExtraAmount(
+              id: extraAmountId,
+              expenseId: expenseId,
+              type: ExpenseExtraAmountType.other,
+              label: 'Fiş toplam farkı',
+              amountInMinor: request.extraShares.fold<int>(
+                0,
+                (total, share) => total + share.amountInMinor,
+              ),
+              shares: [
+                for (final share in request.extraShares)
+                  ExpenseExtraAmountShare(
+                    extraAmountId: extraAmountId,
+                    userId: share.userId,
+                    amountInMinor: share.amountInMinor,
+                  ),
+              ],
             ),
         ],
         createdAt: now,

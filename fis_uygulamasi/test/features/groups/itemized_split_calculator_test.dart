@@ -146,7 +146,7 @@ void main() {
       expect(negative.isBalanced, isFalse);
     });
 
-    test('API assignment ve extra_amount_shares şekillerini üretir', () {
+    test('API assignment ve ek tutar paylarını üretir', () {
       final result =
           ItemizedSplitState.initial(
                 receiptTotalInMinor: 150,

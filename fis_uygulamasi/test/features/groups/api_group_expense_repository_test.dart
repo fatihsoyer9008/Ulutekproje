@@ -85,7 +85,12 @@ void main() {
     final split = (captured.data as Map<String, Object?>)['split']! as Map;
     expect(split['type'], 'itemized');
     expect(split['line_items'], hasLength(1));
-    expect(split['extra_amount_shares'], hasLength(1));
+    expect(split['extra_amounts'], hasLength(1));
+    final extraAmount = (split['extra_amounts'] as List).single as Map;
+    expect(extraAmount['type'], 'other');
+    expect(extraAmount['label'], 'Fiş toplam farkı');
+    expect(extraAmount['amount_in_minor'], 6500);
+    expect(extraAmount['shares'], hasLength(1));
   });
 }
 

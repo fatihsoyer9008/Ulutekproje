@@ -172,6 +172,7 @@ const fastSplitTransferExpense = GroupExpense(
     ),
   ],
   lineItemAssignments: <ReceiptLineItemAssignment>[],
+  extraAmounts: <ExpenseExtraAmount>[],
   createdAt: '2026-08-10T12:01:00Z',
   updatedAt: '2026-08-10T12:01:00Z',
   deletedAt: null,
@@ -229,6 +230,27 @@ const itemizedMarketExpense = GroupExpense(
       userId: secondUserId,
       amountInMinor: 6000,
       quantityShareMilli: 1000,
+    ),
+  ],
+  extraAmounts: <ExpenseExtraAmount>[
+    ExpenseExtraAmount(
+      id: '50000000-0000-4000-8000-000000000001',
+      expenseId: '40000000-0000-4000-8000-000000000002',
+      type: ExpenseExtraAmountType.tax,
+      label: 'KDV',
+      amountInMinor: 500,
+      shares: <ExpenseExtraAmountShare>[
+        ExpenseExtraAmountShare(
+          extraAmountId: '50000000-0000-4000-8000-000000000001',
+          userId: currentUserId,
+          amountInMinor: 250,
+        ),
+        ExpenseExtraAmountShare(
+          extraAmountId: '50000000-0000-4000-8000-000000000001',
+          userId: secondUserId,
+          amountInMinor: 250,
+        ),
+      ],
     ),
   ],
   createdAt: '2026-08-10T12:01:00Z',

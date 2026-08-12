@@ -16,16 +16,36 @@ from app.core.database import Base
 from app.models import (
     CloudReceipt,
     CloudReceiptLineItem,
+    ExpenseExtraAmountType,
     ExpenseSplitType,
     User,
 )
 from app.repositories.group_expenses import GroupExpenseRepository
 from app.repositories.groups import GroupRepository
 from app.services.group_expense_service import (
+    ExtraAmountInput,
+    ExtraAmountShareInput,
     GroupExpenseService,
     ItemizedExpenseValidationError,
     LineItemAssignmentInput,
 )
+
+
+def _tax_extra(
+    *shares: tuple[uuid.UUID, int],
+) -> ExtraAmountInput:
+    return ExtraAmountInput(
+        type=ExpenseExtraAmountType.tax,
+        label="KDV",
+        amount_in_minor=sum(amount for _, amount in shares),
+        shares=tuple(
+            ExtraAmountShareInput(
+                user_id=user_id,
+                amount_in_minor=amount,
+            )
+            for user_id, amount in shares
+        ),
+    )
 
 
 @pytest_asyncio.fixture
@@ -159,9 +179,11 @@ async def test_service_creates_multi_member_itemized_expense(
                 quantity_share_milli=1_000,
             ),
         ],
-        extra_amount_shares=[
-            (owner.id, 250),
-            (member.id, 250),
+        extra_amounts=[
+            _tax_extra(
+                (owner.id, 250),
+                (member.id, 250),
+            )
         ],
     )
     await session.commit()
@@ -183,6 +205,15 @@ async def test_service_creates_multi_member_itemized_expense(
     assert shares_by_user == {
         owner.id: 3_250,
         member.id: 9_250,
+    }
+    assert len(stored.extra_amounts) == 1
+    stored_extra = stored.extra_amounts[0]
+    assert stored_extra.type is ExpenseExtraAmountType.tax
+    assert stored_extra.label == "KDV"
+    assert stored_extra.amount_in_minor == 500
+    assert {share.user_id: share.amount_in_minor for share in stored_extra.shares} == {
+        owner.id: 250,
+        member.id: 250,
     }
 
 
@@ -227,14 +258,94 @@ async def test_service_reports_unassigned_line_items(
                     quantity_share_milli=1_000,
                 ),
             ],
-            extra_amount_shares=[
-                (owner.id, 250),
-                (member.id, 250),
+            extra_amounts=[
+                _tax_extra(
+                    (owner.id, 250),
+                    (member.id, 250),
+                )
             ],
         )
 
     assert error_info.value.code == "unassigned_line_items"
     assert error_info.value.unassigned_receipt_line_item_ids == (bread.id,)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("extra_type", "label"),
+    [
+        (ExpenseExtraAmountType.tax, "KDV"),
+        (ExpenseExtraAmountType.tip, "Bahşiş"),
+        (ExpenseExtraAmountType.service_fee, "Servis bedeli"),
+        (ExpenseExtraAmountType.other, "Ambalaj"),
+    ],
+)
+async def test_service_persists_each_extra_amount_type(
+    service_context,
+    extra_type: ExpenseExtraAmountType,
+    label: str,
+) -> None:
+    (
+        session,
+        _repository,
+        service,
+        group,
+        owner,
+        member,
+        _outsider,
+        receipt,
+        milk,
+        bread,
+    ) = service_context
+
+    expense = await service.create_itemized(
+        group_id=group.id,
+        receipt_id=receipt.id,
+        actor_user_id=owner.id,
+        payer_user_id=owner.id,
+        title="Ek tutar türü testi",
+        expense_date=datetime(2026, 8, 11, 12, 0, tzinfo=UTC),
+        total_amount_in_minor=12_500,
+        currency="TRY",
+        assignments=[
+            LineItemAssignmentInput(
+                receipt_line_item_id=milk.id,
+                user_id=owner.id,
+                amount_in_minor=6_000,
+                quantity_share_milli=2_000,
+            ),
+            LineItemAssignmentInput(
+                receipt_line_item_id=bread.id,
+                user_id=member.id,
+                amount_in_minor=6_000,
+                quantity_share_milli=1_000,
+            ),
+        ],
+        extra_amounts=[
+            ExtraAmountInput(
+                type=extra_type,
+                label=label,
+                amount_in_minor=500,
+                shares=(
+                    ExtraAmountShareInput(
+                        user_id=owner.id,
+                        amount_in_minor=250,
+                    ),
+                    ExtraAmountShareInput(
+                        user_id=member.id,
+                        amount_in_minor=250,
+                    ),
+                ),
+            )
+        ],
+    )
+    await session.commit()
+
+    assert expense.created_by == owner.id
+    assert len(expense.extra_amounts) == 1
+    assert expense.extra_amounts[0].type is extra_type
+    assert expense.extra_amounts[0].label == label
+    assert expense.extra_amounts[0].amount_in_minor == 500
 
 
 @pytest.mark.asyncio
@@ -330,7 +441,7 @@ async def test_service_rejects_non_member_assignment(
                     quantity_share_milli=1_000,
                 ),
             ],
-            extra_amount_shares=[(owner.id, 500)],
+            extra_amounts=[_tax_extra((owner.id, 500))],
         )
 
     assert error_info.value.code == "member_not_found"
@@ -377,7 +488,9 @@ async def test_service_rejects_excess_quantity_share(
                     quantity_share_milli=1_000,
                 ),
             ],
-            extra_amount_shares=[(owner.id, 500)],
+            extra_amounts=[
+                _tax_extra((owner.id, 500)),
+            ],
         )
 
     assert error_info.value.code == "invalid_request"
@@ -638,9 +751,11 @@ async def test_service_rejects_reusing_assigned_line_items(
             quantity_share_milli=1_000,
         ),
     ]
-    extra_amount_shares = [
-        (owner.id, 250),
-        (member.id, 250),
+    extra_amounts = [
+        _tax_extra(
+            (owner.id, 250),
+            (member.id, 250),
+        )
     ]
 
     await service.create_itemized(
@@ -653,7 +768,7 @@ async def test_service_rejects_reusing_assigned_line_items(
         total_amount_in_minor=12_500,
         currency="TRY",
         assignments=assignments,
-        extra_amount_shares=extra_amount_shares,
+        extra_amounts=extra_amounts,
     )
     await session.commit()
 
@@ -668,7 +783,77 @@ async def test_service_rejects_reusing_assigned_line_items(
             total_amount_in_minor=12_500,
             currency="TRY",
             assignments=assignments,
-            extra_amount_shares=extra_amount_shares,
+            extra_amounts=extra_amounts,
         )
 
     assert error_info.value.code == "invalid_request"
+
+
+@pytest.mark.asyncio
+async def test_service_rejects_extra_amount_share_total_mismatch(
+    service_context,
+) -> None:
+    (
+        _session,
+        _repository,
+        service,
+        group,
+        owner,
+        member,
+        _outsider,
+        receipt,
+        milk,
+        bread,
+    ) = service_context
+
+    with pytest.raises(ItemizedExpenseValidationError) as error_info:
+        await service.create_itemized(
+            group_id=group.id,
+            receipt_id=receipt.id,
+            actor_user_id=owner.id,
+            payer_user_id=owner.id,
+            title="Hatalı KDV dağılımı",
+            expense_date=datetime(
+                2026,
+                8,
+                11,
+                12,
+                0,
+                tzinfo=UTC,
+            ),
+            total_amount_in_minor=12_500,
+            currency="TRY",
+            assignments=[
+                LineItemAssignmentInput(
+                    receipt_line_item_id=milk.id,
+                    user_id=owner.id,
+                    amount_in_minor=6_000,
+                    quantity_share_milli=2_000,
+                ),
+                LineItemAssignmentInput(
+                    receipt_line_item_id=bread.id,
+                    user_id=member.id,
+                    amount_in_minor=6_000,
+                    quantity_share_milli=1_000,
+                ),
+            ],
+            extra_amounts=[
+                ExtraAmountInput(
+                    type=ExpenseExtraAmountType.tax,
+                    label="KDV",
+                    amount_in_minor=500,
+                    shares=(
+                        ExtraAmountShareInput(
+                            user_id=owner.id,
+                            amount_in_minor=200,
+                        ),
+                        ExtraAmountShareInput(
+                            user_id=member.id,
+                            amount_in_minor=200,
+                        ),
+                    ),
+                )
+            ],
+        )
+
+    assert error_info.value.code == "invalid_split_total"

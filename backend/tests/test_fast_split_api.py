@@ -187,7 +187,16 @@ async def test_endpoint_creates_and_replays_itemized_expense(
                     ],
                 }
             ],
-            "extra_amount_shares": [{"user_id": str(owner.id), "amount_in_minor": 50}],
+            "extra_amounts": [
+                {
+                    "type": "other",
+                    "label": "Fiş toplam farkı",
+                    "amount_in_minor": 50,
+                    "shares": [
+                        {"user_id": str(owner.id), "amount_in_minor": 50}
+                    ],
+                }
+            ],
         },
     }
     first = await client.post(

@@ -1,5 +1,4 @@
 import asyncio
-import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -11,16 +10,12 @@ from app.models.cloud_transaction import CloudTransaction
 from app.models.user import User
 from app.services.sync_service import SyncService
 from app.sync_schemas import PushOperation, TransactionSyncPayload
+from tests.postgres_support import postgres_test_database_url
 
 
 @pytest.mark.asyncio
 async def test_concurrent_create_keeps_newest_client_version() -> None:
-    database_url = os.getenv("POSTGRES_TEST_DATABASE_URL")
-    if not database_url:
-        pytest.skip("POSTGRES_TEST_DATABASE_URL is required for PostgreSQL tests")
-    if not database_url.startswith("postgresql+asyncpg://"):
-        pytest.fail("POSTGRES_TEST_DATABASE_URL must use PostgreSQL with asyncpg")
-
+    database_url = postgres_test_database_url()
     engine = create_async_engine(database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     user_id: uuid.UUID | None = None
