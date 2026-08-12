@@ -42,9 +42,10 @@ async def _insert_expense(
     await connection.execute(
         text(
             "INSERT INTO group_expenses "
-            "(id, group_id, receipt_id, payer_user_id, title, "
+            "(id, group_id, receipt_id, payer_user_id, created_by_id, title, "
             "expense_date, total_amount_in_minor, currency, split_type) "
             "VALUES (:id, :group_id, :receipt_id, :payer_user_id, "
+            ":payer_user_id, "
             ":title, :expense_date, 2550, 'TRY', 'itemized')"
         ),
         {
@@ -155,7 +156,7 @@ async def test_assignment_migration_is_at_head(
         text("SELECT to_regclass(" "'public.expense_line_item_assignments'" ")")
     )
 
-    assert revision == "20260811_0007"
+    assert revision == "20260812_0008"
     assert table_name == "expense_line_item_assignments"
 
 
