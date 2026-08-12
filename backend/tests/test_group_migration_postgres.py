@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.engine import URL, make_url
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_REVISION = "20260811_0007"
+EXPECTED_REVISION = "20260812_0008"
 PRE_GROUP_REVISION = "20260806_0004"
 PRE_EXPENSE_REVISION = "20260810_0005"
 PRE_ASSIGNMENT_REVISION = "20260811_0006"
@@ -431,9 +431,17 @@ async def _pre_expense_snapshot(
             )
             count = await connection.fetchval(f'SELECT count(*) FROM "{table_name}"')
             assert rows
+            normalized_rows = [dict(row) for row in rows]
+            if table_name == "group_expenses":
+                # Revision 0008 enriches legacy expenses without changing their
+                # pre-existing values. Compare only columns present at 0006.
+                for row in normalized_rows:
+                    row.pop("created_by_id", None)
+                    row.pop("idempotency_key", None)
+                    row.pop("idempotency_request_hash", None)
             snapshot[table_name] = {
                 "count": count,
-                "rows": [dict(row) for row in rows],
+                "rows": normalized_rows,
             }
         return snapshot
     finally:
@@ -454,9 +462,15 @@ async def _pre_assignment_snapshot(
             )
             count = await connection.fetchval(f'SELECT count(*) FROM "{table_name}"')
             assert rows
+            normalized_rows = [dict(row) for row in rows]
+            if table_name == "group_expenses":
+                for row in normalized_rows:
+                    row.pop("created_by_id", None)
+                    row.pop("idempotency_key", None)
+                    row.pop("idempotency_request_hash", None)
             snapshot[table_name] = {
                 "count": count,
-                "rows": [dict(row) for row in rows],
+                "rows": normalized_rows,
             }
         return snapshot
     finally:
@@ -683,6 +697,7 @@ async def _assert_constraints_and_group_cascade(
                 group_id,
                 receipt_id,
                 payer_user_id,
+                created_by_id,
                 title,
                 expense_date,
                 total_amount_in_minor,
@@ -693,6 +708,7 @@ async def _assert_constraints_and_group_cascade(
                 $1,
                 $2,
                 $3,
+                $4,
                 $4,
                 'Migration Regression Expense',
                 TIMESTAMPTZ '2026-08-10 12:30:00+03',
@@ -766,6 +782,7 @@ async def _assert_constraints_and_group_cascade(
                 id,
                 group_id,
                 payer_user_id,
+                created_by_id,
                 title,
                 expense_date,
                 total_amount_in_minor,
@@ -775,6 +792,7 @@ async def _assert_constraints_and_group_cascade(
             VALUES (
                 $1,
                 $2,
+                $3,
                 $3,
                 'Negative Total',
                 CURRENT_TIMESTAMP,
@@ -796,6 +814,7 @@ async def _assert_constraints_and_group_cascade(
                 id,
                 group_id,
                 payer_user_id,
+                created_by_id,
                 title,
                 expense_date,
                 total_amount_in_minor,
@@ -805,6 +824,7 @@ async def _assert_constraints_and_group_cascade(
             VALUES (
                 $1,
                 $2,
+                $3,
                 $3,
                 'Invalid Split Type',
                 CURRENT_TIMESTAMP,
