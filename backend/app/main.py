@@ -168,12 +168,24 @@ async def validation_exception_handler(
     if request.url.path == "/api/v1/groups" or request.url.path.startswith(
         "/api/v1/groups/"
     ):
+        is_expense_request = request.method == "POST" and request.url.path.endswith(
+            "/expenses"
+        )
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_CONTENT
+                if is_expense_request
+                else status.HTTP_400_BAD_REQUEST
+            ),
             content={
                 "detail": {
                     "code": "invalid_request",
-                    "message": "Grup isteği geçersiz.",
+                    "message": (
+                        "Masraf isteği geçersiz; split türünü, tutarları ve "
+                        "katılımcıları kontrol edin."
+                        if is_expense_request
+                        else "Grup isteği geçersiz."
+                    ),
                 }
             },
         )

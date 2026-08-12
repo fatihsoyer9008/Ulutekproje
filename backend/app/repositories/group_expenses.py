@@ -26,6 +26,7 @@ class GroupExpenseRepository:
         *,
         group_id: uuid.UUID,
         payer_user_id: uuid.UUID,
+        created_by_id: uuid.UUID | None = None,
         title: str,
         expense_date: datetime,
         total_amount_in_minor: int,
@@ -43,15 +44,21 @@ class GroupExpenseRepository:
                 Sequence[tuple[uuid.UUID, int]],
             ]
         ] = (),
-        created_by: uuid.UUID | None = None,
         receipt_id: uuid.UUID | None = None,
         note: str | None = None,
+        idempotency_key: str | None = None,
+        idempotency_request_hash: str | None = None,
     ) -> GroupExpense:
+        creator_user_id = created_by_id or payer_user_id
+
         expense = GroupExpense(
             group_id=group_id,
             receipt_id=receipt_id,
             payer_user_id=payer_user_id,
-            created_by=created_by,
+            created_by_id=creator_user_id,
+            created_by=creator_user_id,
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=idempotency_request_hash,
             title=title,
             note=note,
             expense_date=expense_date,
@@ -59,14 +66,15 @@ class GroupExpenseRepository:
             currency=currency.upper(),
             split_type=split_type,
         )
-        expense.shares.extend(
+        expense.shares = [
             ExpenseShare(
                 user_id=user_id,
                 amount_in_minor=amount_in_minor,
             )
             for user_id, amount_in_minor in shares
-        )
-        expense.line_item_assignments.extend(
+        ]
+
+        expense.line_item_assignments = [
             ExpenseLineItemAssignment(
                 receipt_line_item_id=receipt_line_item_id,
                 user_id=user_id,
@@ -79,8 +87,9 @@ class GroupExpenseRepository:
                 amount_in_minor,
                 quantity_share_milli,
             ) in line_item_assignments
-        )
+        ]
 
+        expense.extra_amounts = []
         for (
             extra_type,
             label,
@@ -92,18 +101,39 @@ class GroupExpenseRepository:
                 label=label,
                 amount_in_minor=amount_in_minor,
             )
-            extra_amount.shares.extend(
+            extra_amount.shares = [
                 ExpenseExtraAmountShare(
                     user_id=user_id,
                     amount_in_minor=share_amount_in_minor,
                 )
                 for user_id, share_amount_in_minor in extra_shares
-            )
+            ]
             expense.extra_amounts.append(extra_amount)
 
         self.session.add(expense)
         await self.session.flush()
         return expense
+
+    async def get_by_idempotency_key(
+        self, *, group_id: uuid.UUID, created_by_id: uuid.UUID, key: str
+    ) -> GroupExpense | None:
+        statement = (
+            select(GroupExpense)
+            .where(
+                GroupExpense.group_id == group_id,
+                GroupExpense.created_by_id == created_by_id,
+                GroupExpense.idempotency_key == key,
+                GroupExpense.deleted_at.is_(None),
+            )
+            .options(
+                selectinload(GroupExpense.shares),
+                selectinload(GroupExpense.line_item_assignments),
+                selectinload(GroupExpense.extra_amounts).selectinload(
+                    ExpenseExtraAmount.shares
+                ),
+            )
+        )
+        return await self.session.scalar(statement)
 
     async def get_by_id(
         self,

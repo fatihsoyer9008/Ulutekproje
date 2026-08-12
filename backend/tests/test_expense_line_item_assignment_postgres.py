@@ -38,9 +38,10 @@ async def _insert_expense(
     await connection.execute(
         text(
             "INSERT INTO group_expenses "
-            "(id, group_id, receipt_id, payer_user_id, title, "
+            "(id, group_id, receipt_id, payer_user_id, created_by_id, title, "
             "expense_date, total_amount_in_minor, currency, split_type) "
             "VALUES (:id, :group_id, :receipt_id, :payer_user_id, "
+            ":payer_user_id, "
             ":title, :expense_date, 2550, 'TRY', 'itemized')"
         ),
         {
@@ -152,17 +153,17 @@ async def test_assignment_migration_is_at_head(
             text("SELECT to_regclass(" "'public.expense_line_item_assignments'" ")")
         ),
         await postgres_connection.scalar(
-            text("SELECT to_regclass(" "'public.expense_extra_amounts'" ")")
+            text("SELECT to_regclass('public.expense_extra_amounts')")
         ),
         await postgres_connection.scalar(
-            text("SELECT to_regclass(" "'public.expense_extra_amount_shares'" ")")
+            text("SELECT to_regclass('public.expense_extra_amount_shares')")
         ),
         await postgres_connection.scalar(
             text("SELECT to_regclass(" "'public.group_expense_idempotency_records'" ")")
         ),
     }
 
-    assert revision == "20260812_0009"
+    assert revision == "20260812_0010"
     assert table_names == {
         "expense_line_item_assignments",
         "expense_extra_amounts",

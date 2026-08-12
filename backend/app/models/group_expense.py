@@ -11,6 +11,7 @@ from sqlalchemy import (
     Index,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -46,7 +47,7 @@ class GroupExpense(Base):
             name="ck_group_expenses_total_nonnegative",
         ),
         CheckConstraint(
-            "split_type IN " "('equal', 'percentage', 'fixed_amount', 'itemized')",
+            "split_type IN ('equal', 'percentage', 'fixed_amount', 'itemized')",
             name="ck_group_expenses_split_type",
         ),
         Index(
@@ -58,6 +59,13 @@ class GroupExpense(Base):
         ),
         Index("ix_group_expenses_receipt_id", "receipt_id"),
         Index("ix_group_expenses_payer_user_id", "payer_user_id"),
+        Index("ix_group_expenses_created_by_id", "created_by_id"),
+        UniqueConstraint(
+            "group_id",
+            "created_by_id",
+            "idempotency_key",
+            name="uq_group_expenses_idempotency",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -69,6 +77,9 @@ class GroupExpense(Base):
         ForeignKey("cloud_receipts.id", ondelete="SET NULL"),
     )
     payer_user_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    created_by_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255))
+    idempotency_request_hash: Mapped[str | None] = mapped_column(String(64))
 
     # Nullable only for rows created before migration 0009.
     # No User FK is used so financial history survives account deletion.
