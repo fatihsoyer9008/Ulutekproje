@@ -300,11 +300,11 @@ void main() {
       );
 
       final first = await repository.createExpense(
-        fastSplitTransferExpense,
+        _fastSplitRequest(),
         idempotencyKey: 'expense-request-1',
       );
       final retry = await repository.createExpense(
-        fastSplitTransferExpense,
+        _fastSplitRequest(),
         idempotencyKey: 'expense-request-1',
       );
 
@@ -317,16 +317,12 @@ void main() {
         groups: const <GroupDetail>[twoMemberGroup],
       );
       await repository.createExpense(
-        fastSplitTransferExpense,
+        _fastSplitRequest(),
         idempotencyKey: 'expense-request-2',
       );
-      final changedJson = Map<String, Object?>.from(
-        fastSplitTransferExpense.toJson(),
-      )..['title'] = 'Değiştirilen başlık';
-
       await expectLater(
         repository.createExpense(
-          GroupExpense.fromJson(changedJson),
+          _fastSplitRequest(title: 'Değiştirilen başlık'),
           idempotencyKey: 'expense-request-2',
         ),
         throwsA(
@@ -338,7 +334,58 @@ void main() {
         ),
       );
     });
+
+    test('masraf oluşturulduğunda borç özetini günceller', () async {
+      final repository = FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      );
+
+      await repository.createExpense(
+        _fastSplitRequest(),
+        idempotencyKey: 'expense-updates-debt-summary',
+      );
+
+      final summary = await repository.getDebtSummary(twoMemberGroupId);
+
+      expect(summary.balances, hasLength(2));
+      expect(
+        summary.balances
+            .singleWhere((balance) => balance.userId == currentUserId)
+            .netAmountInMinor,
+        6250,
+      );
+      expect(
+        summary.balances
+            .singleWhere((balance) => balance.userId == secondUserId)
+            .netAmountInMinor,
+        -6250,
+      );
+      expect(summary.suggestedTransfers, hasLength(1));
+
+      final transfer = summary.suggestedTransfers.single;
+      expect(transfer.fromUserId, secondUserId);
+      expect(transfer.toUserId, currentUserId);
+      expect(transfer.amountInMinor, 6250);
+    });
   });
+}
+
+CreateGroupExpenseRequest _fastSplitRequest({String? title}) {
+  return CreateGroupExpenseRequest(
+    groupId: fastSplitTransferExpense.groupId,
+    receiptId: fastSplitTransferExpense.receiptId,
+    payerUserId: fastSplitTransferExpense.payerUserId,
+    title: title ?? fastSplitTransferExpense.title,
+    note: fastSplitTransferExpense.note,
+    expenseDate: fastSplitTransferExpense.expenseDate,
+    totalAmountInMinor: fastSplitTransferExpense.totalAmountInMinor,
+    currency: fastSplitTransferExpense.currency,
+    split: ExpenseSplitRequest.equal(
+      memberIds: fastSplitTransferExpense.shares
+          .map((share) => share.userId)
+          .toList(growable: false),
+    ),
+  );
 }
 
 Map<String, Object?> _readJsonFixture(String relativePath) {

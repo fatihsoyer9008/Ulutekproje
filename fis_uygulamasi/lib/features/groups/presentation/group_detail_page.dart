@@ -40,85 +40,99 @@ class _GroupDetailContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final expensesAsync = ref.watch(groupExpensesProvider(group.id));
     final currentUserId = ref.watch(authSessionControllerProvider).user?.id;
+    final description = group.description?.trim();
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    group.name,
+                    key: const Key('group_detail_name'),
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${group.memberCount} üye',
+                    key: const Key('group_detail_member_count'),
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                  if (description?.isNotEmpty ?? false) ...[
+                    const SizedBox(height: 8),
+                    Text(description ?? ''),
+                  ],
+                  const SizedBox(height: 12),
+                  _RoleChip(role: group.currentUserRole),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                group.name,
-                key: const Key('group_detail_name'),
-                style: Theme.of(context).textTheme.headlineSmall,
+            _SectionTitle(
+              title: 'Masraflar',
+              action: SizedBox(
+                width: 180,
+                child: FilledButton.icon(
+                  key: const Key('add_group_expense_button'),
+                  onPressed: currentUserId == null
+                      ? null
+                      : () => _openFastSplit(context, ref, currentUserId),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Yeni Masraf Ekle'),
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                '${group.memberCount} üye',
-                key: const Key('group_detail_member_count'),
-                style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 8),
+            _ExpensesSection(
+              expensesAsync: expensesAsync,
+              onRetry: () => ref.invalidate(groupExpensesProvider(group.id)),
+            ),
+            const SizedBox(height: 20),
+
+            _SectionTitle(title: 'Borç Özeti'),
+            const SizedBox(height: 8),
+            AppCard(
+              child: ListTile(
+                key: const Key('open_debt_summary_button'),
+                leading: const Icon(Icons.account_balance_wallet_outlined),
+                title: const Text('Borç Özetini Görüntüle'),
+                subtitle: const Text('Grup bakiyeleri ve ödeme önerileri'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: currentUserId == null
+                    ? null
+                    : () => _openDebtSummary(context, ref, currentUserId),
               ),
-              if (group.description?.trim().isNotEmpty ?? false) ...[
-                const SizedBox(height: 8),
-                Text(group.description!),
-              ],
-              const SizedBox(height: 12),
-              _RoleChip(role: group.currentUserRole),
-            ],
-          ),
+            ),
+            const SizedBox(height: 20),
+
+            _SectionTitle(
+              title: 'Üyeler',
+              action: _canManageMembers
+                  ? IconButton(
+                      key: const Key('add_group_member_button'),
+                      tooltip: 'Üye ekle',
+                      onPressed: () => _showAddMemberSheet(context, ref),
+                      icon: const Icon(Icons.person_add_alt_1_rounded),
+                    )
+                  : null,
+            ),
+            const SizedBox(height: 8),
+            _MembersSection(
+              members: group.members,
+              currentUserId: currentUserId,
+              currentUserRole: group.currentUserRole,
+              onRemoveMember: _canManageMembers
+                  ? (member) => _confirmAndRemoveMember(context, ref, member)
+                  : null,
+            ),
+          ],
         ),
-        const SizedBox(height: 20),
-        _SectionTitle(
-          title: 'Masraflar',
-          action: FilledButton.icon(
-            key: const Key('add_group_expense_button'),
-            onPressed: currentUserId == null
-                ? null
-                : () => _openFastSplit(context, ref, currentUserId),
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Yeni Masraf Ekle'),
-          ),
-        ),
-        const SizedBox(height: 8),
-        _ExpensesSection(expensesAsync: expensesAsync),
-        const SizedBox(height: 20),
-        _SectionTitle(title: 'Borç Özeti'),
-        const SizedBox(height: 8),
-        AppCard(
-          child: ListTile(
-            key: const Key('open_debt_summary_button'),
-            leading: const Icon(Icons.account_balance_wallet_outlined),
-            title: const Text('Borç Özetini Görüntüle'),
-            subtitle: const Text('Grup bakiyeleri ve ödeme önerileri'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: currentUserId == null
-                ? null
-                : () => _openDebtSummary(context, ref, currentUserId),
-          ),
-        ),
-        const SizedBox(height: 20),
-        _SectionTitle(
-          title: 'Üyeler',
-          action: _canManageMembers
-              ? IconButton(
-                  key: const Key('add_group_member_button'),
-                  tooltip: 'Üye ekle',
-                  onPressed: () => _showAddMemberSheet(context, ref),
-                  icon: const Icon(Icons.person_add_alt_1_rounded),
-                )
-              : null,
-        ),
-        const SizedBox(height: 8),
-        _MembersSection(
-          members: group.members,
-          currentUserId: currentUserId,
-          currentUserRole: group.currentUserRole,
-          onRemoveMember: _canManageMembers
-              ? (member) => _confirmAndRemoveMember(context, ref, member)
-              : null,
-        ),
-      ],
+      ),
     );
   }
 
@@ -133,49 +147,56 @@ class _GroupDetailContent extends ConsumerWidget {
           group: group,
           currentUserId: currentUserId,
           onSubmit: (value) async {
-            final now = DateTime.now().toUtc();
-            final nowText = now.toIso8601String();
-            final expenseId = 'fast-split-${now.microsecondsSinceEpoch}';
-            final memberNames = <String, String>{
-              for (final member in group.members)
-                member.userId: member.displayName,
+            final nowText = DateTime.now().toUtc().toIso8601String();
+
+            final split = switch (value.calculation.type) {
+              SplitType.equal => ExpenseSplitRequest.equal(
+                memberIds: value.calculation.shares
+                    .map((share) => share.userId)
+                    .toList(growable: false),
+              ),
+              SplitType.percentage => ExpenseSplitRequest.percentage(
+                shares: [
+                  for (final share in value.calculation.shares)
+                    ExpenseSplitShareRequest.percentage(
+                      userId: share.userId,
+                      percentageBasisPoints:
+                          value.percentageBasisPoints[share.userId]!,
+                    ),
+                ],
+              ),
+              SplitType.fixedAmount => ExpenseSplitRequest.fixedAmount(
+                shares: [
+                  for (final share in value.calculation.shares)
+                    ExpenseSplitShareRequest.fixedAmount(
+                      userId: share.userId,
+                      amountInMinor: share.amountInMinor,
+                    ),
+                ],
+              ),
+              SplitType.itemized => throw StateError(
+                'Fast Split itemized bölüştürmeyi desteklemez.',
+              ),
             };
 
-            final expense = GroupExpense(
-              id: expenseId,
+            final request = CreateGroupExpenseRequest(
               groupId: group.id,
               receiptId: null,
               payerUserId: value.payerUserId,
-              createdBy: currentUserId,
               title: value.title,
               note: null,
               expenseDate: nowText,
               totalAmountInMinor: value.calculation.totalAmountInMinor,
               currency: group.currency,
-              splitType: value.calculation.type,
-              isFinanciallyLocked: false,
-              shares: [
-                for (final share in value.calculation.shares)
-                  ExpenseShare(
-                    expenseId: expenseId,
-                    userId: share.userId,
-                    displayName: memberNames[share.userId] ?? 'Grup üyesi',
-                    amountInMinor: share.amountInMinor,
-                    status: ShareStatus.open,
-                    settledAt: null,
-                  ),
-              ],
-              lineItemAssignments: const [],
-              createdAt: nowText,
-              updatedAt: nowText,
-              deletedAt: null,
+              split: split,
             );
 
             await ref
                 .read(groupExpenseRepositoryProvider)
                 .createExpense(
-                  expense,
-                  idempotencyKey: 'fast-split-$expenseId',
+                  request,
+                  idempotencyKey:
+                      'fast-split-${DateTime.now().microsecondsSinceEpoch}',
                 );
 
             ref.invalidate(groupExpensesProvider(group.id));
@@ -251,18 +272,16 @@ class _GroupDetailContent extends ConsumerWidget {
       isScrollControlled: true,
       builder: (_) => _AddMemberSheet(
         canChooseAdmin: group.currentUserRole == GroupRole.owner,
-        onSubmit: (userId, displayName, role) async {
+        onSubmit: (email, role) async {
           await ref
               .read(groupRepositoryProvider)
-              .addMember(
-                groupId: group.id,
-                userId: userId,
-                displayName: displayName,
-                role: role,
-              );
+              .createInvitation(groupId: group.id, email: email, role: role);
 
-          ref.invalidate(groupDetailProvider(group.id));
-          ref.invalidate(groupsProvider);
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Grup daveti gönderildi.')),
+            );
+          }
         },
       ),
     );
@@ -301,7 +320,6 @@ class _GroupDetailContent extends ConsumerWidget {
       await ref
           .read(groupRepositoryProvider)
           .removeMember(groupId: group.id, userId: member.userId);
-
       ref.invalidate(groupDetailProvider(group.id));
       ref.invalidate(groupsProvider);
 
@@ -342,10 +360,10 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _ExpensesSection extends StatelessWidget {
-  const _ExpensesSection({required this.expensesAsync});
+  const _ExpensesSection({required this.expensesAsync, required this.onRetry});
 
   final AsyncValue<List<GroupExpense>> expensesAsync;
-
+  final VoidCallback onRetry;
   @override
   Widget build(BuildContext context) {
     return expensesAsync.when(
@@ -357,10 +375,18 @@ class _ExpensesSection extends StatelessWidget {
           ),
         ),
       ),
-      error: (_, _) => const AppCard(
+      error: (_, _) => AppCard(
         child: ListTile(
-          leading: Icon(Icons.error_outline_rounded),
-          title: Text('Masraflar yüklenemedi'),
+          leading: const Icon(Icons.error_outline_rounded),
+          title: const Text('Masraflar yüklenemedi'),
+          subtitle: const Text(
+            'Bağlantını kontrol edip tekrar deneyebilirsin.',
+          ),
+          trailing: TextButton(
+            key: const Key('retry_group_expenses_button'),
+            onPressed: onRetry,
+            child: const Text('Tekrar dene'),
+          ),
         ),
       ),
       data: (expenses) {
@@ -497,8 +523,7 @@ class _AddMemberSheet extends StatefulWidget {
   const _AddMemberSheet({required this.canChooseAdmin, required this.onSubmit});
 
   final bool canChooseAdmin;
-  final Future<void> Function(String userId, String displayName, GroupRole role)
-  onSubmit;
+  final Future<void> Function(String email, GroupRole role) onSubmit;
 
   @override
   State<_AddMemberSheet> createState() => _AddMemberSheetState();
@@ -506,16 +531,14 @@ class _AddMemberSheet extends StatefulWidget {
 
 class _AddMemberSheetState extends State<_AddMemberSheet> {
   final _formKey = GlobalKey<FormState>();
-  final _userIdController = TextEditingController();
-  final _displayNameController = TextEditingController();
+  final _emailController = TextEditingController();
   GroupRole _role = GroupRole.member;
   bool _submitting = false;
   String? _errorMessage;
 
   @override
   void dispose() {
-    _userIdController.dispose();
-    _displayNameController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 
@@ -533,41 +556,37 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Üye Ekle', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                'Gruba Davet Et',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Davet bağlantısı bu e-posta adresine gönderilecektir.',
+              ),
               const SizedBox(height: 20),
               TextFormField(
-                key: const Key('new_member_user_id_field'),
-                controller: _userIdController,
+                key: const Key('group_invitation_email_field'),
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.done,
                 decoration: const InputDecoration(
-                  labelText: 'Kullanıcı kimliği',
+                  labelText: 'E-posta adresi',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
-                  if ((value?.trim() ?? '').isEmpty) {
-                    return 'Kullanıcı kimliği boş bırakılamaz.';
+                  final email = value?.trim() ?? '';
+                  if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                    return 'Geçerli bir e-posta adresi girin.';
                   }
                   return null;
                 },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                key: const Key('new_member_display_name_field'),
-                controller: _displayNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Görünen ad',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if ((value?.trim() ?? '').isEmpty) {
-                    return 'Görünen ad boş bırakılamaz.';
-                  }
-                  return null;
-                },
+                onFieldSubmitted: (_) => _submit(),
               ),
               if (widget.canChooseAdmin) ...[
                 const SizedBox(height: 12),
                 DropdownButtonFormField<GroupRole>(
-                  key: const Key('new_member_role_field'),
+                  key: const Key('group_invitation_role_field'),
                   initialValue: _role,
                   decoration: const InputDecoration(
                     labelText: 'Rol',
@@ -598,7 +617,7 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
               ],
               const SizedBox(height: 20),
               FilledButton.icon(
-                key: const Key('submit_add_member_button'),
+                key: const Key('submit_group_invitation_button'),
                 onPressed: _submitting ? null : _submit,
                 icon: _submitting
                     ? const SizedBox.square(
@@ -606,7 +625,7 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.person_add_alt_1_rounded),
-                label: const Text('Üyeyi Ekle'),
+                label: const Text('Daveti Gönder'),
               ),
             ],
           ),
@@ -624,15 +643,9 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
     });
 
     try {
-      await widget.onSubmit(
-        _userIdController.text.trim(),
-        _displayNameController.text.trim(),
-        _role,
-      );
+      await widget.onSubmit(_emailController.text.trim(), _role);
 
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
+      if (mounted) Navigator.of(context).pop();
     } on GroupApiException catch (error) {
       if (mounted) {
         setState(() => _errorMessage = error.error.detail.message);
@@ -640,13 +653,11 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
     } catch (_) {
       if (mounted) {
         setState(
-          () => _errorMessage = 'Üye eklenemedi. Lütfen tekrar deneyin.',
+          () => _errorMessage = 'Davet gönderilemedi. Lütfen tekrar deneyin.',
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _submitting = false);
-      }
+      if (mounted) setState(() => _submitting = false);
     }
   }
 }

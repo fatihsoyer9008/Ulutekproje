@@ -85,36 +85,33 @@ void main() {
     expect(find.byKey(Key('remove_group_member_$secondUserId')), findsNothing);
   });
 
-  testWidgets('owner yeni üye ekleyebilir', (tester) async {
+  testWidgets('owner grup daveti gönderebilir', (tester) async {
     await _pumpDetailPage(
       tester,
       repository: FakeGroupRepository(
         groups: const <GroupDetail>[twoMemberGroup],
       ),
     );
+
     await tester.scrollUntilVisible(
       find.byKey(const Key('add_group_member_button')),
       300,
       scrollable: find.byType(Scrollable).first,
     );
-
     await tester.tap(find.byKey(const Key('add_group_member_button')));
     await tester.pumpAndSettle();
 
+    expect(find.text('Gruba Davet Et'), findsOneWidget);
+
     await tester.enterText(
-      find.byKey(const Key('new_member_user_id_field')),
-      'new-member-id',
+      find.byKey(const Key('group_invitation_email_field')),
+      'yeni.uye@example.com',
     );
-    await tester.enterText(
-      find.byKey(const Key('new_member_display_name_field')),
-      'Yeni Üye',
-    );
-    await tester.tap(find.byKey(const Key('submit_add_member_button')));
+    await tester.tap(find.byKey(const Key('submit_group_invitation_button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Yeni Üye'), findsOneWidget);
+    expect(find.text('Grup daveti gönderildi.'), findsOneWidget);
   });
-
   testWidgets(
     'Fast Split kaydından sonra detay ekranındaki masraf listesi yenilenir',
     (tester) async {
@@ -303,6 +300,28 @@ void main() {
     expect(find.text('Tüm borçlar kapatılmış görünüyor.'), findsOneWidget);
     expect(markPaidButton, findsNothing);
   });
+
+  testWidgets('masraf hata ekranındaki tekrar dene masrafları yeniden yükler', (
+    tester,
+  ) async {
+    await _pumpDetailPage(
+      tester,
+      repository: _RetryingExpenseRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      ),
+    );
+
+    expect(
+      find.byKey(const Key('retry_group_expenses_button')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('retry_group_expenses_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('retry_group_expenses_button')), findsNothing);
+    expect(find.text('Henüz masraf yok'), findsOneWidget);
+  });
 }
 
 Future<void> _pumpDetailPage(
@@ -345,6 +364,22 @@ class _RetryingDetailRepository extends FakeGroupRepository {
     }
 
     return super.getGroup(groupId);
+  }
+}
+
+class _RetryingExpenseRepository extends FakeGroupRepository {
+  _RetryingExpenseRepository({required super.groups});
+
+  bool _shouldFail = true;
+
+  @override
+  Future<List<GroupExpense>> listExpenses(String groupId) async {
+    if (_shouldFail) {
+      _shouldFail = false;
+      throw groupsApiErrorException;
+    }
+
+    return super.listExpenses(groupId);
   }
 }
 

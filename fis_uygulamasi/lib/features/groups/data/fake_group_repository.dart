@@ -102,6 +102,7 @@ class FakeGroupRepository implements GroupRepository {
       <String, _IdempotentValue<Settlement>>{};
 
   int _nextGroupSequence = 100;
+  int _nextExpenseSequence = 1;
 
   @override
   Future<GroupsResponse> listGroups({bool includeArchived = false}) async {
@@ -243,6 +244,48 @@ class FakeGroupRepository implements GroupRepository {
       archivedAt: timestamp,
       updatedAt: timestamp,
     );
+  }
+
+  @override
+  Future<void> createInvitation({
+    required String groupId,
+    required String email,
+    GroupRole role = GroupRole.member,
+  }) async {
+    await _beforeRequest();
+
+    final group = _requireGroup(groupId);
+    final currentRole = _currentUserRole(group);
+    final normalizedEmail = email.trim().toLowerCase();
+    final emailIsValid = RegExp(
+      r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+    ).hasMatch(normalizedEmail);
+
+    if (!emailIsValid || role == GroupRole.owner) {
+      throw _apiException(
+        statusCode: 400,
+        code: 'invalid_request',
+        message: 'Geçerli bir e-posta adresi ve rol seçin.',
+      );
+    }
+
+    if (currentRole != GroupRole.owner && currentRole != GroupRole.admin) {
+      throw _apiException(
+        statusCode: 403,
+        code: 'group_forbidden',
+        message: 'Bu gruba davet gönderme yetkiniz yok.',
+      );
+    }
+
+    if (currentRole == GroupRole.admin && role != GroupRole.member) {
+      throw _apiException(
+        statusCode: 403,
+        code: 'group_forbidden',
+        message: 'Admin yalnızca üye rolünde davet gönderebilir.',
+      );
+    }
+
+    // Production davranışı: davet kabul edilmeden üyelik oluşmaz.
   }
 
   @override
@@ -399,17 +442,19 @@ class FakeGroupRepository implements GroupRepository {
 
   @override
   Future<GroupExpense> createExpense(
-    GroupExpense expense, {
+    CreateGroupExpenseRequest request, {
     required String idempotencyKey,
   }) async {
     await _beforeRequest();
-    final group = _requireGroup(expense.groupId);
+
+    final group = _requireGroup(request.groupId);
     _requireCurrentUserMembership(group);
     _validateIdempotencyKey(idempotencyKey);
-    _validateExpense(group, expense);
+    _validateCreateExpenseRequest(group, request);
 
-    final fingerprint = jsonEncode(expense.toJson());
+    final fingerprint = jsonEncode(request.toJson());
     final existing = _expenseRequests[idempotencyKey];
+
     if (existing != null) {
       if (existing.fingerprint != fingerprint) {
         throw _idempotencyConflict();
@@ -417,15 +462,277 @@ class FakeGroupRepository implements GroupRepository {
       return GroupExpense.fromJson(existing.value.toJson());
     }
 
-    final stored = GroupExpense.fromJson(expense.toJson());
+    final expenseId = _newExpenseId();
+    final timestamp = _timestamp();
+    final shares = _createSharesForRequest(group, request, expenseId);
+
+    final stored = GroupExpense(
+      id: expenseId,
+      groupId: request.groupId,
+      receiptId: request.receiptId,
+      payerUserId: request.payerUserId,
+      createdBy: currentUserId,
+      title: request.title.trim(),
+      note: request.note,
+      expenseDate: request.expenseDate,
+      totalAmountInMinor: request.totalAmountInMinor,
+      currency: request.currency,
+      splitType: request.split.type,
+      isFinanciallyLocked: false,
+      shares: shares,
+      lineItemAssignments: const <ReceiptLineItemAssignment>[],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      deletedAt: null,
+    );
+
+    _validateExpense(group, stored);
+
     _expensesByGroup
-        .putIfAbsent(expense.groupId, () => <GroupExpense>[])
+        .putIfAbsent(request.groupId, () => <GroupExpense>[])
         .add(stored);
+
+    _applyExpenseToDebtSummary(group, stored);
+
     _expenseRequests[idempotencyKey] = _IdempotentValue<GroupExpense>(
       fingerprint: fingerprint,
       value: stored,
     );
+
     return GroupExpense.fromJson(stored.toJson());
+  }
+
+  List<ExpenseShare> _createSharesForRequest(
+    GroupDetail group,
+    CreateGroupExpenseRequest request,
+    String expenseId,
+  ) {
+    final memberNames = <String, String>{
+      for (final member in group.members)
+        if (member.leftAt == null) member.userId: member.displayName,
+    };
+
+    ExpenseShare shareFor(String userId, int amountInMinor) {
+      return ExpenseShare(
+        expenseId: expenseId,
+        userId: userId,
+        displayName: memberNames[userId] ?? 'Grup üyesi',
+        amountInMinor: amountInMinor,
+        status: ShareStatus.open,
+        settledAt: null,
+      );
+    }
+
+    return switch (request.split.type) {
+      SplitType.equal => _createEqualShares(
+        request.split.memberIds,
+        request.totalAmountInMinor,
+        shareFor,
+      ),
+      SplitType.percentage => _createPercentageShares(
+        request.split.shares,
+        request.totalAmountInMinor,
+        shareFor,
+      ),
+      SplitType.fixedAmount => [
+        for (final share in request.split.shares)
+          shareFor(share.userId, share.amountInMinor!),
+      ],
+      SplitType.itemized => throw StateError(
+        'Fast Split itemized bölüştürmeyi desteklemez.',
+      ),
+    };
+  }
+
+  List<ExpenseShare> _createEqualShares(
+    List<String> memberIds,
+    int totalAmountInMinor,
+    ExpenseShare Function(String userId, int amountInMinor) shareFor,
+  ) {
+    final baseAmount = totalAmountInMinor ~/ memberIds.length;
+    var remainingMinor = totalAmountInMinor % memberIds.length;
+
+    return [
+      for (final userId in memberIds)
+        shareFor(userId, baseAmount + (remainingMinor-- > 0 ? 1 : 0)),
+    ];
+  }
+
+  List<ExpenseShare> _createPercentageShares(
+    List<ExpenseSplitShareRequest> requestShares,
+    int totalAmountInMinor,
+    ExpenseShare Function(String userId, int amountInMinor) shareFor,
+  ) {
+    var assignedAmount = 0;
+    final shares = <ExpenseShare>[];
+
+    for (var index = 0; index < requestShares.length; index++) {
+      final requestShare = requestShares[index];
+
+      final amountInMinor = index == requestShares.length - 1
+          ? totalAmountInMinor - assignedAmount
+          : totalAmountInMinor * requestShare.percentageBasisPoints! ~/ 10000;
+
+      assignedAmount += amountInMinor;
+      shares.add(shareFor(requestShare.userId, amountInMinor));
+    }
+
+    return shares;
+  }
+
+  void _validateCreateExpenseRequest(
+    GroupDetail group,
+    CreateGroupExpenseRequest request,
+  ) {
+    final split = request.split;
+
+    final hasInvalidCommonFields =
+        request.title.trim().isEmpty ||
+        request.totalAmountInMinor <= 0 ||
+        request.currency != group.currency ||
+        !_isActiveMember(group, request.payerUserId);
+
+    final splitIsValid = switch (split.type) {
+      SplitType.equal =>
+        split.memberIds.isNotEmpty &&
+            split.memberIds.toSet().length == split.memberIds.length &&
+            split.memberIds.every((userId) => _isActiveMember(group, userId)),
+      SplitType.percentage =>
+        split.shares.isNotEmpty &&
+            split.shares.every(
+              (share) =>
+                  share.percentageBasisPoints != null &&
+                  share.percentageBasisPoints! >= 0 &&
+                  _isActiveMember(group, share.userId),
+            ) &&
+            split.shares.map((share) => share.userId).toSet().length ==
+                split.shares.length &&
+            split.shares.fold<int>(
+                  0,
+                  (total, share) => total + share.percentageBasisPoints!,
+                ) ==
+                10000,
+      SplitType.fixedAmount =>
+        split.shares.isNotEmpty &&
+            split.shares.every(
+              (share) =>
+                  share.amountInMinor != null &&
+                  share.amountInMinor! >= 0 &&
+                  _isActiveMember(group, share.userId),
+            ) &&
+            split.shares.map((share) => share.userId).toSet().length ==
+                split.shares.length &&
+            split.shares.fold<int>(
+                  0,
+                  (total, share) => total + share.amountInMinor!,
+                ) ==
+                request.totalAmountInMinor,
+      SplitType.itemized => false,
+    };
+
+    if (hasInvalidCommonFields || !splitIsValid) {
+      throw _apiException(
+        statusCode: 422,
+        code: 'invalid_split_total',
+        message: 'Masraf veya bölüştürme bilgileri geçersiz.',
+      );
+    }
+  }
+
+  void _applyExpenseToDebtSummary(GroupDetail group, GroupExpense expense) {
+    final existingSummary = _debtSummariesByGroup[group.id];
+
+    final balancesByUserId = <String, DebtBalance>{
+      for (final member in group.members)
+        if (member.leftAt == null)
+          member.userId: DebtBalance(
+            userId: member.userId,
+            displayName: member.displayName,
+            netAmountInMinor: 0,
+          ),
+    };
+
+    if (existingSummary != null) {
+      for (final balance in existingSummary.balances) {
+        balancesByUserId[balance.userId] = balance;
+      }
+    }
+
+    void changeBalance(String userId, int amountInMinor) {
+      final previous = balancesByUserId[userId];
+      if (previous == null) return;
+
+      balancesByUserId[userId] = DebtBalance(
+        userId: previous.userId,
+        displayName: previous.displayName,
+        netAmountInMinor: previous.netAmountInMinor + amountInMinor,
+      );
+    }
+
+    // Ödeyen kişi masraf kadar alacaklı olur.
+    changeBalance(expense.payerUserId, expense.totalAmountInMinor);
+
+    // Katılımcıların her biri kendi payı kadar borçlanır.
+    for (final share in expense.shares) {
+      changeBalance(share.userId, -share.amountInMinor);
+    }
+
+    final balances = balancesByUserId.values.toList(growable: false);
+
+    final remainingDebts = <String, int>{
+      for (final balance in balances)
+        if (balance.netAmountInMinor < 0)
+          balance.userId: -balance.netAmountInMinor,
+    };
+
+    final remainingCredits = <String, int>{
+      for (final balance in balances)
+        if (balance.netAmountInMinor > 0)
+          balance.userId: balance.netAmountInMinor,
+    };
+
+    final transfers = <DebtTransfer>[];
+    final debtorIds = remainingDebts.keys.toList();
+    final creditorIds = remainingCredits.keys.toList();
+
+    var debtorIndex = 0;
+    var creditorIndex = 0;
+
+    while (debtorIndex < debtorIds.length &&
+        creditorIndex < creditorIds.length) {
+      final debtorId = debtorIds[debtorIndex];
+      final creditorId = creditorIds[creditorIndex];
+      final debt = remainingDebts[debtorId]!;
+      final credit = remainingCredits[creditorId]!;
+      final amount = debt < credit ? debt : credit;
+
+      transfers.add(
+        DebtTransfer(
+          fromUserId: debtorId,
+          toUserId: creditorId,
+          amountInMinor: amount,
+        ),
+      );
+
+      remainingDebts[debtorId] = debt - amount;
+      remainingCredits[creditorId] = credit - amount;
+
+      if (remainingDebts[debtorId] == 0) {
+        debtorIndex++;
+      }
+
+      if (remainingCredits[creditorId] == 0) {
+        creditorIndex++;
+      }
+    }
+
+    _debtSummariesByGroup[group.id] = DebtSummary(
+      groupId: group.id,
+      currency: group.currency,
+      balances: balances,
+      suggestedTransfers: transfers,
+      generatedAt: _timestamp(),
+    );
   }
 
   @override
@@ -662,6 +969,12 @@ class FakeGroupRepository implements GroupRepository {
   );
 
   String _timestamp() => _clock().toUtc().toIso8601String();
+
+  String _newExpenseId() {
+    final suffix = _nextExpenseSequence.toString().padLeft(12, '0');
+    _nextExpenseSequence += 1;
+    return '40000000-0000-4000-8000-$suffix';
+  }
 
   String _newGroupId() {
     final suffix = _nextGroupSequence.toString().padLeft(12, '0');

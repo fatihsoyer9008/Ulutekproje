@@ -356,6 +356,102 @@ class GroupExpense {
   };
 }
 
+class CreateGroupExpenseRequest {
+  const CreateGroupExpenseRequest({
+    required this.groupId,
+    required this.receiptId,
+    required this.payerUserId,
+    required this.title,
+    required this.note,
+    required this.expenseDate,
+    required this.totalAmountInMinor,
+    required this.currency,
+    required this.split,
+  });
+
+  final String groupId;
+  final String? receiptId;
+  final String payerUserId;
+  final String title;
+  final String? note;
+  final String expenseDate;
+  final int totalAmountInMinor;
+  final String currency;
+  final ExpenseSplitRequest split;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'receipt_id': receiptId,
+    'payer_user_id': payerUserId,
+    'title': title,
+    'note': note,
+    'expense_date': expenseDate,
+    'total_amount_in_minor': totalAmountInMinor,
+    'currency': currency,
+    'split': split.toJson(),
+  };
+}
+
+class ExpenseSplitRequest {
+  const ExpenseSplitRequest.equal({required this.memberIds})
+    : type = SplitType.equal,
+      shares = const <ExpenseSplitShareRequest>[];
+
+  const ExpenseSplitRequest.percentage({required this.shares})
+    : type = SplitType.percentage,
+      memberIds = const <String>[];
+
+  const ExpenseSplitRequest.fixedAmount({required this.shares})
+    : type = SplitType.fixedAmount,
+      memberIds = const <String>[];
+
+  final SplitType type;
+  final List<String> memberIds;
+  final List<ExpenseSplitShareRequest> shares;
+
+  Map<String, Object?> toJson() {
+    return switch (type) {
+      SplitType.equal => <String, Object?>{
+        'type': 'equal',
+        'member_ids': memberIds,
+      },
+      SplitType.percentage => <String, Object?>{
+        'type': 'percentage',
+        'shares': shares.map((share) => share.toJson()).toList(),
+      },
+      SplitType.fixedAmount => <String, Object?>{
+        'type': 'fixed_amount',
+        'shares': shares.map((share) => share.toJson()).toList(),
+      },
+      SplitType.itemized => throw StateError(
+        'Fast Split itemized bölüştürmeyi desteklemez.',
+      ),
+    };
+  }
+}
+
+class ExpenseSplitShareRequest {
+  const ExpenseSplitShareRequest.percentage({
+    required this.userId,
+    required this.percentageBasisPoints,
+  }) : amountInMinor = null;
+
+  const ExpenseSplitShareRequest.fixedAmount({
+    required this.userId,
+    required this.amountInMinor,
+  }) : percentageBasisPoints = null;
+
+  final String userId;
+  final int? percentageBasisPoints;
+  final int? amountInMinor;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'user_id': userId,
+    if (percentageBasisPoints != null)
+      'percentage_basis_points': percentageBasisPoints,
+    if (amountInMinor != null) 'amount_in_minor': amountInMinor,
+  };
+}
+
 class DebtTransfer {
   const DebtTransfer({
     required this.fromUserId,
