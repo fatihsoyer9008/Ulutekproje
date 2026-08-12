@@ -1,7 +1,11 @@
 from app.models.cloud_receipt import CloudReceipt, CloudReceiptLineItem
 from app.models.cloud_transaction import CloudTransaction
+from app.models.expense_idempotency import GroupExpenseIdempotencyRecord
 from app.models.group import Group, GroupMember, GroupRole
 from app.models.group_expense import (
+    ExpenseExtraAmount,
+    ExpenseExtraAmountShare,
+    ExpenseExtraAmountType,
     ExpenseLineItemAssignment,
     ExpenseShare,
     ExpenseShareStatus,
@@ -18,11 +22,15 @@ __all__ = [
     "CloudReceipt",
     "CloudReceiptLineItem",
     "CloudTransaction",
+    "ExpenseExtraAmount",
+    "ExpenseExtraAmountShare",
+    "ExpenseExtraAmountType",
     "ExpenseLineItemAssignment",
     "ExpenseShare",
     "ExpenseShareStatus",
     "ExpenseSplitType",
     "Group",
+    "GroupExpenseIdempotencyRecord",
     "GroupExpense",
     "GroupMember",
     "GroupRole",

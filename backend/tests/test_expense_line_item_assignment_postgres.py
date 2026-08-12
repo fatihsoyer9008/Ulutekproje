@@ -1,4 +1,3 @@
-import os
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -9,15 +8,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
+from tests.postgres_support import postgres_test_database_url
+
 
 @pytest_asyncio.fixture
 async def postgres_connection() -> AsyncIterator[AsyncConnection]:
-    database_url = os.getenv("POSTGRES_TEST_DATABASE_URL")
-    if not database_url:
-        pytest.skip("POSTGRES_TEST_DATABASE_URL is required for PostgreSQL tests")
-    if not database_url.startswith("postgresql+asyncpg://"):
-        pytest.fail("POSTGRES_TEST_DATABASE_URL must use PostgreSQL with asyncpg")
-
+    database_url = postgres_test_database_url()
     engine = create_async_engine(database_url)
     try:
         async with engine.connect() as connection:
@@ -151,12 +147,28 @@ async def test_assignment_migration_is_at_head(
     revision = await postgres_connection.scalar(
         text("SELECT version_num FROM alembic_version")
     )
-    table_name = await postgres_connection.scalar(
-        text("SELECT to_regclass(" "'public.expense_line_item_assignments'" ")")
-    )
+    table_names = {
+        await postgres_connection.scalar(
+            text("SELECT to_regclass(" "'public.expense_line_item_assignments'" ")")
+        ),
+        await postgres_connection.scalar(
+            text("SELECT to_regclass(" "'public.expense_extra_amounts'" ")")
+        ),
+        await postgres_connection.scalar(
+            text("SELECT to_regclass(" "'public.expense_extra_amount_shares'" ")")
+        ),
+        await postgres_connection.scalar(
+            text("SELECT to_regclass(" "'public.group_expense_idempotency_records'" ")")
+        ),
+    }
 
-    assert revision == "20260811_0007"
-    assert table_name == "expense_line_item_assignments"
+    assert revision == "20260812_0009"
+    assert table_names == {
+        "expense_line_item_assignments",
+        "expense_extra_amounts",
+        "expense_extra_amount_shares",
+        "group_expense_idempotency_records",
+    }
 
 
 @pytest.mark.asyncio
@@ -318,3 +330,270 @@ async def test_assignment_cascades_from_expense_and_survives_user_delete(
     assert remaining_assignment == 1
     assert remaining_line_item == 0
     assert stored_receipt_id is None
+
+
+@pytest.mark.asyncio
+async def test_extra_amount_constraints_and_cascade(
+    postgres_connection: AsyncConnection,
+) -> None:
+    (
+        user_id,
+        _group_id,
+        _receipt_id,
+        _line_item_id,
+        expense_id,
+        _now,
+    ) = await _insert_parent_rows(postgres_connection)
+
+    extra_amount_id = uuid.uuid4()
+    insert_extra = text(
+        "INSERT INTO expense_extra_amounts "
+        "(id, expense_id, type, label, amount_in_minor) "
+        "VALUES (:id, :expense_id, :type, :label, :amount)"
+    )
+    insert_share = text(
+        "INSERT INTO expense_extra_amount_shares "
+        "(extra_amount_id, user_id, amount_in_minor) "
+        "VALUES (:extra_amount_id, :user_id, :amount)"
+    )
+
+    await postgres_connection.execute(
+        insert_extra,
+        {
+            "id": extra_amount_id,
+            "expense_id": expense_id,
+            "type": "tax",
+            "label": "KDV",
+            "amount": 500,
+        },
+    )
+    await postgres_connection.execute(
+        insert_share,
+        {
+            "extra_amount_id": extra_amount_id,
+            "user_id": user_id,
+            "amount": 500,
+        },
+    )
+
+    with pytest.raises(IntegrityError):
+        async with postgres_connection.begin_nested():
+            await postgres_connection.execute(
+                insert_extra,
+                {
+                    "id": uuid.uuid4(),
+                    "expense_id": expense_id,
+                    "type": "discount",
+                    "label": "Geçersiz",
+                    "amount": 1,
+                },
+            )
+
+    with pytest.raises(IntegrityError):
+        async with postgres_connection.begin_nested():
+            await postgres_connection.execute(
+                insert_extra,
+                {
+                    "id": uuid.uuid4(),
+                    "expense_id": expense_id,
+                    "type": "tip",
+                    "label": "Bahşiş",
+                    "amount": 0,
+                },
+            )
+
+    with pytest.raises(IntegrityError):
+        async with postgres_connection.begin_nested():
+            await postgres_connection.execute(
+                insert_extra,
+                {
+                    "id": uuid.uuid4(),
+                    "expense_id": expense_id,
+                    "type": "other",
+                    "label": "   ",
+                    "amount": 100,
+                },
+            )
+
+    with pytest.raises(IntegrityError):
+        async with postgres_connection.begin_nested():
+            await postgres_connection.execute(
+                insert_share,
+                {
+                    "extra_amount_id": extra_amount_id,
+                    "user_id": uuid.uuid4(),
+                    "amount": -1,
+                },
+            )
+
+    with pytest.raises(IntegrityError):
+        async with postgres_connection.begin_nested():
+            await postgres_connection.execute(
+                insert_share,
+                {
+                    "extra_amount_id": extra_amount_id,
+                    "user_id": user_id,
+                    "amount": 500,
+                },
+            )
+
+    await postgres_connection.execute(
+        text("DELETE FROM group_expenses WHERE id = :expense_id"),
+        {"expense_id": expense_id},
+    )
+
+    remaining_extra_amounts = await postgres_connection.scalar(
+        text(
+            "SELECT count(*) FROM expense_extra_amounts "
+            "WHERE expense_id = :expense_id"
+        ),
+        {"expense_id": expense_id},
+    )
+    remaining_extra_shares = await postgres_connection.scalar(
+        text(
+            "SELECT count(*) FROM expense_extra_amount_shares "
+            "WHERE extra_amount_id = :extra_amount_id"
+        ),
+        {"extra_amount_id": extra_amount_id},
+    )
+
+    assert remaining_extra_amounts == 0
+    assert remaining_extra_shares == 0
+
+
+@pytest.mark.asyncio
+async def test_group_expense_idempotency_constraints_and_cascades(
+    postgres_connection: AsyncConnection,
+) -> None:
+    (
+        user_id,
+        group_id,
+        _receipt_id,
+        _line_item_id,
+        expense_id,
+        _now,
+    ) = await _insert_parent_rows(postgres_connection)
+
+    record_id = uuid.uuid4()
+    insert_record = text(
+        "INSERT INTO group_expense_idempotency_records "
+        "(id, group_id, actor_user_id, expense_id, "
+        "idempotency_key_hash, request_hash) "
+        "VALUES (:id, :group_id, :actor_user_id, :expense_id, "
+        ":key_hash, :request_hash)"
+    )
+
+    await postgres_connection.execute(
+        insert_record,
+        {
+            "id": record_id,
+            "group_id": group_id,
+            "actor_user_id": user_id,
+            "expense_id": expense_id,
+            "key_hash": "a" * 64,
+            "request_hash": "b" * 64,
+        },
+    )
+
+    with pytest.raises(IntegrityError):
+        async with postgres_connection.begin_nested():
+            await postgres_connection.execute(
+                insert_record,
+                {
+                    "id": uuid.uuid4(),
+                    "group_id": group_id,
+                    "actor_user_id": user_id,
+                    "expense_id": expense_id,
+                    "key_hash": "a" * 64,
+                    "request_hash": "c" * 64,
+                },
+            )
+
+    await postgres_connection.execute(
+        text("DELETE FROM groups WHERE id = :group_id"),
+        {"group_id": group_id},
+    )
+
+    remaining_group_record = await postgres_connection.scalar(
+        text(
+            "SELECT count(*) "
+            "FROM group_expense_idempotency_records "
+            "WHERE id = :record_id"
+        ),
+        {"record_id": record_id},
+    )
+    assert remaining_group_record == 0
+
+    (
+        second_user_id,
+        second_group_id,
+        _second_receipt_id,
+        _second_line_item_id,
+        second_expense_id,
+        _second_now,
+    ) = await _insert_parent_rows(postgres_connection)
+
+    second_record_id = uuid.uuid4()
+    await postgres_connection.execute(
+        insert_record,
+        {
+            "id": second_record_id,
+            "group_id": second_group_id,
+            "actor_user_id": second_user_id,
+            "expense_id": second_expense_id,
+            "key_hash": "d" * 64,
+            "request_hash": "e" * 64,
+        },
+    )
+
+    await postgres_connection.execute(
+        text("DELETE FROM users WHERE id = :user_id"),
+        {"user_id": second_user_id},
+    )
+
+    remaining_actor_record = await postgres_connection.scalar(
+        text(
+            "SELECT count(*) "
+            "FROM group_expense_idempotency_records "
+            "WHERE id = :record_id"
+        ),
+        {"record_id": second_record_id},
+    )
+    assert remaining_actor_record == 0
+
+    (
+        third_user_id,
+        third_group_id,
+        _third_receipt_id,
+        _third_line_item_id,
+        third_expense_id,
+        _third_now,
+    ) = await _insert_parent_rows(postgres_connection)
+
+    third_record_id = uuid.uuid4()
+    await postgres_connection.execute(
+        insert_record,
+        {
+            "id": third_record_id,
+            "group_id": third_group_id,
+            "actor_user_id": third_user_id,
+            "expense_id": third_expense_id,
+            "key_hash": "f" * 64,
+            "request_hash": "g" * 64,
+        },
+    )
+
+    await postgres_connection.execute(
+        text("DELETE FROM group_expenses WHERE id = :expense_id"),
+        {"expense_id": third_expense_id},
+    )
+
+    remaining_expense_record = await postgres_connection.scalar(
+        text(
+            "SELECT count(*) "
+            "FROM group_expense_idempotency_records "
+            "WHERE id = :record_id"
+        ),
+        {"record_id": third_record_id},
+    )
+    assert remaining_expense_record == 0

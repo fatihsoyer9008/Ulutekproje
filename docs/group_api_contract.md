@@ -70,6 +70,7 @@ kesin ve tekrarlanabilir biçimde ifade eder.
 ```text
 group_role: owner | admin | member
 split_type: equal | percentage | fixed_amount | itemized
+expense_extra_amount_type: tax | tip | service_fee | other
 share_status_v1: open
 share_status_reserved_v2: partially_settled | settled
 ```
@@ -113,7 +114,7 @@ ve borç algoritması aynı alan adlarını kullanmalıdır.
 | `group_id` | UUID `String` | Evet | Grup kimliği |
 | `receipt_id` | UUID `String?` | Evet | Fiş yoksa `null` |
 | `payer_user_id` | UUID `String` | Evet | Ödeyen grup üyesi |
-| `created_by` | UUID `String` | Evet | Kaydı oluşturan kullanıcı |
+| `created_by` | UUID `String?` | Evet | `0009` öncesi tarihsel masraflarda `null` |
 | `title` | `String` | Evet | Masraf başlığı |
 | `note` | `String?` | Evet | Not veya `null` |
 | `expense_date` | UTC `String` | Evet | Masraf zamanı |
@@ -123,6 +124,7 @@ ve borç algoritması aynı alan adlarını kullanmalıdır.
 | `is_financially_locked` | `bool` | Evet | Settlement sonrası finansal düzenleme kilidi |
 | `shares` | `List<ExpenseShare>` | Evet | Nihai kişi payları |
 | `line_item_assignments` | `List<ReceiptLineItemAssignment>` | Evet | Kalem atamaları |
+| `extra_amounts` | `List<ExpenseExtraAmount>` | Evet | KDV, bahşiş, servis bedeli ve diğer ek tutarlar |
 | `created_at` | UTC `String` | Evet | Oluşturulma zamanı |
 | `updated_at` | UTC `String` | Evet | Son güncelleme zamanı |
 | `deleted_at` | UTC `String?` | Evet | Aktif kayıtta `null` |
@@ -150,6 +152,25 @@ Backend veritabanı sınıfı farklı adlandırılsa bile JSON alanları değiş
 | `user_id` | UUID `String` | Evet | Atanan grup üyesi |
 | `amount_in_minor` | `int` | Evet | Üyeye düşen ürün tutarı |
 | `quantity_share_milli` | `int?` | Evet | 1,500 adet için `1500`; bilinmiyorsa `null` |
+
+### ExpenseExtraAmount
+
+| Alan | Tip | Zorunlu | Açıklama |
+| --- | --- | --- | --- |
+| `id` | UUID `String` | Evet | Ek tutar kimliği |
+| `expense_id` | UUID `String` | Evet | Ek tutarın bağlı olduğu masraf |
+| `type` | `expense_extra_amount_type` | Evet | `tax`, `tip`, `service_fee` veya `other` |
+| `label` | `String?` | Evet | Kullanıcıya gösterilecek açıklama veya `null` |
+| `amount_in_minor` | `int` | Evet | Ek tutarın toplam değeri |
+| `shares` | `List<ExpenseExtraAmountShare>` | Evet | Ek tutarın kullanıcı payları |
+
+### ExpenseExtraAmountShare
+
+| Alan | Tip | Zorunlu | Açıklama |
+| --- | --- | --- | --- |
+| `extra_amount_id` | UUID `String` | Evet | Payın bağlı olduğu ek tutar |
+| `user_id` | UUID `String` | Evet | Pay sahibi grup üyesi |
+| `amount_in_minor` | `int` | Evet | Kullanıcıya düşen ek tutar |
 
 ### DebtTransfer
 
@@ -314,6 +335,7 @@ göstereceği nihai paylar bulunur:
     }
   ],
   "line_item_assignments": [],
+  "extra_amounts": [],
   "created_at": "2026-08-10T12:01:00Z",
   "updated_at": "2026-08-10T12:01:00Z",
   "deleted_at": null
@@ -345,6 +367,7 @@ oluşturduğu masrafın kimliğini response'a ekler:
   "amount_in_minor": 6250
 }
 ```
+
 
 ### Settlement
 
@@ -400,6 +423,9 @@ uygulanmadan önce backend ekibi tarafından onaylanmalıdır:
 - `Group.created_by`, kullanıcı silinmesinde `ON DELETE SET NULL` uygular ve
   nullable olabilir. Bu nedenle response istemcileri `created_by: null`
   değerini kabul etmelidir.
+- `GroupExpense.created_by`, `0009` öncesinde oluşturulmuş tarihsel masraflarda
+  `null` olabilir. Yeni masraflarda işlemi yapan kullanıcının UUID değeri
+  saklanır; response istemcileri her iki durumu da kabul etmelidir.
 - Hesabı silinen kişi grubun tek owner'ıysa servis aynı transaction içinde
   önce en eski aktif admini, admin yoksa en eski aktif üyeyi owner yapar.
   Başka aktif üye yoksa grup arşivlenir.
@@ -696,11 +722,14 @@ Response `204` ve boş body döner.
 - Çıkarılan üyeliğin `left_at` alanı doldurulur. Geçmiş masraf kayıtları
   korunur, fakat kullanıcı artık yeni grup işlemi yapamaz.
 
-## Grup Masrafı ve Split Endpointleri
+## Kalem Bazlı Grup Masrafı Endpoint'i
 
 ### Ortak Masraf Alanları
 
-Bütün split türleri aynı endpoint üzerinden oluşturulur:
+Bu sürümde `POST /api/v1/groups/{group_id}/expenses` endpoint'i yalnızca
+`itemized` split türünü kabul eder. `equal`, `percentage` ve `fixed_amount`
+request şekilleri planlanan sözleşmeyi gösterir ve bu endpoint'in mevcut
+sürümünde henüz aktif değildir:
 
 ```http
 POST /api/v1/groups/{group_id}/expenses
@@ -730,7 +759,9 @@ Kurallar:
 - Masraf para birimi grup para birimiyle aynı olmalıdır.
 - `receipt_id` verilirse PostgreSQL'deki `CloudReceipt.id` değerini göstermeli
   ve fiş aktif kullanıcıya ait olmalıdır.
-- Aynı `Idempotency-Key` ve aynı body tekrar gönderilirse ilk response döner.
+- Aynı `Idempotency-Key` ve aynı body tekrar gönderilirse aynı masraf kaydı
+  yeniden döner. `display_name` gibi kullanıcı hesabından hesaplanan alanlar,
+  hesabın güncel silinme durumuna göre değişebilir.
 - Aynı `Idempotency-Key` farklı body ile kullanılırsa `409` döner.
 
 Response `201`:
@@ -741,7 +772,7 @@ Response `201`:
 }
 ```
 
-### Eşit Bölüşüm
+### Eşit Bölüşüm (planlanan)
 
 ```json
 {
@@ -758,7 +789,7 @@ Response `201`:
 Kuruş kalanı request içindeki `member_ids` sırasına göre dağıtılır. Örneğin
 100 kuruş üç kişi arasında `34, 33, 33` olarak paylaşılır.
 
-### Yüzdelik Bölüşüm
+### Yüzdelik Bölüşüm (planlanan)
 
 ```json
 {
@@ -781,7 +812,7 @@ Kuruş kalanı request içindeki `member_ids` sırasına göre dağıtılır. Ö
 `percentage_basis_points` toplamı tam olarak `10000` olmalıdır. Kuruş kalanı
 request sırasına göre dağıtılır.
 
-### Sabit Tutar Bölüşümü
+### Sabit Tutar Bölüşümü (planlanan)
 
 ```json
 {
@@ -843,14 +874,21 @@ Payların toplamı `total_amount_in_minor` değerine eşit olmalıdır.
         ]
       }
     ],
-    "extra_amount_shares": [
+    "extra_amounts": [
       {
-        "user_id": "00000000-0000-4000-8000-000000000001",
-        "amount_in_minor": 250
-      },
-      {
-        "user_id": "00000000-0000-4000-8000-000000000002",
-        "amount_in_minor": 250
+        "type": "tax",
+        "label": "KDV",
+        "amount_in_minor": 500,
+        "shares": [
+          {
+            "user_id": "00000000-0000-4000-8000-000000000001",
+            "amount_in_minor": 250
+          },
+          {
+            "user_id": "00000000-0000-4000-8000-000000000002",
+            "amount_in_minor": 250
+          }
+        ]
       }
     ]
   }
@@ -869,17 +907,23 @@ Kurallar:
 - UI itemized akıştan önce fişi ve ürünlerini buluta senkronize eder, backend'in
   döndürdüğü cloud `receipt_id` ve `receipt_line_item_id` değerlerini bekler.
 - Senkronizasyon çevrimdışı olduğu veya tamamlanamadığı için cloud kimlikleri
-  yoksa UI itemized ekranını başlatmaz; kullanıcıya `equal`, `percentage` veya
-  `fixed_amount` Fast Split seçeneklerini gösterir.
+  yoksa UI itemized ekranını başlatmaz. `equal`, `percentage` ve `fixed_amount`
+  türleri bu endpoint'in mevcut sürümünde kullanılmaz.
 - Bir ürün birden fazla üyeye atanabilir.
 - Ürün paylarının toplamı ürünün `price_in_minor` değerine eşit olmalıdır.
-- `extra_amount_shares`; KDV, bahşiş, servis veya fiş-ürün toplam farkı için
-  kullanılır.
-- Ürün ve ekstra tutar paylarının toplamı masraf toplamına eşit olmalıdır.
+- `extra_amounts`; KDV, bahşiş, servis bedeli veya fiş-ürün toplam farkını
+  türüyle birlikte saklamak için kullanılır.
+- `extra_amounts[].type`; `tax`, `tip`, `service_fee` veya `other`
+  değerlerinden biri olmalıdır.
+- `extra_amounts[].label`, kullanıcıya gösterilecek açıklamadır. `other`
+  türünde boş olamaz; diğer türlerde opsiyoneldir.
+- `extra_amounts[].amount_in_minor` sıfırdan büyük olmalıdır.
+- Her ek tutarın `shares` toplamı kendi `amount_in_minor` değerine eşit
+  olmalıdır.
+- Ürün atamalarının ve ek tutarların toplamı masraf toplamına eşit olmalıdır.
 - Atanmayan ürün varsa masraf oluşturulmaz ve `422` response içindeki
   `unassigned_receipt_line_item_ids` alanında bildirilir.
-- Ürünü olmayan fişte `itemized` reddedilir; UI `equal`, `percentage` veya
-  `fixed_amount` önermelidir.
+- Ürünü olmayan fişte `itemized` reddedilir ve bu endpoint kullanılmamalıdır.
 
 Başarılı `GroupExpense` response'unda ayrıca aşağıdaki alan bulunur:
 
@@ -892,6 +936,27 @@ Başarılı `GroupExpense` response'unda ayrıca aşağıdaki alan bulunur:
       "user_id": "00000000-0000-4000-8000-000000000001",
       "amount_in_minor": 3000,
       "quantity_share_milli": 1000
+    }
+  ],
+  "extra_amounts": [
+    {
+      "id": "50000000-0000-4000-8000-000000000001",
+      "expense_id": "40000000-0000-4000-8000-000000000002",
+      "type": "tax",
+      "label": "KDV",
+      "amount_in_minor": 500,
+      "shares": [
+        {
+      "extra_amount_id": "50000000-0000-4000-8000-000000000001",
+      "user_id": "00000000-0000-4000-8000-000000000001",
+      "amount_in_minor": 250
+        },
+        {
+        "extra_amount_id": "50000000-0000-4000-8000-000000000001",
+        "user_id": "00000000-0000-4000-8000-000000000002",
+        "amount_in_minor": 250
+        }
+      ]
     }
   ]
 }

@@ -1,4 +1,3 @@
-import os
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -9,15 +8,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
+from tests.postgres_support import postgres_test_database_url
+
 
 @pytest_asyncio.fixture
 async def postgres_connection() -> AsyncIterator[AsyncConnection]:
-    database_url = os.getenv("POSTGRES_TEST_DATABASE_URL")
-    if not database_url:
-        pytest.skip("POSTGRES_TEST_DATABASE_URL is required for PostgreSQL tests")
-    if not database_url.startswith("postgresql+asyncpg://"):
-        pytest.fail("POSTGRES_TEST_DATABASE_URL must use PostgreSQL with asyncpg")
-
+    database_url = postgres_test_database_url()
     engine = create_async_engine(database_url)
     try:
         async with engine.connect() as connection:
@@ -37,7 +33,7 @@ async def test_cloud_receipt_migration_is_at_head(
     revision = await postgres_connection.scalar(
         text("SELECT version_num FROM alembic_version")
     )
-    assert revision == "20260811_0007"
+    assert revision == "20260812_0009"
 
     table_names = set(
         (

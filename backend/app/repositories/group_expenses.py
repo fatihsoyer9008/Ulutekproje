@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.group_expense import (
+    ExpenseExtraAmount,
+    ExpenseExtraAmountShare,
+    ExpenseExtraAmountType,
     ExpenseLineItemAssignment,
     ExpenseShare,
     ExpenseSplitType,
@@ -32,6 +35,15 @@ class GroupExpenseRepository:
         line_item_assignments: Sequence[
             tuple[uuid.UUID, uuid.UUID, int, int | None]
         ] = (),
+        extra_amounts: Sequence[
+            tuple[
+                ExpenseExtraAmountType,
+                str | None,
+                int,
+                Sequence[tuple[uuid.UUID, int]],
+            ]
+        ] = (),
+        created_by: uuid.UUID | None = None,
         receipt_id: uuid.UUID | None = None,
         note: str | None = None,
     ) -> GroupExpense:
@@ -39,6 +51,7 @@ class GroupExpenseRepository:
             group_id=group_id,
             receipt_id=receipt_id,
             payer_user_id=payer_user_id,
+            created_by=created_by,
             title=title,
             note=note,
             expense_date=expense_date,
@@ -68,6 +81,26 @@ class GroupExpenseRepository:
             ) in line_item_assignments
         )
 
+        for (
+            extra_type,
+            label,
+            amount_in_minor,
+            extra_shares,
+        ) in extra_amounts:
+            extra_amount = ExpenseExtraAmount(
+                type=extra_type,
+                label=label,
+                amount_in_minor=amount_in_minor,
+            )
+            extra_amount.shares.extend(
+                ExpenseExtraAmountShare(
+                    user_id=user_id,
+                    amount_in_minor=share_amount_in_minor,
+                )
+                for user_id, share_amount_in_minor in extra_shares
+            )
+            expense.extra_amounts.append(extra_amount)
+
         self.session.add(expense)
         await self.session.flush()
         return expense
@@ -84,6 +117,9 @@ class GroupExpenseRepository:
             .options(
                 selectinload(GroupExpense.shares),
                 selectinload(GroupExpense.line_item_assignments),
+                selectinload(GroupExpense.extra_amounts).selectinload(
+                    ExpenseExtraAmount.shares
+                ),
             )
         )
         if not include_deleted:
@@ -102,6 +138,9 @@ class GroupExpenseRepository:
             .options(
                 selectinload(GroupExpense.shares),
                 selectinload(GroupExpense.line_item_assignments),
+                selectinload(GroupExpense.extra_amounts).selectinload(
+                    ExpenseExtraAmount.shares
+                ),
             )
             .order_by(
                 GroupExpense.expense_date.desc(),

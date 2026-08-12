@@ -1,18 +1,32 @@
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import event, func, select
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import StaticPool
 
 from app.api.dependencies import get_current_user
 from app.core.database import Base, get_db_session
 from app.main import app
-from app.models import Group, GroupMember, GroupRole, User
+from app.models import (
+    CloudReceipt,
+    CloudReceiptLineItem,
+    Group,
+    GroupExpense,
+    GroupMember,
+    GroupRole,
+    User,
+)
+from app.repositories.group_expenses import GroupExpenseRepository
 from app.repositories.groups import GroupRepository
 
 
@@ -293,9 +307,7 @@ async def test_group_detail_requires_active_membership(group_api_context) -> Non
 async def test_only_owner_can_update_group_and_clear_description(
     group_api_context,
 ) -> None:
-    client, session_factory, current_user, owner, member, admin, _ = (
-        group_api_context
-    )
+    client, session_factory, current_user, owner, member, admin, _ = group_api_context
     async with session_factory() as session:
         repository = GroupRepository(session)
         group = await repository.create(
@@ -397,9 +409,7 @@ async def test_archive_is_owner_only_soft_and_idempotent(group_api_context) -> N
         params={"include_archived": "true"},
     )
     assert active_list.json() == {"groups": []}
-    assert [item["id"] for item in archived_list.json()["groups"]] == [
-        str(group_id)
-    ]
+    assert [item["id"] for item in archived_list.json()["groups"]] == [str(group_id)]
 
     repeated = await client.delete(f"/api/v1/groups/{group_id}")
     assert repeated.status_code == 204
@@ -407,3 +417,305 @@ async def test_archive_is_owner_only_soft_and_idempotent(group_api_context) -> N
         stored = await session.get(Group, group_id)
         assert stored is not None
         assert stored.archived_at == first_archived_at
+
+
+@pytest.mark.asyncio
+async def test_itemized_expense_reports_unassigned_line_item_ids(
+    group_api_context,
+) -> None:
+    (
+        client,
+        session_factory,
+        _current_user,
+        owner,
+        _member,
+        _outsider,
+        _former,
+    ) = group_api_context
+
+    group_id = await _create_group(
+        session_factory,
+        owner_id=owner.id,
+        name="Itemized API Grubu",
+    )
+
+    async with session_factory() as session:
+        now = datetime(2026, 8, 12, 10, 0, tzinfo=UTC)
+        receipt = CloudReceipt(
+            user_id=owner.id,
+            client_record_id=uuid.uuid4(),
+            installation_id_hash="b" * 64,
+            total_amount_in_minor=12_500,
+            client_created_at=now,
+            client_updated_at=now,
+        )
+        milk = CloudReceiptLineItem(
+            client_record_id=uuid.uuid4(),
+            position=0,
+            name="Süt",
+            price_in_minor=6_000,
+            quantity=Decimal("1.000"),
+        )
+        bread = CloudReceiptLineItem(
+            client_record_id=uuid.uuid4(),
+            position=1,
+            name="Ekmek",
+            price_in_minor=6_000,
+            quantity=Decimal("1.000"),
+        )
+        receipt.line_items.extend([milk, bread])
+        session.add(receipt)
+        await session.commit()
+        receipt_id = receipt.id
+        milk_id = milk.id
+        bread_id = bread.id
+
+    response = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers={"Idempotency-Key": "unassigned-items-0001"},
+        json={
+            "receipt_id": str(receipt_id),
+            "payer_user_id": str(owner.id),
+            "title": "Eksik ürünlü masraf",
+            "note": None,
+            "expense_date": "2026-08-12T10:00:00Z",
+            "total_amount_in_minor": 6500,
+            "currency": "TRY",
+            "split": {
+                "type": "itemized",
+                "line_items": [
+                    {
+                        "receipt_line_item_id": str(milk_id),
+                        "shares": [
+                            {
+                                "user_id": str(owner.id),
+                                "amount_in_minor": 6000,
+                                "quantity_share_milli": 1000,
+                            }
+                        ],
+                    }
+                ],
+                "extra_amounts": [
+                    {
+                        "type": "tax",
+                        "label": "KDV",
+                        "amount_in_minor": 500,
+                        "shares": [
+                            {
+                                "user_id": str(owner.id),
+                                "amount_in_minor": 500,
+                            }
+                        ],
+                    }
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "unassigned_line_items",
+        "message": "Atanmayan fiş ürünleri bulunuyor.",
+        "unassigned_receipt_line_item_ids": [str(bread_id)],
+    }
+
+
+@pytest.mark.asyncio
+async def test_itemized_expense_is_created_and_idempotently_replayed(
+    group_api_context,
+) -> None:
+    (
+        client,
+        session_factory,
+        _current_user,
+        owner,
+        member,
+        _outsider,
+        _former,
+    ) = group_api_context
+
+    async with session_factory() as session:
+        group_repository = GroupRepository(session)
+        group = await group_repository.create(
+            name="Idempotent Itemized Grubu",
+            created_by=owner.id,
+        )
+        await group_repository.add_member(
+            group_id=group.id,
+            user_id=member.id,
+        )
+
+        now = datetime(2026, 8, 12, 11, 0, tzinfo=UTC)
+        receipt = CloudReceipt(
+            user_id=owner.id,
+            client_record_id=uuid.uuid4(),
+            installation_id_hash="c" * 64,
+            total_amount_in_minor=12_500,
+            currency="TRY",
+            client_created_at=now,
+            client_updated_at=now,
+        )
+        milk = CloudReceiptLineItem(
+            client_record_id=uuid.uuid4(),
+            position=0,
+            name="Süt",
+            price_in_minor=6_000,
+            quantity=Decimal("2.000"),
+        )
+        bread = CloudReceiptLineItem(
+            client_record_id=uuid.uuid4(),
+            position=1,
+            name="Ekmek",
+            price_in_minor=6_000,
+            quantity=Decimal("1.000"),
+        )
+        receipt.line_items.extend([milk, bread])
+        session.add(receipt)
+        await session.commit()
+
+        group_id = group.id
+        receipt_id = receipt.id
+        milk_id = milk.id
+        bread_id = bread.id
+
+    payload = {
+        "receipt_id": str(receipt_id),
+        "payer_user_id": str(owner.id),
+        "title": "Market fişi",
+        "note": None,
+        "expense_date": "2026-08-12T11:00:00Z",
+        "total_amount_in_minor": 12_500,
+        "currency": "TRY",
+        "split": {
+            "type": "itemized",
+            "line_items": [
+                {
+                    "receipt_line_item_id": str(milk_id),
+                    "shares": [
+                        {
+                            "user_id": str(owner.id),
+                            "amount_in_minor": 3_000,
+                            "quantity_share_milli": 1_000,
+                        },
+                        {
+                            "user_id": str(member.id),
+                            "amount_in_minor": 3_000,
+                            "quantity_share_milli": 1_000,
+                        },
+                    ],
+                },
+                {
+                    "receipt_line_item_id": str(bread_id),
+                    "shares": [
+                        {
+                            "user_id": str(member.id),
+                            "amount_in_minor": 6_000,
+                            "quantity_share_milli": 1_000,
+                        }
+                    ],
+                },
+            ],
+            "extra_amounts": [
+                {
+                    "type": "tax",
+                    "label": "KDV",
+                    "amount_in_minor": 500,
+                    "shares": [
+                        {
+                            "user_id": str(owner.id),
+                            "amount_in_minor": 250,
+                        },
+                        {
+                            "user_id": str(member.id),
+                            "amount_in_minor": 250,
+                        },
+                    ],
+                }
+            ],
+        },
+    }
+    headers = {"Idempotency-Key": "itemized-create-0001"}
+
+    first = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers,
+        json=payload,
+    )
+
+    assert first.status_code == 201
+    expense_data = first.json()["expense"]
+    assert expense_data["group_id"] == str(group_id)
+    assert expense_data["receipt_id"] == str(receipt_id)
+    assert expense_data["created_by"] == str(owner.id)
+    assert expense_data["split_type"] == "itemized"
+    assert expense_data["is_financially_locked"] is False
+    assert {share["display_name"] for share in expense_data["shares"]} == {
+        "Grup Sahibi",
+        "Grup Üyesi",
+    }
+
+    assert len(expense_data["extra_amounts"]) == 1
+    extra_amount = expense_data["extra_amounts"][0]
+    assert extra_amount["type"] == "tax"
+    assert extra_amount["label"] == "KDV"
+    assert extra_amount["amount_in_minor"] == 500
+    assert {share["extra_amount_id"] for share in extra_amount["shares"]} == {
+        extra_amount["id"]
+    }
+
+    replay = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers,
+        json=payload,
+    )
+    assert replay.status_code == 201
+    assert expense_data["expense_date"] == "2026-08-12T11:00:00Z"
+    assert replay.json()["expense"]["expense_date"] == ("2026-08-12T11:00:00Z")
+    assert replay.json() == first.json()
+
+    conflicting_payload = {
+        **payload,
+        "title": "Aynı anahtarla farklı masraf",
+    }
+    conflict = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers,
+        json=conflicting_payload,
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "idempotency_conflict"
+
+    async with session_factory() as session:
+        stored_member = await session.get(User, member.id)
+        assert stored_member is not None
+        await session.delete(stored_member)
+        await session.commit()
+
+    replay_after_member_deletion = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers,
+        json=payload,
+    )
+    assert replay_after_member_deletion.status_code == 201
+    assert {
+        share["display_name"]
+        for share in replay_after_member_deletion.json()["expense"]["shares"]
+    } == {
+        "Grup Sahibi",
+        "Silinmiş kullanıcı",
+    }
+
+    expense_id = uuid.UUID(expense_data["id"])
+    async with session_factory() as session:
+        expense_count = await session.scalar(
+            select(func.count(GroupExpense.id)).where(GroupExpense.group_id == group_id)
+        )
+        stored = await GroupExpenseRepository(session).get_by_id(expense_id)
+
+    assert expense_count == 1
+    assert stored is not None
+    assert stored.created_by == owner.id
+    assert len(stored.line_item_assignments) == 3
+    assert len(stored.extra_amounts) == 1
+    assert stored.extra_amounts[0].amount_in_minor == 500
+    assert len(stored.extra_amounts[0].shares) == 2
