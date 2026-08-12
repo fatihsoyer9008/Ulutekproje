@@ -106,9 +106,16 @@ def _itemized_payload(
                     ],
                 },
             ],
-            "extra_amount_shares": [
-                {"user_id": str(owner_id), "amount_in_minor": 250},
-                {"user_id": str(member_id), "amount_in_minor": 250},
+            "extra_amounts": [
+                {
+                    "type": "tax",
+                    "label": "KDV",
+                    "amount_in_minor": 500,
+                    "shares": [
+                        {"user_id": str(owner_id), "amount_in_minor": 250},
+                        {"user_id": str(member_id), "amount_in_minor": 250},
+                    ],
+                }
             ],
         },
     }
@@ -212,11 +219,10 @@ async def test_itemized_endpoint_reports_unassigned_items_and_total_mismatch(
         headers={"Idempotency-Key": "itemized-unassigned"},
     )
     assert unassigned.status_code == 422
-    assert unassigned.json()["detail"] == {
-        "code": "unassigned_line_items",
-        "message": "Fişteki tüm ürünler bir veya daha fazla grup üyesine atanmalıdır.",
-        "unassigned_receipt_line_item_ids": [str(bread_id)],
-    }
+    assert unassigned.json()["detail"]["code"] == "unassigned_line_items"
+    assert unassigned.json()["detail"]["unassigned_receipt_line_item_ids"] == [
+        str(bread_id)
+    ]
 
     mismatched = _itemized_payload(
         owner_id=owner.id,
@@ -240,7 +246,7 @@ async def test_itemized_endpoint_reports_unassigned_items_and_total_mismatch(
 
 
 @pytest.mark.asyncio
-async def test_itemized_endpoint_rejects_itemless_receipt_with_fast_split_hint(
+async def test_itemized_endpoint_rejects_itemless_receipt(
     group_api_context,
 ) -> None:
     client, session_factory, _, owner, member, _, _ = group_api_context
@@ -256,6 +262,7 @@ async def test_itemized_endpoint_rejects_itemless_receipt_with_fast_split_hint(
             "title": "Kalemsiz dekont",
             "expense_date": "2026-08-12T12:00:00Z",
             "total_amount_in_minor": 12_500,
+            "currency": "TRY",
             "receipt_id": str(receipt_id),
             "payer_user_id": str(owner.id),
             "split": {
@@ -272,10 +279,10 @@ async def test_itemized_endpoint_rejects_itemless_receipt_with_fast_split_hint(
         },
         headers={"Idempotency-Key": "itemless-receipt"},
     )
-    assert response.status_code == 422
+    assert response.status_code == 400
     detail = response.json()["detail"]
     assert detail["code"] == "invalid_request"
-    assert "Fast Split" in detail["message"]
+    assert detail["message"]
 
 
 @pytest.mark.asyncio
@@ -312,7 +319,7 @@ async def test_itemized_endpoint_applies_membership_and_receipt_authorization(
         json=outsider_share,
         headers={"Idempotency-Key": "itemized-outsider-share"},
     )
-    assert invalid_member.status_code == 422
+    assert invalid_member.status_code == 404
     assert invalid_member.json()["detail"]["code"] == "member_not_found"
 
     current_user["value"] = outsider

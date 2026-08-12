@@ -121,9 +121,16 @@ async def test_concurrent_itemized_retries_create_one_expense() -> None:
                     "shares": [{"user_id": str(member.id), "amount_in_minor": 6_000}],
                 },
             ],
-            "extra_amount_shares": [
-                {"user_id": str(owner.id), "amount_in_minor": 250},
-                {"user_id": str(member.id), "amount_in_minor": 250},
+            "extra_amounts": [
+                {
+                    "type": "tax",
+                    "label": "KDV",
+                    "amount_in_minor": 500,
+                    "shares": [
+                        {"user_id": str(owner.id), "amount_in_minor": 250},
+                        {"user_id": str(member.id), "amount_in_minor": 250},
+                    ],
+                }
             ],
         },
     }

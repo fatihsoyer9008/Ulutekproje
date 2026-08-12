@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.engine import URL, make_url
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_REVISION = "20260812_0008"
+EXPECTED_REVISION = "20260812_0010"
 PRE_GROUP_REVISION = "20260806_0004"
 PRE_EXPENSE_REVISION = "20260810_0005"
 PRE_ASSIGNMENT_REVISION = "20260811_0006"
@@ -20,6 +20,9 @@ GROUP_TABLES = (
     "group_expenses",
     "expense_shares",
     "expense_line_item_assignments",
+    "expense_extra_amounts",
+    "expense_extra_amount_shares",
+    "group_expense_idempotency_records",
 )
 
 LEGACY_TABLE_KEYS = (
@@ -433,12 +436,13 @@ async def _pre_expense_snapshot(
             assert rows
             normalized_rows = [dict(row) for row in rows]
             if table_name == "group_expenses":
-                # Revision 0008 enriches legacy expenses without changing their
-                # pre-existing values. Compare only columns present at 0006.
                 for row in normalized_rows:
                     row.pop("created_by_id", None)
                     row.pop("idempotency_key", None)
                     row.pop("idempotency_request_hash", None)
+
+                    if "created_by" in row:
+                        assert row.pop("created_by") is None
             snapshot[table_name] = {
                 "count": count,
                 "rows": normalized_rows,
@@ -462,12 +466,17 @@ async def _pre_assignment_snapshot(
             )
             count = await connection.fetchval(f'SELECT count(*) FROM "{table_name}"')
             assert rows
+
             normalized_rows = [dict(row) for row in rows]
             if table_name == "group_expenses":
                 for row in normalized_rows:
                     row.pop("created_by_id", None)
                     row.pop("idempotency_key", None)
                     row.pop("idempotency_request_hash", None)
+
+                    if "created_by" in row:
+                        assert row.pop("created_by") is None
+
             snapshot[table_name] = {
                 "count": count,
                 "rows": normalized_rows,
@@ -553,6 +562,21 @@ async def _assert_group_relations_and_indexes(
             "id",
             "CASCADE",
         )
+        assert foreign_keys[("group_expense_idempotency_records", "group_id")] == (
+            "groups",
+            "id",
+            "CASCADE",
+        )
+        assert foreign_keys[("group_expense_idempotency_records", "actor_user_id")] == (
+            "users",
+            "id",
+            "CASCADE",
+        )
+        assert foreign_keys[("group_expense_idempotency_records", "expense_id")] == (
+            "group_expenses",
+            "id",
+            "CASCADE",
+        )
 
         assert ("group_expenses", "payer_user_id") not in foreign_keys
         assert ("expense_shares", "user_id") not in foreign_keys
@@ -624,6 +648,8 @@ async def _assert_group_relations_and_indexes(
                 "receipt_line_item_id"
             ],
             "ix_expense_line_item_assignments_user_id": ["user_id"],
+            "ix_group_expense_idempotency_actor_user_id": ["actor_user_id"],
+            "ix_group_expense_idempotency_expense_id": ["expense_id"],
         }
         for index_name, expected_columns in expected_indexes.items():
             assert indexes[index_name] == {
@@ -631,6 +657,16 @@ async def _assert_group_relations_and_indexes(
                 "unique": False,
                 "predicate": None,
             }
+
+        assert indexes["uq_group_expense_idempotency_scope_key"] == {
+            "columns": [
+                "group_id",
+                "actor_user_id",
+                "idempotency_key_hash",
+            ],
+            "unique": True,
+            "predicate": None,
+        }
     finally:
         await connection.close()
 
@@ -1030,7 +1066,11 @@ async def _assert_group_expense_schema(database_url: URL) -> None:
                 is_nullable
             FROM information_schema.columns
             WHERE table_schema = 'public'
-              AND table_name IN ('group_expenses', 'expense_shares')
+              AND table_name IN (
+                  'group_expenses',
+                  'expense_shares',
+                  'group_expense_idempotency_records'
+              )
             """)
         columns = {(row["table_name"], row["column_name"]): row for row in column_rows}
 
@@ -1053,6 +1093,59 @@ async def _assert_group_expense_schema(database_url: URL) -> None:
             columns[("group_expenses", "split_type")]["character_maximum_length"] == 16
         )
         assert columns[("group_expenses", "payer_user_id")]["is_nullable"] == "NO"
+        assert columns[("group_expenses", "created_by")]["data_type"] == "uuid"
+        assert columns[("group_expenses", "created_by")]["is_nullable"] == "YES"
+
+        assert (
+            columns[("group_expense_idempotency_records", "group_id")]["data_type"]
+            == "uuid"
+        )
+        assert (
+            columns[("group_expense_idempotency_records", "group_id")]["is_nullable"]
+            == "NO"
+        )
+
+        assert (
+            columns[("group_expense_idempotency_records", "actor_user_id")]["data_type"]
+            == "uuid"
+        )
+        assert (
+            columns[("group_expense_idempotency_records", "actor_user_id")][
+                "is_nullable"
+            ]
+            == "NO"
+        )
+
+        assert (
+            columns[("group_expense_idempotency_records", "expense_id")]["data_type"]
+            == "uuid"
+        )
+        assert (
+            columns[("group_expense_idempotency_records", "expense_id")]["is_nullable"]
+            == "YES"
+        )
+
+        assert (
+            columns[("group_expense_idempotency_records", "idempotency_key_hash")][
+                "character_maximum_length"
+            ]
+            == 64
+        )
+        assert (
+            columns[("group_expense_idempotency_records", "request_hash")][
+                "character_maximum_length"
+            ]
+            == 64
+        )
+        assert (
+            columns[("group_expense_idempotency_records", "created_at")]["data_type"]
+            == "timestamp with time zone"
+        )
+
+        assert (
+            "group_expense_idempotency_records",
+            "response_json",
+        ) not in columns
 
         assert columns[("expense_shares", "expense_id")]["data_type"] == "uuid"
         assert columns[("expense_shares", "user_id")]["data_type"] == "uuid"
@@ -1107,7 +1200,11 @@ async def _assert_group_expense_schema(database_url: URL) -> None:
              AND kcu.constraint_schema = rc.constraint_schema
              AND kcu.constraint_name = rc.constraint_name
             WHERE kcu.table_schema = 'public'
-              AND kcu.table_name IN ('group_expenses', 'expense_shares')
+              AND kcu.table_name IN (
+                  'group_expenses',
+                  'expense_shares',
+                  'group_expense_idempotency_records'
+              )
             """)
         foreign_keys = {
             (row["table_name"], row["column_name"]): row["delete_rule"]
@@ -1117,6 +1214,17 @@ async def _assert_group_expense_schema(database_url: URL) -> None:
         assert foreign_keys[("group_expenses", "group_id")] == "CASCADE"
         assert foreign_keys[("group_expenses", "receipt_id")] == "SET NULL"
         assert foreign_keys[("expense_shares", "expense_id")] == "CASCADE"
+        assert (
+            foreign_keys[("group_expense_idempotency_records", "group_id")] == "CASCADE"
+        )
+        assert (
+            foreign_keys[("group_expense_idempotency_records", "actor_user_id")]
+            == "CASCADE"
+        )
+        assert (
+            foreign_keys[("group_expense_idempotency_records", "expense_id")]
+            == "CASCADE"
+        )
         assert ("group_expenses", "payer_user_id") not in foreign_keys
         assert ("expense_shares", "user_id") not in foreign_keys
 
@@ -1124,13 +1232,20 @@ async def _assert_group_expense_schema(database_url: URL) -> None:
                 SELECT indexname
                 FROM pg_indexes
                 WHERE schemaname = 'public'
-                  AND tablename IN ('group_expenses', 'expense_shares')
+                  AND tablename IN (
+                      'group_expenses',
+                      'expense_shares',
+                      'group_expense_idempotency_records'
+                  )
                 """)}
         assert {
             "ix_group_expenses_group_deleted_date",
             "ix_group_expenses_receipt_id",
             "ix_group_expenses_payer_user_id",
             "ix_expense_shares_user_id",
+            "ix_group_expense_idempotency_actor_user_id",
+            "ix_group_expense_idempotency_expense_id",
+            "uq_group_expense_idempotency_scope_key",
         }.issubset(index_names)
     finally:
         await connection.close()
@@ -1329,7 +1444,9 @@ async def test_expense_migration_preserves_existing_group_data() -> None:
             current = _run_alembic(migration_url_string, "current")
             assert PRE_ASSIGNMENT_REVISION in current
             assert await _legacy_snapshot(migration_url, identifiers) == legacy_before
-            assert await _pre_expense_snapshot(migration_url, identifiers) == group_before
+            assert (
+                await _pre_expense_snapshot(migration_url, identifiers) == group_before
+            )
 
             connection = await asyncpg.connect(_asyncpg_dsn(migration_url))
             try:
@@ -1378,7 +1495,9 @@ async def test_expense_migration_preserves_existing_group_data() -> None:
                 PRE_EXPENSE_REVISION,
             )
             assert await _legacy_snapshot(migration_url, identifiers) == legacy_before
-            assert await _pre_expense_snapshot(migration_url, identifiers) == group_before
+            assert (
+                await _pre_expense_snapshot(migration_url, identifiers) == group_before
+            )
 
             connection = await asyncpg.connect(_asyncpg_dsn(migration_url))
             try:
@@ -1403,7 +1522,9 @@ async def test_expense_migration_preserves_existing_group_data() -> None:
                 PRE_ASSIGNMENT_REVISION,
             )
             assert await _legacy_snapshot(migration_url, identifiers) == legacy_before
-            assert await _pre_expense_snapshot(migration_url, identifiers) == group_before
+            assert (
+                await _pre_expense_snapshot(migration_url, identifiers) == group_before
+            )
         finally:
             await admin_connection.execute(
                 "SELECT pg_terminate_backend(pid) "
@@ -1420,7 +1541,7 @@ async def test_expense_migration_preserves_existing_group_data() -> None:
 
 @pytest.mark.asyncio
 async def test_assignment_migration_preserves_existing_group_data() -> None:
-    """Upgrade/downgrade 0007 without losing rows created at revision 0006."""
+    """Upgrade/downgrade 0007-0010 without losing rows created at revision 0006."""
     base_url = _postgres_test_url()
     temporary_database = f"group_assignment_upgrade_{uuid.uuid4().hex}"
     admin_url = base_url.set(database="postgres")
