@@ -164,6 +164,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Bölüştürme Türünü Seç'), findsOneWidget);
+    expect(find.byKey(const Key('select_scan_receipt_button')), findsOneWidget);
     expect(find.byKey(const Key('select_fast_split_button')), findsOneWidget);
     expect(
       find.byKey(const Key('select_itemized_split_button')),

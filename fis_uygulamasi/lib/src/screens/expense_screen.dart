@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:core_ui/core_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:finance_database/finance_database.dart';
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
+import '../../features/receipt_scanning/data/receipt_gallery_picker.dart';
 import '../../features/transaction_draft/presentation/receipt_analysis_page.dart';
 import '../../features/transaction_draft/presentation/transaction_draft_page.dart';
 import '../../core/database/database_providers.dart';
@@ -514,17 +514,9 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
   }
 
   Future<String?> _pickReceiptFromGallery(BuildContext context) async {
-    const imageTypes = XTypeGroup(
-      label: 'Görseller',
-      extensions: supportedReceiptImageExtensions,
-    );
-    final image = await openFile(
-      acceptedTypeGroups: const <XTypeGroup>[imageTypes],
-    );
-    if (image == null) return null;
-
-    _lastReceiptImageBytes = await image.readAsBytes();
-    return recognizeReceiptImage(image.path);
+    final selection = await pickReceiptFromGallery();
+    _lastReceiptImageBytes = selection?.imageBytes;
+    return selection?.rawOcrText;
   }
 
   Future<void> _openManualEntry(BuildContext context) async {

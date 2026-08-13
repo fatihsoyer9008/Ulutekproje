@@ -24,6 +24,7 @@ import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../screens/expense_screen.dart';
 import '../../features/groups/presentation/groups_page.dart';
 import '../../features/groups/presentation/group_detail_page.dart';
+import '../../features/groups/presentation/group_ocr_page.dart';
 
 import 'finance_home.dart';
 
@@ -169,6 +170,19 @@ GoRouter createAppRouter({
         path: '/groups/:groupId',
         builder: (_, state) =>
             GroupDetailPage(groupId: state.pathParameters['groupId']!),
+      ),
+      GoRoute(
+        path: '/groups/:groupId/ocr',
+        builder: (_, state) {
+          final parser = ReceiptParserClient(
+            apiClient: ref.read(apiClientProvider),
+          );
+          return GroupOcrPage(
+            groupId: state.pathParameters['groupId']!,
+            scanReceipt: scanReceipt,
+            parseReceipt: parser.parse,
+          );
+        },
       ),
     ],
   );
