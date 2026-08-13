@@ -77,6 +77,67 @@ void main() {
     expect(find.byType(ItemizedSplitPage), findsNothing);
   });
 
+  testWidgets('grup kartından Fast Split kaydına gidilir ve detay yenilenir', (
+    tester,
+  ) async {
+    final repository = FakeGroupRepository(
+      groups: const <GroupDetail>[twoMemberGroup],
+    );
+
+    final controller = AuthSessionController(_GroupsAuthRepository());
+    await controller.login('user@example.com', 'password');
+
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(path: '/', builder: (_, _) => const GroupsPage()),
+        GoRoute(
+          path: '/groups/:groupId',
+          builder: (_, state) =>
+              GroupDetailPage(groupId: state.pathParameters['groupId']!),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authSessionControllerProvider.overrideWith((ref) => controller),
+          groupRepositoryProvider.overrideWithValue(repository),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('group_card_$twoMemberGroupId')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('group_detail_name')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('add_group_expense_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bölüştürme Türünü Seç'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('select_fast_split_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hızlı Bölüştürme'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('fast_split_title')),
+      'E2E market harcaması',
+    );
+    await tester.enterText(find.byKey(const Key('fast_split_total')), '120,00');
+    await tester.tap(find.byKey(const Key('fast_split_submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('group_detail_name')), findsOneWidget);
+    expect(find.text('E2E market harcaması'), findsOneWidget);
+    expect(find.text('Masraf kaydedildi.'), findsOneWidget);
+  });
+
   testWidgets('alacaklı kullanıcının net durumu gösterilir', (tester) async {
     final repository = FakeGroupRepository(
       groups: const [twoMemberGroup],
