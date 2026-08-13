@@ -1,6 +1,7 @@
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../../transaction_draft/model/turkish_money.dart';
@@ -147,8 +148,9 @@ class _GroupDetailContent extends ConsumerWidget {
   ) async {
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -158,6 +160,19 @@ class _GroupDetailContent extends ConsumerWidget {
                 style: Theme.of(sheetContext).textTheme.titleLarge,
               ),
               const SizedBox(height: 16),
+              ListTile(
+                key: const Key('select_scan_receipt_button'),
+                leading: const Icon(Icons.document_scanner_outlined),
+                title: const Text('Fiş Tara'),
+                subtitle: const Text(
+                  'Kamera veya galeriden fiş bilgilerini otomatik oku.',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _openGroupOcr(context);
+                },
+              ),
               ListTile(
                 key: const Key('select_fast_split_button'),
                 leading: const Icon(Icons.flash_on_outlined),
@@ -271,6 +286,10 @@ class _GroupDetailContent extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  void _openGroupOcr(BuildContext context) {
+    context.push('/groups/${Uri.encodeComponent(group.id)}/ocr');
   }
 
   Future<void> _openDebtSummary(
