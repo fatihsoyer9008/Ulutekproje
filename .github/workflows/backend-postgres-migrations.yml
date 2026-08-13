@@ -61,6 +61,7 @@ jobs:
           tests/test_expense_line_item_assignment_postgres.py
           tests/test_fast_split_postgres.py
           tests/test_itemized_split_postgres.py
+          tests/test_settlement_postgres.py
           tests/test_sync_postgres.py
 
       - name: Run backend static analysis

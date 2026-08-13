@@ -15,6 +15,7 @@ from app.models.group_expense import (
 from app.models.oauth_account import OAuthAccount, OAuthProvider
 from app.models.one_time_token import OneTimeToken, OneTimeTokenPurpose
 from app.models.refresh_session import RefreshSession
+from app.models.settlement import Settlement, SettlementIdempotencyRecord
 from app.models.sync_claim_request import SyncClaimRequest
 from app.models.user import User, UserStatus
 
@@ -39,6 +40,8 @@ __all__ = [
     "OneTimeToken",
     "OneTimeTokenPurpose",
     "RefreshSession",
+    "Settlement",
+    "SettlementIdempotencyRecord",
     "SyncClaimRequest",
     "User",
     "UserStatus",

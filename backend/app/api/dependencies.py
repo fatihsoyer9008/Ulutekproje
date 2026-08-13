@@ -17,6 +17,7 @@ from app.models.refresh_session import RefreshSession
 from app.models.user import User, UserStatus
 from app.repositories.groups import GroupRepository
 from app.services.apple_oauth import AppleOAuthProvider
+from app.services.debt_summary_cache import DebtSummaryCache
 from app.services.email_service import EmailSender, create_email_sender
 from app.services.google_oauth import GoogleOAuthVerifier
 from app.services.session_service import SessionMetadata
@@ -42,6 +43,12 @@ async def get_oauth_token_cipher() -> OAuthTokenCipher:
 
 async def get_rate_limiter(redis: Redis = Depends(get_redis)) -> RateLimiter:
     return RateLimiter(redis)
+
+
+async def get_debt_summary_cache(
+    redis: Redis = Depends(get_redis),
+) -> DebtSummaryCache:
+    return DebtSummaryCache(redis)
 
 
 def request_ip(request: Request) -> str:

@@ -144,24 +144,50 @@ class ApiGroupRepository implements GroupRepository {
 
   @override
   Future<DebtSummary> getDebtSummary(String groupId) async {
-    final group = await getGroup(groupId);
-    return DebtSummary(
-      groupId: groupId,
-      currency: group.currency,
-      balances: const [],
-      suggestedTransfers: const [],
-      generatedAt: DateTime.now().toUtc().toIso8601String(),
-    );
+    final body = await _get('/api/v1/groups/$groupId/debts');
+    return DebtSummary.fromJson(body);
   }
 
   @override
-  Future<List<Settlement>> listSettlements(String groupId) async => const [];
+  Future<List<Settlement>> listSettlements(String groupId) async {
+    final body = await _get('/api/v1/groups/$groupId/settlements');
+    final values = body['settlements'];
+
+    if (values is! List) {
+      throw const FormatException('Settlement listesi cevabı geçersiz.');
+    }
+
+    return [
+      for (final value in values)
+        if (value is Map)
+          Settlement.fromJson(Map<String, Object?>.from(value))
+        else
+          throw const FormatException('Settlement listesi elemanı geçersiz.'),
+    ];
+  }
 
   @override
   Future<Settlement> createSettlement(
     Settlement settlement, {
     required String idempotencyKey,
-  }) => throw UnsupportedError('Settlement endpointi henüz kullanılamıyor.');
+  }) async {
+    final body = await _send(
+      () => _apiClient.dio.post<Map<String, dynamic>>(
+        '/api/v1/groups/${settlement.groupId}/settlements',
+        data: {
+          'from_user_id': settlement.fromUserId,
+          'to_user_id': settlement.toUserId,
+          'amount_in_minor': settlement.amountInMinor,
+          'currency': settlement.currency,
+          'settled_at': settlement.settledAt,
+          'note': settlement.note,
+        },
+        options: Options(headers: {'Idempotency-Key': idempotencyKey}),
+      ),
+    );
+
+    return Settlement.fromJson(_envelope(body, 'settlement'));
+  }
 
   @override
   Future<void> createInvitation({

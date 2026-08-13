@@ -157,6 +157,49 @@ class DebtSimplificationService:
         return result
 
     @staticmethod
+    def apply_settlements(
+        balances: Iterable[DebtBalance],
+        settlements: Iterable[DebtTransfer],
+    ) -> tuple[DebtBalance, ...]:
+        """Apply recorded payments to net balances before simplification."""
+        materialized_balances = tuple(balances)
+        materialized_settlements = tuple(settlements)
+        DebtSimplificationService._validate(materialized_balances)
+
+        amounts = {
+            balance.user_id: balance.net_amount_in_minor
+            for balance in materialized_balances
+        }
+        display_names = {
+            balance.user_id: balance.display_name for balance in materialized_balances
+        }
+
+        for settlement in materialized_settlements:
+            if not isinstance(settlement, DebtTransfer):
+                raise TypeError("settlements must contain only DebtTransfer values")
+            if (
+                settlement.from_user_id not in amounts
+                or settlement.to_user_id not in amounts
+            ):
+                raise InvalidDebtBalanceException(
+                    "settlement references a user outside the group"
+                )
+
+            amounts[settlement.from_user_id] += settlement.amount_in_minor
+            amounts[settlement.to_user_id] -= settlement.amount_in_minor
+
+        result = tuple(
+            DebtBalance(
+                user_id=balance.user_id,
+                display_name=display_names[balance.user_id],
+                net_amount_in_minor=amounts[balance.user_id],
+            )
+            for balance in materialized_balances
+        )
+        DebtSimplificationService._validate(result)
+        return result
+
+    @staticmethod
     def _validate(balances: tuple[DebtBalance, ...]) -> None:
         seen_user_ids: set[str] = set()
         total = 0

@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.engine import URL, make_url
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_REVISION = "20260812_0010"
+EXPECTED_REVISION = "20260813_0011"
 PRE_GROUP_REVISION = "20260806_0004"
 PRE_EXPENSE_REVISION = "20260810_0005"
 PRE_ASSIGNMENT_REVISION = "20260811_0006"
@@ -23,6 +23,8 @@ GROUP_TABLES = (
     "expense_extra_amounts",
     "expense_extra_amount_shares",
     "group_expense_idempotency_records",
+    "settlements",
+    "settlement_idempotency_records",
 )
 
 LEGACY_TABLE_KEYS = (
@@ -577,7 +579,34 @@ async def _assert_group_relations_and_indexes(
             "id",
             "CASCADE",
         )
-
+        assert foreign_keys[("settlements", "group_id")] == (
+            "groups",
+            "id",
+            "CASCADE",
+        )
+        assert (
+            "settlements",
+            "from_user_id",
+        ) not in foreign_keys
+        assert (
+            "settlements",
+            "to_user_id",
+        ) not in foreign_keys
+        assert foreign_keys[("settlement_idempotency_records", "group_id")] == (
+            "groups",
+            "id",
+            "CASCADE",
+        )
+        assert foreign_keys[("settlement_idempotency_records", "actor_user_id")] == (
+            "users",
+            "id",
+            "CASCADE",
+        )
+        assert foreign_keys[("settlement_idempotency_records", "settlement_id")] == (
+            "settlements",
+            "id",
+            "CASCADE",
+        )
         assert ("group_expenses", "payer_user_id") not in foreign_keys
         assert ("expense_shares", "user_id") not in foreign_keys
         assert (
@@ -650,6 +679,15 @@ async def _assert_group_relations_and_indexes(
             "ix_expense_line_item_assignments_user_id": ["user_id"],
             "ix_group_expense_idempotency_actor_user_id": ["actor_user_id"],
             "ix_group_expense_idempotency_expense_id": ["expense_id"],
+            "ix_settlements_group_settled_at_id": [
+                "group_id",
+                "settled_at",
+                "id",
+            ],
+            "ix_settlements_from_user_id": ["from_user_id"],
+            "ix_settlements_to_user_id": ["to_user_id"],
+            "ix_settlement_idempotency_actor_user_id": ["actor_user_id"],
+            "ix_settlement_idempotency_settlement_id": ["settlement_id"],
         }
         for index_name, expected_columns in expected_indexes.items():
             assert indexes[index_name] == {
@@ -659,6 +697,16 @@ async def _assert_group_relations_and_indexes(
             }
 
         assert indexes["uq_group_expense_idempotency_scope_key"] == {
+            "columns": [
+                "group_id",
+                "actor_user_id",
+                "idempotency_key_hash",
+            ],
+            "unique": True,
+            "predicate": None,
+        }
+
+        assert indexes["uq_settlement_idempotency_scope_key"] == {
             "columns": [
                 "group_id",
                 "actor_user_id",
