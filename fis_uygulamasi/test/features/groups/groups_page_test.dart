@@ -34,7 +34,6 @@ void main() {
   });
 
   testWidgets('grup kartına basılınca detay ekranı açılır', (tester) async {
-    var receiptSyncProviderWasRead = false;
     final repository = FakeGroupRepository(
       groups: const [twoMemberGroup],
       debtSummariesByGroup: const {
@@ -62,10 +61,6 @@ void main() {
         overrides: [
           authSessionControllerProvider.overrideWith((ref) => controller),
           groupRepositoryProvider.overrideWithValue(repository),
-          receiptSyncRepositoryProvider.overrideWith((ref) {
-            receiptSyncProviderWasRead = true;
-            throw StateError('Grup kartı receipt sync başlatmamalı.');
-          }),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),
@@ -80,7 +75,6 @@ void main() {
     expect(find.byKey(const Key('group_detail_member_count')), findsOneWidget);
     expect(find.byType(FastSplitPage), findsNothing);
     expect(find.byType(ItemizedSplitPage), findsNothing);
-    expect(receiptSyncProviderWasRead, isFalse);
   });
 
   testWidgets('alacaklı kullanıcının net durumu gösterilir', (tester) async {

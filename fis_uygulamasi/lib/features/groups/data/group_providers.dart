@@ -1,10 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/group_models.dart';
-import '../../auth/presentation/controllers/auth_session_controller.dart';
-import '../../sync/application/sync_coordinator.dart';
 import 'fake_group_repository.dart';
-import 'receipt_sync_repository.dart';
 
 final fakeGroupRepositoryProvider = Provider<FakeGroupRepository>(
   (ref) => FakeGroupRepository(),
@@ -16,13 +13,6 @@ final groupRepositoryProvider = Provider<GroupRepository>(
 
 final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(
   (ref) => ref.watch(groupRepositoryProvider),
-);
-
-final receiptSyncRepositoryProvider = Provider<ReceiptSyncRepository>(
-  (ref) => ReceiptSyncRepository(
-    apiClient: ref.watch(apiClientProvider),
-    installationIdProvider: ref.watch(installationIdProvider),
-  ),
 );
 
 final debtSummaryRepositoryProvider = Provider<DebtSummaryRepository>(
