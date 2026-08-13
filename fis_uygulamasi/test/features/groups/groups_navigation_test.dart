@@ -4,6 +4,7 @@ import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
 import 'package:app_main/features/groups/presentation/groups_page.dart';
+import 'package:app_main/features/groups/presentation/group_ocr_page.dart';
 import 'package:app_main/src/app/finance_app.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,29 @@ void main() {
     await _openGroupsFromDrawer(tester);
 
     expect(find.byType(GroupsPage), findsOneWidget);
+  });
+
+  testWidgets('grup detayındaki Fiş Tara ayrı grup OCR routeunu açar', (
+    tester,
+  ) async {
+    final controller = AuthSessionController(_NavigationAuthRepository());
+    await controller.login('user@example.com', 'password');
+
+    await _pumpApp(tester, controller);
+    await _openGroupsFromDrawer(tester);
+    await tester.tap(find.text('Ev Arkadaşları'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('add_group_expense_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('select_scan_receipt_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GroupOcrPage), findsOneWidget);
+    expect(
+      tester.widget<GroupOcrPage>(find.byType(GroupOcrPage)).groupId,
+      '10000000-0000-4000-8000-000000000001',
+    );
+    expect(find.text('Ev Arkadaşları'), findsOneWidget);
   });
 
   testWidgets('guest returns to groups after email login', (tester) async {
