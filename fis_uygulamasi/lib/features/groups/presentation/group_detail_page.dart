@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../../transaction_draft/model/turkish_money.dart';
-import '../data/fake_group_repository.dart';
+import '../data/group_providers.dart';
 import '../domain/group_models.dart';
 import 'debt_summary_page.dart';
 import 'fast_split_page.dart';

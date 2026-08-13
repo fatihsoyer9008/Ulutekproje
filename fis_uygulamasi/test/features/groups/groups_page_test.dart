@@ -2,16 +2,18 @@ import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
 import 'package:app_main/features/groups/data/fake_group_repository.dart';
+import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
+import 'package:app_main/features/groups/presentation/fast_split_page.dart';
+import 'package:app_main/features/groups/presentation/group_detail_page.dart';
 import 'package:app_main/features/groups/presentation/groups_page.dart';
+import 'package:app_main/features/groups/presentation/itemized_split_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../fixtures/group_fixtures.dart';
-
-import 'package:app_main/features/groups/presentation/group_detail_page.dart';
-import 'package:go_router/go_router.dart';
 
 void main() {
   testWidgets('grup kartında ad, üye sayısı ve borç durumu gösterilir', (
@@ -71,6 +73,8 @@ void main() {
     expect(find.byKey(const Key('group_detail_name')), findsOneWidget);
     expect(find.text('Ev Arkadaşları'), findsOneWidget);
     expect(find.byKey(const Key('group_detail_member_count')), findsOneWidget);
+    expect(find.byType(FastSplitPage), findsNothing);
+    expect(find.byType(ItemizedSplitPage), findsNothing);
   });
 
   testWidgets('alacaklı kullanıcının net durumu gösterilir', (tester) async {

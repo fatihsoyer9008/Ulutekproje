@@ -93,7 +93,6 @@ class GroupExpenseCreateRequest(BaseModel):
     def normalize_currency(cls, value: str) -> str:
         return value.strip().upper()
 
-
 class GroupCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -435,3 +434,7 @@ class GroupExpenseResponse(BaseModel):
 
 class GroupExpenseEnvelope(BaseModel):
     expense: GroupExpenseResponse
+
+
+class GroupExpensesResponse(BaseModel):
+    expenses: list[GroupExpenseResponse]

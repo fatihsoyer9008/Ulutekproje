@@ -2,6 +2,7 @@ import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
 import 'package:app_main/features/groups/data/fake_group_repository.dart';
+import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:app_main/features/groups/presentation/group_detail_page.dart';
 import 'package:flutter/material.dart';

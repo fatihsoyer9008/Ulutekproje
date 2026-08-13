@@ -1,51 +1,11 @@
 import 'dart:convert';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../domain/group_models.dart';
-import 'fake_debt_summary_repository.dart';
-import 'fake_group_expense_repository.dart';
 import 'group_repository.dart';
 
 export 'fake_debt_summary_repository.dart';
 export 'fake_group_expense_repository.dart';
 export 'group_repository.dart';
-
-final groupRepositoryProvider = Provider<GroupRepository>(
-  (ref) => FakeGroupRepository(),
-);
-
-final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(
-  (ref) => FakeGroupExpenseRepository(ref.watch(groupRepositoryProvider)),
-);
-
-final debtSummaryRepositoryProvider = Provider<DebtSummaryRepository>(
-  (ref) => FakeDebtSummaryRepository(ref.watch(groupRepositoryProvider)),
-);
-
-final groupsProvider = FutureProvider<GroupsResponse>(
-  (ref) => ref.watch(groupRepositoryProvider).listGroups(),
-);
-
-final groupDetailProvider = FutureProvider.family<GroupDetail, String>(
-  (ref, groupId) => ref.watch(groupRepositoryProvider).getGroup(groupId),
-);
-
-final groupExpensesProvider = FutureProvider.family<List<GroupExpense>, String>(
-  (ref, groupId) =>
-      ref.watch(groupExpenseRepositoryProvider).listExpenses(groupId),
-);
-
-final groupDebtSummaryProvider = FutureProvider.family<DebtSummary, String>(
-  (ref, groupId) =>
-      ref.watch(debtSummaryRepositoryProvider).getDebtSummary(groupId),
-);
-
-final groupSettlementsProvider =
-    FutureProvider.family<List<Settlement>, String>(
-      (ref, groupId) =>
-          ref.watch(groupRepositoryProvider).listSettlements(groupId),
-    );
 
 class FakeGroupRepository implements GroupRepository {
   FakeGroupRepository({
@@ -734,6 +694,200 @@ class FakeGroupRepository implements GroupRepository {
       suggestedTransfers: transfers,
       generatedAt: _timestamp(),
     );
+  }
+
+  @override
+  Future<GroupExpense> createFastSplit(
+    FastSplitExpenseRequest request, {
+    required String idempotencyKey,
+  }) {
+    final split = switch (request.splitType) {
+      SplitType.equal => ExpenseSplitRequest.equal(
+        memberIds: request.orderedMemberIds,
+      ),
+      SplitType.percentage => ExpenseSplitRequest.percentage(
+        shares: [
+          for (final userId in request.orderedMemberIds)
+            ExpenseSplitShareRequest.percentage(
+              userId: userId,
+              percentageBasisPoints: request.percentageBasisPoints[userId] ?? 0,
+            ),
+        ],
+      ),
+      SplitType.fixedAmount => ExpenseSplitRequest.fixedAmount(
+        shares: [
+          for (final userId in request.orderedMemberIds)
+            ExpenseSplitShareRequest.fixedAmount(
+              userId: userId,
+              amountInMinor: request.fixedAmountsInMinor[userId] ?? 0,
+            ),
+        ],
+      ),
+      SplitType.itemized => throw ArgumentError.value(
+        request.splitType,
+        'splitType',
+        'Kalem bazlı bölüştürme createItemizedSplit ile oluşturulmalıdır.',
+      ),
+    };
+
+    return createExpense(
+      CreateGroupExpenseRequest(
+        groupId: request.groupId,
+        receiptId: null,
+        payerUserId: request.payerUserId,
+        title: request.title,
+        note: null,
+        expenseDate: request.expenseDate,
+        totalAmountInMinor: request.totalAmountInMinor,
+        currency: request.currency,
+        split: split,
+      ),
+      idempotencyKey: idempotencyKey,
+    );
+  }
+
+  @override
+  Future<GroupExpense> createItemizedSplit(
+    ItemizedExpenseRequest request, {
+    required String idempotencyKey,
+  }) async {
+    await _beforeRequest();
+    final group = _requireGroup(request.groupId);
+    _requireCurrentUserMembership(group);
+    _validateIdempotencyKey(idempotencyKey);
+
+    final fingerprint = jsonEncode(<String, Object?>{
+      'type': 'itemized',
+      'group_id': request.groupId,
+      'receipt_id': request.receiptId,
+      'title': request.title,
+      'payer_user_id': request.payerUserId,
+      'expense_date': request.expenseDate,
+      'total_amount_in_minor': request.totalAmountInMinor,
+      'currency': request.currency,
+      'line_shares': [
+        for (final share in request.lineShares)
+          <String, Object?>{
+            'receipt_line_item_id': share.receiptLineItemId,
+            'user_id': share.userId,
+            'amount_in_minor': share.amountInMinor,
+            'quantity_share_milli': share.quantityShareMilli,
+          },
+      ],
+      'extra_shares': [
+        for (final share in request.extraShares)
+          <String, Object?>{
+            'user_id': share.userId,
+            'amount_in_minor': share.amountInMinor,
+          },
+      ],
+    });
+    final existing = _expenseRequests[idempotencyKey];
+    if (existing != null) {
+      if (existing.fingerprint != fingerprint) {
+        throw _idempotencyConflict();
+      }
+      return GroupExpense.fromJson(existing.value.toJson());
+    }
+
+    final now = _timestamp();
+    final expenseId = _newExpenseId();
+    final extraAmountId = '$expenseId-extra-1';
+    final members = {for (final member in group.members) member.userId: member};
+    final totals = <String, int>{};
+    for (final share in request.lineShares) {
+      totals.update(
+        share.userId,
+        (value) => value + share.amountInMinor,
+        ifAbsent: () => share.amountInMinor,
+      );
+    }
+    for (final share in request.extraShares) {
+      totals.update(
+        share.userId,
+        (value) => value + share.amountInMinor,
+        ifAbsent: () => share.amountInMinor,
+      );
+    }
+    final stored = GroupExpense(
+      id: expenseId,
+      groupId: request.groupId,
+      receiptId: request.receiptId,
+      payerUserId: request.payerUserId,
+      createdBy: currentUserId,
+      title: request.title.trim(),
+      note: null,
+      expenseDate: request.expenseDate,
+      totalAmountInMinor: request.totalAmountInMinor,
+      currency: request.currency,
+      splitType: SplitType.itemized,
+      isFinanciallyLocked: false,
+      shares: [
+        for (final entry in totals.entries)
+          ExpenseShare(
+            expenseId: expenseId,
+            userId: entry.key,
+            displayName:
+                members[entry.key]?.displayName ?? 'Silinmiş kullanıcı',
+            amountInMinor: entry.value,
+            status: ShareStatus.open,
+            settledAt: null,
+          ),
+      ],
+      lineItemAssignments: [
+        for (final share in request.lineShares)
+          ReceiptLineItemAssignment(
+            expenseId: expenseId,
+            receiptLineItemId: share.receiptLineItemId,
+            userId: share.userId,
+            amountInMinor: share.amountInMinor,
+            quantityShareMilli: share.quantityShareMilli,
+          ),
+      ],
+      extraAmounts: [
+        if (request.extraShares.isNotEmpty)
+          ExpenseExtraAmount(
+            id: extraAmountId,
+            expenseId: expenseId,
+            type: ExpenseExtraAmountType.other,
+            label: 'Fiş toplam farkı',
+            amountInMinor: request.extraShares.fold<int>(
+              0,
+              (total, share) => total + share.amountInMinor,
+            ),
+            shares: [
+              for (final share in request.extraShares)
+                ExpenseExtraAmountShare(
+                  extraAmountId: extraAmountId,
+                  userId: share.userId,
+                  amountInMinor: share.amountInMinor,
+                ),
+            ],
+          ),
+      ],
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    );
+
+    if (request.title.trim().isEmpty || request.receiptId.trim().isEmpty) {
+      throw _apiException(
+        statusCode: 422,
+        code: 'invalid_split_total',
+        message: 'Masraf veya bölüştürme bilgileri geçersiz.',
+      );
+    }
+    _validateExpense(group, stored);
+    _expensesByGroup
+        .putIfAbsent(request.groupId, () => <GroupExpense>[])
+        .add(stored);
+    _applyExpenseToDebtSummary(group, stored);
+    _expenseRequests[idempotencyKey] = _IdempotentValue<GroupExpense>(
+      fingerprint: fingerprint,
+      value: stored,
+    );
+
+    return GroupExpense.fromJson(stored.toJson());
   }
 
   @override

@@ -1,12 +1,12 @@
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../../transaction_draft/model/turkish_money.dart';
-import '../data/fake_group_repository.dart';
+import '../data/group_providers.dart';
 import '../domain/group_models.dart';
-import 'package:go_router/go_router.dart';
 
 class GroupsPage extends ConsumerWidget {
   const GroupsPage({super.key});

@@ -109,7 +109,6 @@ async def parse_receipt(
             outcome,
         )
 
-
 @router.post(
     "/receipts/parse-image",
     response_model=ReceiptParserResponse,
@@ -139,7 +138,7 @@ async def parse_receipt_image(
         outcome = "provider_error"
         provider_error = exc.__cause__ or exc
         logger.warning(
-            "receipt_image_provider_failed request_id=%s model=%s " "error_type=%s",
+            "receipt_image_provider_failed request_id=%s model=%s error_type=%s",
             request_id,
             model_name,
             type(provider_error).__name__,

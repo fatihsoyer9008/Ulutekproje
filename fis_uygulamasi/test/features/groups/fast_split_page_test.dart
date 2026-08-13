@@ -1,5 +1,7 @@
 import 'package:app_main/features/groups/presentation/fast_split_page.dart';
+import 'package:app_main/features/groups/application/itemized_split_calculator.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
+import 'package:app_main/features/groups/presentation/itemized_split_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -174,6 +176,62 @@ void main() {
 
     expect(find.text('Boş Grup'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'cloud fişi yoksa itemized akışı başlatmaz ve alternatif önerir',
+    (tester) async {
+      await _pumpPage(tester, onSubmit: (_) async {});
+      final itemizedButton = find.byKey(const Key('open_itemized_split'));
+      await tester.scrollUntilVisible(
+        itemizedButton,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(itemizedButton);
+      await tester.pump();
+
+      expect(find.byType(ItemizedSplitPage), findsNothing);
+      expect(find.textContaining('Eşit, yüzde veya tutar'), findsOneWidget);
+    },
+  );
+
+  testWidgets('cloud kimlikleri olan fişten itemized ekranı açılır', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FastSplitPage(
+          group: twoMemberGroup,
+          currentUserId: currentUserId,
+          onSubmit: (_) async {},
+          itemizedReceipt: const ItemizedSplitReceipt(
+            receiptId: 'cloud-receipt',
+            totalAmountInMinor: 100,
+            lineItems: [
+              ItemizedReceiptLine(
+                receiptLineItemId: 'cloud-line',
+                name: 'Ürün',
+                quantityMilli: 1000,
+                unitPriceInMinor: 100,
+                totalAmountInMinor: 100,
+              ),
+            ],
+          ),
+          onItemizedSubmit: (_) async {},
+        ),
+      ),
+    );
+    final itemizedButton = find.byKey(const Key('open_itemized_split'));
+    await tester.scrollUntilVisible(
+      itemizedButton,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(itemizedButton);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ItemizedSplitPage), findsOneWidget);
   });
 }
 

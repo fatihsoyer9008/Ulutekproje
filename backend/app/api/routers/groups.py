@@ -30,6 +30,7 @@ from app.group_schemas import (
     GroupExpenseCreateRequest,
     GroupExpenseEnvelope,
     GroupExpenseResponse,
+    GroupExpensesResponse,
     GroupMemberCreateRequest,
     GroupMemberEnvelope,
     GroupMemberRoleUpdateRequest,
@@ -122,6 +123,12 @@ async def _expense_response(
     )
 
 
+async def _expense_value(
+    expense: GroupExpense, db: AsyncSession
+) -> GroupExpenseResponse:
+    return (await _expense_response(expense, db)).expense
+
+
 async def _idempotency_record_response(
     record: GroupExpenseIdempotencyRecord,
     *,
@@ -152,6 +159,36 @@ def _is_idempotency_collision(error: IntegrityError) -> bool:
             return True
         current = current.__cause__
     return "uq_group_expenses_idempotency" in str(error)
+
+
+@router.get("/{group_id}/expenses", response_model=GroupExpensesResponse)
+async def list_group_expenses(
+    group_id: uuid.UUID,
+    actor_membership: GroupMember = Depends(require_group_member),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupExpensesResponse:
+    del actor_membership
+    expenses = await GroupExpenseService(db).repository.list_for_group(group_id)
+    return GroupExpensesResponse(
+        expenses=[await _expense_value(expense, db) for expense in expenses]
+    )
+
+
+@router.get("/{group_id}/expenses/{expense_id}", response_model=GroupExpenseEnvelope)
+async def get_group_expense(
+    group_id: uuid.UUID,
+    expense_id: uuid.UUID,
+    actor_membership: GroupMember = Depends(require_group_member),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupExpenseEnvelope:
+    del actor_membership
+    expense = await GroupExpenseService(db).repository.get_by_id(expense_id)
+    if expense is None or expense.group_id != group_id:
+        raise HTTPException(
+            404,
+            detail={"code": "expense_not_found", "message": "Masraf bulunamadı."},
+        )
+    return await _expense_response(expense, db)
 
 
 @router.post(
