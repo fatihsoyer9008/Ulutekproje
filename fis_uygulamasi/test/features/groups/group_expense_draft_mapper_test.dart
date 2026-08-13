@@ -55,7 +55,7 @@ void main() {
         expect(result.items.first.taxRateBasisPoints, 2000);
         expect(result.items.first.taxAmountInMinor, 1000);
         expect(result.items.last.unitPriceInMinor, 1550);
-        expect(result.items.last.totalAmountInMinor, 1550);
+        expect(result.items.last.totalAmountInMinor, isNull);
       },
     );
 
@@ -73,6 +73,62 @@ void main() {
       expect(result.items, isEmpty);
       expect(result.hasMeaningfulItems, isFalse);
       expect(result.totalAmountInMinor, 2500000);
+    });
+
+    test('miktar ve birim fiyattan satır toplamını minor-unit hesaplar', () {
+      final result = mapper.fromTransactionDraft(
+        source: const TransactionDraft(
+          institutionName: 'Market',
+          category: 'Market',
+          amountInMinor: 2500,
+          receiptItems: [
+            ReceiptItem(name: 'Yoğurt', quantity: 2, unitPriceInMinor: 1250),
+          ],
+        ),
+        groupId: 'group-1',
+        payerUserId: 'user-1',
+      );
+
+      expect(result.items.single.quantityMilli, 2000);
+      expect(result.items.single.unitPriceInMinor, 1250);
+      expect(result.items.single.totalAmountInMinor, 2500);
+      expect(result.hasMeaningfulItems, isTrue);
+    });
+
+    test('legacy fiyatı miktarla çarpar ve doğrudan satır toplamı saymaz', () {
+      final result = mapper.fromTransactionDraft(
+        source: const TransactionDraft(
+          institutionName: 'Market',
+          category: 'Market',
+          amountInMinor: 3750,
+          receiptItems: [
+            ReceiptItem(name: 'Meyve Suyu', quantity: 3, priceMinor: 1250),
+          ],
+        ),
+        groupId: 'group-1',
+        payerUserId: 'user-1',
+      );
+
+      expect(result.items.single.unitPriceInMinor, 1250);
+      expect(result.items.single.totalAmountInMinor, 3750);
+      expect(result.hasMeaningfulItems, isTrue);
+    });
+
+    test('yalnızca adı olan ürünü korur fakat itemized adayı saymaz', () {
+      final result = mapper.fromTransactionDraft(
+        source: const TransactionDraft(
+          institutionName: 'Market',
+          category: 'Market',
+          amountInMinor: 5000,
+          receiptItems: [ReceiptItem(name: 'Fiyatı okunamayan ürün')],
+        ),
+        groupId: 'group-1',
+        payerUserId: 'user-1',
+      );
+
+      expect(result.items, hasLength(1));
+      expect(result.items.single.totalAmountInMinor, isNull);
+      expect(result.hasMeaningfulItems, isFalse);
     });
 
     test('items: [{}] karşılığı boş isimli ürünleri kullanılamaz sayar', () {

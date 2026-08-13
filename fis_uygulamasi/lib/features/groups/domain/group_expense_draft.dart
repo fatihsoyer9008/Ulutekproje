@@ -26,7 +26,15 @@ class GroupExpenseDraft {
   final String? rawOcrText;
   final List<GroupExpenseDraftItem> items;
 
-  bool get hasMeaningfulItems => items.isNotEmpty;
+  /// Itemized Split yalnızca en az bir ürünün adı ve hesaplanabilir, pozitif
+  /// satır toplamı varsa güvenle açılabilir. Eksik tutarlı OCR ürünleri taslakta
+  /// korunur ancak kullanıcıyı kilitleyen Itemized Split akışını tetiklemez.
+  bool get hasMeaningfulItems => items.any(
+    (item) =>
+        item.name.trim().isNotEmpty &&
+        item.totalAmountInMinor != null &&
+        item.totalAmountInMinor! > 0,
+  );
 }
 
 /// Grup masrafına aktarılmış, düzenlenebilir OCR ürün kalemi.

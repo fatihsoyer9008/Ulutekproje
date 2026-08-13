@@ -1,5 +1,6 @@
 import 'package:finance_database/finance_database.dart';
 
+import '../../transaction_draft/model/receipt_total_validation.dart';
 import '../domain/group_expense_draft.dart';
 
 /// Kullanıcının doğruladığı OCR taslağını grup masrafı taslağına dönüştürür.
@@ -21,8 +22,10 @@ class GroupExpenseDraftMapper {
       payerUserId,
       'payerUserId',
     );
-    final normalizedCurrency = _requireIdentifier(currency, 'currency')
-        .toUpperCase();
+    final normalizedCurrency = _requireIdentifier(
+      currency,
+      'currency',
+    ).toUpperCase();
 
     return GroupExpenseDraft(
       groupId: normalizedGroupId,
@@ -42,7 +45,8 @@ class GroupExpenseDraftMapper {
 
   GroupExpenseDraftItem _mapItem(ReceiptItem item) {
     final quantity = item.quantity;
-    final quantityMilli = quantity == null || !quantity.isFinite || quantity <= 0
+    final quantityMilli =
+        quantity == null || !quantity.isFinite || quantity <= 0
         ? null
         : (quantity * 1000).round();
     final taxRate = item.taxRate;
@@ -50,17 +54,16 @@ class GroupExpenseDraftMapper {
         taxRate == null || !taxRate.isFinite || taxRate < 0
         ? null
         : (taxRate * 10000).round();
+    final calculatedTotal = ReceiptTotalValidation.calculateItemTotalInMinor(
+      item,
+    );
 
     return GroupExpenseDraftItem(
       name: item.name.trim(),
       category: _trimmedOrNull(item.category),
       quantityMilli: quantityMilli,
-      unitPriceInMinor: _nonNegative(
-        item.unitPriceInMinor ?? item.priceMinor,
-      ),
-      totalAmountInMinor: _nonNegative(
-        item.totalAmountInMinor ?? item.priceMinor,
-      ),
+      unitPriceInMinor: _nonNegative(item.unitPriceInMinor ?? item.priceMinor),
+      totalAmountInMinor: _nonNegative(calculatedTotal),
       taxRateBasisPoints: taxRateBasisPoints,
       taxAmountInMinor: _nonNegative(item.taxAmountInMinor),
     );
