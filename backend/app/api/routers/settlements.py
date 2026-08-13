@@ -276,6 +276,11 @@ async def list_settlements(
 @router.get(
     "/{group_id}/debts",
     response_model=DebtSummaryResponse,
+    include_in_schema=False,
+)
+@router.get(
+    "/{group_id}/debt-summary",
+    response_model=DebtSummaryResponse,
 )
 async def get_debt_summary(
     group_id: uuid.UUID,

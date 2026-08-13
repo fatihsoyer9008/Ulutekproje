@@ -50,7 +50,12 @@ class DebtSummaryService:
         }
 
         expense_amounts: defaultdict[uuid.UUID, int] = defaultdict(int)
-        financial_user_ids: set[uuid.UUID] = set()
+        # Active members belong in the API snapshot even when the group has no
+        # financial activity yet. Historical users are added below from the
+        # immutable expense/settlement records so old balances are not lost.
+        financial_user_ids: set[uuid.UUID] = {
+            member.user_id for member in group.members if member.left_at is None
+        }
 
         for expense in expenses:
             financial_user_ids.add(expense.payer_user_id)
