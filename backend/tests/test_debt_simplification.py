@@ -49,9 +49,7 @@ def apply_settlement(
     amounts = {item.user_id: item.net_amount_in_minor for item in balances}
     amounts[settlement.from_user_id] += settlement.amount_in_minor
     amounts[settlement.to_user_id] -= settlement.amount_in_minor
-    return tuple(
-        balance(item.user_id, amounts[item.user_id]) for item in balances
-    )
+    return tuple(balance(item.user_id, amounts[item.user_id]) for item in balances)
 
 
 def test_two_members_settle_one_equally_shared_expense() -> None:
@@ -193,9 +191,7 @@ def test_rejects_an_unbalanced_group_before_matching() -> None:
 
 def test_rejects_duplicate_member_balances() -> None:
     with pytest.raises(InvalidDebtBalanceException, match="duplicate"):
-        DebtSimplificationService.simplify(
-            [balance("same", -10), balance("same", 10)]
-        )
+        DebtSimplificationService.simplify([balance("same", -10), balance("same", 10)])
 
 
 @pytest.mark.parametrize(
@@ -294,9 +290,41 @@ def test_supports_large_integer_amounts_without_precision_loss() -> None:
 
     assert DebtSimplificationService.simplify(
         [balance("debtor", -amount), balance("creditor", amount)]
-    ) == (DebtTransfer("debtor", "creditor", amount),)
+    ) == (
+        DebtTransfer("debtor", "creditor", amount),
+    )
 
 
 def test_empty_and_already_settled_groups_need_no_transfers() -> None:
     assert DebtSimplificationService.simplify([]) == ()
     assert DebtSimplificationService.simplify([balance("settled", 0)]) == ()
+
+
+def test_apply_settlements_reduces_remaining_group_debt() -> None:
+    expense_balances = (
+        balance("creditor", 6_250),
+        balance("debtor", -6_250),
+    )
+
+    updated_balances = DebtSimplificationService.apply_settlements(
+        expense_balances,
+        (
+            DebtTransfer(
+                from_user_id="debtor",
+                to_user_id="creditor",
+                amount_in_minor=2_500,
+            ),
+        ),
+    )
+
+    assert updated_balances == (
+        balance("creditor", 3_750),
+        balance("debtor", -3_750),
+    )
+    assert DebtSimplificationService.simplify(updated_balances) == (
+        DebtTransfer(
+            from_user_id="debtor",
+            to_user_id="creditor",
+            amount_in_minor=3_750,
+        ),
+    )

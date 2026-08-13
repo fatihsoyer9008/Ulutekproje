@@ -15,6 +15,7 @@ from app.api.routers.assistant import router as assistant_router
 from app.api.routers.auth import router as auth_router
 from app.api.routers.groups import router as groups_router
 from app.api.routers.receipts import router as receipt_router
+from app.api.routers.settlements import router as settlements_router
 from app.api.routers.sync import router as sync_router
 from app.core.config import settings
 from app.core.observability import (
@@ -135,6 +136,7 @@ app.include_router(assistant_router)
 app.include_router(auth_router)
 app.include_router(groups_router)
 app.include_router(receipt_router)
+app.include_router(settlements_router)
 app.include_router(sync_router)
 
 
@@ -171,6 +173,23 @@ async def validation_exception_handler(
         is_expense_request = request.method == "POST" and request.url.path.endswith(
             "/expenses"
         )
+        is_settlement_request = request.method == "POST" and request.url.path.endswith(
+            "/settlements"
+        )
+
+        if is_expense_request:
+            message = (
+                "Masraf isteği geçersiz; split türünü, tutarları ve "
+                "katılımcıları kontrol edin."
+            )
+        elif is_settlement_request:
+            message = (
+                "Settlement isteği geçersiz; kullanıcıları, tutarı, "
+                "para birimini ve tarihi kontrol edin."
+            )
+        else:
+            message = "Grup isteği geçersiz."
+
         return JSONResponse(
             status_code=(
                 status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -180,12 +199,7 @@ async def validation_exception_handler(
             content={
                 "detail": {
                     "code": "invalid_request",
-                    "message": (
-                        "Masraf isteği geçersiz; split türünü, tutarları ve "
-                        "katılımcıları kontrol edin."
-                        if is_expense_request
-                        else "Grup isteği geçersiz."
-                    ),
+                    "message": message,
                 }
             },
         )
