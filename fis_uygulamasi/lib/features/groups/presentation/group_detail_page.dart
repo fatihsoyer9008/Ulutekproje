@@ -81,7 +81,11 @@ class _GroupDetailContent extends ConsumerWidget {
                   key: const Key('add_group_expense_button'),
                   onPressed: currentUserId == null
                       ? null
-                      : () => _openFastSplit(context, ref, currentUserId),
+                      : () => _showExpenseTypeSelector(
+                          context,
+                          ref,
+                          currentUserId,
+                        ),
                   icon: const Icon(Icons.add_rounded),
                   label: const Text('Yeni Masraf Ekle'),
                 ),
@@ -131,6 +135,61 @@ class _GroupDetailContent extends ConsumerWidget {
                   : null,
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showExpenseTypeSelector(
+    BuildContext context,
+    WidgetRef ref,
+    String currentUserId,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Bölüştürme Türünü Seç',
+                style: Theme.of(sheetContext).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                key: const Key('select_fast_split_button'),
+                leading: const Icon(Icons.flash_on_outlined),
+                title: const Text('Hızlı Bölüştürme'),
+                subtitle: const Text(
+                  'Tutarı eşit, yüzde veya sabit tutar ile paylaş.',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _openFastSplit(context, ref, currentUserId);
+                },
+              ),
+              ListTile(
+                key: const Key('select_itemized_split_button'),
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: const Text('Kalem Bazlı Bölüştürme'),
+                subtitle: const Text('Fişteki ürün kalemlerini üyelere dağıt.'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Kalem bazlı bölüştürme için önce ürün kalemleri buluta eşitlenmiş bir fiş seçilmelidir.',
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

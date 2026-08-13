@@ -126,6 +126,11 @@ void main() {
       await tester.tap(find.byKey(const Key('add_group_expense_button')));
       await tester.pumpAndSettle();
 
+      expect(find.text('Bölüştürme Türünü Seç'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('select_fast_split_button')));
+      await tester.pumpAndSettle();
+
       expect(find.text('Hızlı Bölüştürme'), findsOneWidget);
 
       await tester.enterText(
@@ -144,6 +149,35 @@ void main() {
       expect(find.text('Masraf kaydedildi.'), findsOneWidget);
     },
   );
+
+  testWidgets('yeni masraf için bölüştürme türü seçenekleri gösterilir', (
+    tester,
+  ) async {
+    await _pumpDetailPage(
+      tester,
+      repository: FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('add_group_expense_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bölüştürme Türünü Seç'), findsOneWidget);
+    expect(find.byKey(const Key('select_fast_split_button')), findsOneWidget);
+    expect(
+      find.byKey(const Key('select_itemized_split_button')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('select_itemized_split_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Kalem bazlı bölüştürme için önce'),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('owner üye çıkarma işlemini onaylayabilir', (tester) async {
     await _pumpDetailPage(
@@ -300,6 +334,17 @@ void main() {
 
     expect(find.text('Tüm borçlar kapatılmış görünüyor.'), findsOneWidget);
     expect(markPaidButton, findsNothing);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('group_detail_name')), findsOneWidget);
+    expect(find.text('Ev Arkadaşları'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('open_debt_summary_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tüm borçlar kapatılmış görünüyor.'), findsOneWidget);
   });
 
   testWidgets('masraf hata ekranındaki tekrar dene masrafları yeniden yükler', (

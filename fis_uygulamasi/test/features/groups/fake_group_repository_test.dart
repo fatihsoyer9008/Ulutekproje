@@ -348,6 +348,28 @@ void main() {
       expect(await repository.listExpenses(twoMemberGroupId), hasLength(1));
     });
 
+    test(
+      'generates a unique id when seeded expenses already use sequence ids',
+      () async {
+        final repository = FakeGroupRepository(
+          groups: const <GroupDetail>[twoMemberGroup],
+          expensesByGroup: const <String, List<GroupExpense>>{
+            twoMemberGroupId: <GroupExpense>[fastSplitTransferExpense],
+          },
+        );
+
+        final created = await repository.createExpense(
+          _fastSplitRequest(title: 'İkinci market'),
+          idempotencyKey: 'expense-after-seed',
+        );
+        final expenses = await repository.listExpenses(twoMemberGroupId);
+
+        expect(created.id, isNot(fastSplitTransferExpense.id));
+        expect(expenses.map((expense) => expense.id).toSet(), hasLength(2));
+        expect(expenses, hasLength(2));
+      },
+    );
+
     test('replays generated fast and itemized expenses idempotently', () async {
       final repository = FakeGroupRepository(
         groups: const <GroupDetail>[twoMemberGroup],
