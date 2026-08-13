@@ -1126,9 +1126,17 @@ class FakeGroupRepository implements GroupRepository {
   String _timestamp() => _clock().toUtc().toIso8601String();
 
   String _newExpenseId() {
-    final suffix = _nextExpenseSequence.toString().padLeft(12, '0');
-    _nextExpenseSequence += 1;
-    return '40000000-0000-4000-8000-$suffix';
+    while (true) {
+      final suffix = _nextExpenseSequence.toString().padLeft(12, '0');
+      _nextExpenseSequence += 1;
+      final candidate = '40000000-0000-4000-8000-$suffix';
+      final alreadyExists = _expensesByGroup.values.any(
+        (expenses) => expenses.any((expense) => expense.id == candidate),
+      );
+      if (!alreadyExists) {
+        return candidate;
+      }
+    }
   }
 
   String _newGroupId() {
