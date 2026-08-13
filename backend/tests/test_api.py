@@ -142,6 +142,11 @@ def test_production_rejects_incomplete_proxy_configuration(
     trusted_proxy_cidrs: str,
 ) -> None:
     monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(
+        settings,
+        "receipt_image_upload_enabled",
+        False,
+    )
     monkeypatch.setattr(settings, "use_dummy_parser", True)
     monkeypatch.setattr(settings, "rate_limit_enabled", True)
     monkeypatch.setattr(
