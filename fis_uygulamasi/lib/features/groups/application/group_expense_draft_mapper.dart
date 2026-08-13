@@ -45,10 +45,14 @@ class GroupExpenseDraftMapper {
 
   GroupExpenseDraftItem _mapItem(ReceiptItem item) {
     final quantity = item.quantity;
-    final quantityMilli =
+    final roundedQuantityMilli =
         quantity == null || !quantity.isFinite || quantity <= 0
         ? null
         : (quantity * 1000).round();
+    final quantityMilli =
+        roundedQuantityMilli == null || roundedQuantityMilli <= 0
+        ? null
+        : roundedQuantityMilli;
     final taxRate = item.taxRate;
     final taxRateBasisPoints =
         taxRate == null || !taxRate.isFinite || taxRate < 0

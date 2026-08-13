@@ -27,7 +27,7 @@ void main() {
               taxRate: .20,
               taxAmountInMinor: 1000,
             ),
-            ReceiptItem(name: 'Ekmek', priceMinor: 1550),
+            ReceiptItem(name: 'Ekmek', quantity: 1, priceMinor: 1550),
           ],
         );
 
@@ -55,7 +55,7 @@ void main() {
         expect(result.items.first.taxRateBasisPoints, 2000);
         expect(result.items.first.taxAmountInMinor, 1000);
         expect(result.items.last.unitPriceInMinor, 1550);
-        expect(result.items.last.totalAmountInMinor, isNull);
+        expect(result.items.last.totalAmountInMinor, 1550);
       },
     );
 
@@ -129,6 +129,50 @@ void main() {
       expect(result.items, hasLength(1));
       expect(result.items.single.totalAmountInMinor, isNull);
       expect(result.hasMeaningfulItems, isFalse);
+    });
+
+    test('geçerli ve eksik toplamlı karışık listeyi itemized adayı saymaz', () {
+      final result = mapper.fromTransactionDraft(
+        source: const TransactionDraft(
+          institutionName: 'Market',
+          category: 'Market',
+          amountInMinor: 5000,
+          receiptItems: [
+            ReceiptItem(name: 'Hesaplanabilen', totalAmountInMinor: 2500),
+            ReceiptItem(name: 'Fiyatı okunamayan'),
+          ],
+        ),
+        groupId: 'group-1',
+        payerUserId: 'user-1',
+      );
+
+      expect(result.items, hasLength(2));
+      expect(result.items.first.totalAmountInMinor, 2500);
+      expect(result.items.last.totalAmountInMinor, isNull);
+      expect(result.hasMeaningfulItems, isFalse);
+    });
+
+    test('binde birimin altında sıfıra yuvarlanan miktarı null yapar', () {
+      final result = mapper.fromTransactionDraft(
+        source: const TransactionDraft(
+          institutionName: 'Market',
+          category: 'Market',
+          amountInMinor: 100,
+          receiptItems: [
+            ReceiptItem(
+              name: 'Hassas ürün',
+              quantity: 0.0004,
+              totalAmountInMinor: 100,
+            ),
+          ],
+        ),
+        groupId: 'group-1',
+        payerUserId: 'user-1',
+      );
+
+      expect(result.items.single.quantityMilli, isNull);
+      expect(result.items.single.totalAmountInMinor, 100);
+      expect(result.hasMeaningfulItems, isTrue);
     });
 
     test('items: [{}] karşılığı boş isimli ürünleri kullanılamaz sayar', () {
