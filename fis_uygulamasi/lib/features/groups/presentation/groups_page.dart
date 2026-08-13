@@ -1,14 +1,12 @@
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../../transaction_draft/model/turkish_money.dart';
 import '../data/group_providers.dart';
-import '../data/group_repository.dart';
 import '../domain/group_models.dart';
-import 'fast_split_page.dart';
-import 'itemized_split_page.dart';
 
 class GroupsPage extends ConsumerWidget {
   const GroupsPage({super.key});
@@ -63,9 +61,7 @@ class _GroupCard extends ConsumerWidget {
     return AppCard(
       child: ListTile(
         key: Key('group_card_${group.id}'),
-        onTap: currentUserId == null
-            ? null
-            : () => _openFastSplit(context, ref),
+        onTap: () => context.push('/groups/${Uri.encodeComponent(group.id)}'),
         contentPadding: const EdgeInsets.all(16),
         leading: CircleAvatar(
           backgroundColor: AppColors.mint,
@@ -88,120 +84,6 @@ class _GroupCard extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  Future<void> _openFastSplit(BuildContext context, WidgetRef ref) async {
-    try {
-      final detail = await ref.read(groupRepositoryProvider).getGroup(group.id);
-      if (!context.mounted || currentUserId == null) return;
-      final messenger = ScaffoldMessenger.of(context);
-      ItemizedSplitReceipt? itemizedReceipt;
-      try {
-        itemizedReceipt = await ref.read(latestItemizedReceiptProvider.future);
-      } catch (_) {
-        itemizedReceipt = null;
-      }
-      if (!context.mounted) return;
-      var didSave = false;
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => FastSplitPage(
-            group: detail,
-            currentUserId: currentUserId!,
-            itemizedReceipt: itemizedReceipt,
-            onSubmit: (value) async {
-              final now = DateTime.now().toUtc();
-              final orderedMemberIds = [
-                for (final member in detail.members)
-                  if (member.leftAt == null &&
-                      value.calculation.shares.any(
-                        (share) => share.userId == member.userId,
-                      ))
-                    member.userId,
-              ];
-              await ref
-                  .read(groupExpenseRepositoryProvider)
-                  .createFastSplit(
-                    FastSplitExpenseRequest(
-                      groupId: detail.id,
-                      title: value.title,
-                      payerUserId: value.payerUserId,
-                      expenseDate: now.toIso8601String(),
-                      totalAmountInMinor: value.calculation.totalAmountInMinor,
-                      currency: detail.currency,
-                      splitType: value.calculation.type,
-                      orderedMemberIds: orderedMemberIds,
-                      percentageBasisPoints: value.percentageBasisPoints,
-                      fixedAmountsInMinor: {
-                        for (final share in value.calculation.shares)
-                          share.userId: share.amountInMinor,
-                      },
-                    ),
-                    idempotencyKey: 'fast-split-${now.microsecondsSinceEpoch}',
-                  );
-              ref.invalidate(groupExpensesProvider(detail.id));
-              ref.invalidate(groupDebtSummaryProvider(detail.id));
-              didSave = true;
-            },
-            onItemizedSubmit: itemizedReceipt == null
-                ? null
-                : (value) async {
-                    final now = DateTime.now().toUtc();
-                    await ref
-                        .read(groupExpenseRepositoryProvider)
-                        .createItemizedSplit(
-                          ItemizedExpenseRequest(
-                            groupId: detail.id,
-                            receiptId: value.receiptId,
-                            title: value.title,
-                            payerUserId: value.payerUserId,
-                            expenseDate: now.toIso8601String(),
-                            totalAmountInMinor:
-                                value.calculation.receiptTotalInMinor,
-                            currency: detail.currency,
-                            lineShares: [
-                              for (final share
-                                  in value.calculation.lineItemShares)
-                                ItemizedLineShareInput(
-                                  receiptLineItemId: share.receiptLineItemId,
-                                  userId: share.userId,
-                                  amountInMinor: share.amountInMinor,
-                                  quantityShareMilli: share.quantityShareMilli,
-                                ),
-                            ],
-                            extraShares: [
-                              for (final share
-                                  in value.calculation.extraAmountShares)
-                                ItemizedExtraShareInput(
-                                  userId: share.userId,
-                                  amountInMinor: share.amountInMinor,
-                                ),
-                            ],
-                          ),
-                          idempotencyKey:
-                              'itemized-split-${now.microsecondsSinceEpoch}',
-                        );
-                    ref.invalidate(groupExpensesProvider(detail.id));
-                    ref.invalidate(groupDebtSummaryProvider(detail.id));
-                    ref.invalidate(latestItemizedReceiptProvider);
-                    didSave = true;
-                  },
-          ),
-        ),
-      );
-      if (context.mounted && didSave) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Harcama kaydedildi.')),
-        );
-      }
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Grup bilgileri alınamadı. Lütfen tekrar deneyin.'),
-        ),
-      );
-    }
   }
 
   String _netStatusText(

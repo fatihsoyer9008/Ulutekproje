@@ -429,12 +429,12 @@ class _ExtraAmountCard extends StatelessWidget {
     key: const Key('itemized_extra_amount_card'),
     child: Semantics(
       container: true,
-      label: 'KDV bahşiş servis farkı ${amountInMinor.toTLDisplay}',
+      label: 'Fiş toplam farkı ${amountInMinor.toTLDisplay}',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'KDV / bahşiş / servis farkı',
+            'Fiş toplam farkı',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 4),

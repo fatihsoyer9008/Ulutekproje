@@ -144,38 +144,13 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
 
   @override
   Future<GroupExpense> createExpense(
-    GroupExpense expense, {
+    CreateGroupExpenseRequest request, {
     required String idempotencyKey,
-  }) {
-    if (expense.splitType == SplitType.percentage ||
-        expense.splitType == SplitType.itemized) {
-      throw ArgumentError.value(
-        expense.splitType,
-        'splitType',
-        'Yüzdelik ve kalem bazlı masraflar kendi istek modelleriyle '
-            'gönderilmelidir.',
-      );
-    }
-    return createFastSplit(
-      FastSplitExpenseRequest(
-        groupId: expense.groupId,
-        title: expense.title,
-        payerUserId: expense.payerUserId,
-        expenseDate: expense.expenseDate,
-        totalAmountInMinor: expense.totalAmountInMinor,
-        currency: expense.currency,
-        splitType: expense.splitType,
-        orderedMemberIds: [for (final share in expense.shares) share.userId],
-        fixedAmountsInMinor: expense.splitType == SplitType.fixedAmount
-            ? {
-                for (final share in expense.shares)
-                  share.userId: share.amountInMinor,
-              }
-            : const {},
-      ),
-      idempotencyKey: idempotencyKey,
-    );
-  }
+  }) => _create(
+    groupId: request.groupId,
+    idempotencyKey: idempotencyKey,
+    body: request.toJson(),
+  );
 
   @override
   Future<GroupExpense> getExpense({

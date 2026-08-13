@@ -93,35 +93,37 @@ void main() {
     expect(extraAmount['shares'], hasLength(1));
   });
 
-  test(
-    'generic create rejects splits whose source data cannot be recovered',
-    () {
-      final repository = ApiGroupExpenseRepository(
-        _client((_) => throw StateError('HTTP request should not be sent')),
-      );
-      final percentageJson = Map<String, Object?>.from(
-        fastSplitTransferExpense.toJson(),
-      )..['split_type'] = 'percentage';
-      final itemizedJson = Map<String, Object?>.from(
-        itemizedMarketExpense.toJson(),
-      );
+  test('generic create forwards the merged request contract', () async {
+    late RequestOptions captured;
+    final repository = ApiGroupExpenseRepository(
+      _client((options) {
+        captured = options;
+        return _jsonResponse({'expense': fastSplitTransferExpense.toJson()});
+      }),
+    );
 
-      expect(
-        () => repository.createExpense(
-          GroupExpense.fromJson(percentageJson),
-          idempotencyKey: 'generic-percentage-1',
+    await repository.createExpense(
+      const CreateGroupExpenseRequest(
+        groupId: twoMemberGroupId,
+        receiptId: null,
+        payerUserId: currentUserId,
+        title: 'Akşam yemeği',
+        note: null,
+        expenseDate: '2026-08-12T20:00:00Z',
+        totalAmountInMinor: 10000,
+        currency: 'TRY',
+        split: ExpenseSplitRequest.equal(
+          memberIds: [currentUserId, secondUserId],
         ),
-        throwsArgumentError,
-      );
-      expect(
-        () => repository.createExpense(
-          GroupExpense.fromJson(itemizedJson),
-          idempotencyKey: 'generic-itemized-1',
-        ),
-        throwsArgumentError,
-      );
-    },
-  );
+      ),
+      idempotencyKey: 'generic-equal-1',
+    );
+
+    expect(captured.headers['Idempotency-Key'], 'generic-equal-1');
+    final body = captured.data as Map<String, Object?>;
+    expect(body['title'], 'Akşam yemeği');
+    expect((body['split'] as Map)['type'], 'equal');
+  });
 }
 
 ApiClient _client(ResponseBody Function(RequestOptions) handler) {

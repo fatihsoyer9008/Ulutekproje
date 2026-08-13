@@ -23,10 +23,10 @@ class FakeGroupExpenseRepository implements GroupExpenseRepository {
 
   @override
   Future<GroupExpense> createExpense(
-    GroupExpense expense, {
+    CreateGroupExpenseRequest request, {
     required String idempotencyKey,
   }) {
-    return _delegate.createExpense(expense, idempotencyKey: idempotencyKey);
+    return _delegate.createExpense(request, idempotencyKey: idempotencyKey);
   }
 
   @override

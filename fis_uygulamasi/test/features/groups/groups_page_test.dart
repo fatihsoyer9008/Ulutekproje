@@ -3,14 +3,15 @@ import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
 import 'package:app_main/features/groups/data/fake_group_repository.dart';
 import 'package:app_main/features/groups/data/group_providers.dart';
-import 'package:app_main/features/groups/application/itemized_split_calculator.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
-import 'package:app_main/features/groups/presentation/groups_page.dart';
 import 'package:app_main/features/groups/presentation/fast_split_page.dart';
+import 'package:app_main/features/groups/presentation/group_detail_page.dart';
+import 'package:app_main/features/groups/presentation/groups_page.dart';
 import 'package:app_main/features/groups/presentation/itemized_split_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../fixtures/group_fixtures.dart';
 
@@ -32,6 +33,56 @@ void main() {
     expect(find.textContaining('borç'), findsOneWidget);
   });
 
+  testWidgets('grup kartına basılınca detay ekranı açılır', (tester) async {
+    var receiptSyncProviderWasRead = false;
+    final repository = FakeGroupRepository(
+      groups: const [twoMemberGroup],
+      debtSummariesByGroup: const {
+        twoMemberGroupId: currentUserDebtorDebtSummary,
+      },
+    );
+
+    final controller = AuthSessionController(_GroupsAuthRepository());
+    await controller.login('user@example.com', 'password');
+
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(path: '/', builder: (_, _) => const GroupsPage()),
+        GoRoute(
+          path: '/groups/:groupId',
+          builder: (_, state) =>
+              GroupDetailPage(groupId: state.pathParameters['groupId']!),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authSessionControllerProvider.overrideWith((ref) => controller),
+          groupRepositoryProvider.overrideWithValue(repository),
+          receiptSyncRepositoryProvider.overrideWith((ref) {
+            receiptSyncProviderWasRead = true;
+            throw StateError('Grup kartı receipt sync başlatmamalı.');
+          }),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('group_card_$twoMemberGroupId')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('group_detail_name')), findsOneWidget);
+    expect(find.text('Ev Arkadaşları'), findsOneWidget);
+    expect(find.byKey(const Key('group_detail_member_count')), findsOneWidget);
+    expect(find.byType(FastSplitPage), findsNothing);
+    expect(find.byType(ItemizedSplitPage), findsNothing);
+    expect(receiptSyncProviderWasRead, isFalse);
+  });
+
   testWidgets('alacaklı kullanıcının net durumu gösterilir', (tester) async {
     final repository = FakeGroupRepository(
       groups: const [twoMemberGroup],
@@ -43,49 +94,6 @@ void main() {
     await _pumpGroupsPage(tester, repository);
 
     expect(find.textContaining('alacak'), findsOneWidget);
-  });
-
-  testWidgets('grup kartı mevcut Fast Split akışını açar', (tester) async {
-    final repository = FakeGroupRepository(groups: const [twoMemberGroup]);
-    await _pumpGroupsPage(tester, repository);
-
-    await tester.tap(find.byKey(Key('group_card_$twoMemberGroupId')));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(FastSplitPage), findsOneWidget);
-  });
-
-  testWidgets('cloud fişi grup akışından kalem bazlı ekrana taşır', (
-    tester,
-  ) async {
-    final repository = FakeGroupRepository(groups: const [twoMemberGroup]);
-    const receipt = ItemizedSplitReceipt(
-      receiptId: '20000000-0000-4000-8000-000000000001',
-      totalAmountInMinor: 1000,
-      lineItems: [
-        ItemizedReceiptLine(
-          receiptLineItemId: '30000000-0000-4000-8000-000000000001',
-          name: 'Süt',
-          quantityMilli: 1000,
-          unitPriceInMinor: 1000,
-          totalAmountInMinor: 1000,
-        ),
-      ],
-    );
-    await _pumpGroupsPage(tester, repository, itemizedReceipt: receipt);
-
-    await tester.tap(find.byKey(Key('group_card_$twoMemberGroupId')));
-    await tester.pumpAndSettle();
-    final itemizedButton = find.byKey(const Key('open_itemized_split'));
-    await tester.scrollUntilVisible(
-      itemizedButton,
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(itemizedButton);
-    await tester.pumpAndSettle();
-
-    expect(find.byType(ItemizedSplitPage), findsOneWidget);
   });
 
   testWidgets('net tutar sıfırsa dengede durumu gösterilir', (tester) async {
@@ -254,7 +262,6 @@ Future<void> _pumpGroupsPage(
   WidgetTester tester,
   FakeGroupRepository repository, {
   DebtSummaryRepository? debtSummaryRepository,
-  ItemizedSplitReceipt? itemizedReceipt,
   bool settle = true,
 }) async {
   final controller = AuthSessionController(_GroupsAuthRepository());
@@ -265,10 +272,6 @@ Future<void> _pumpGroupsPage(
       overrides: [
         authSessionControllerProvider.overrideWith((ref) => controller),
         groupRepositoryProvider.overrideWithValue(repository),
-        if (itemizedReceipt != null)
-          latestItemizedReceiptProvider.overrideWith(
-            (ref) async => itemizedReceipt,
-          ),
         if (debtSummaryRepository != null)
           debtSummaryRepositoryProvider.overrideWithValue(
             debtSummaryRepository,

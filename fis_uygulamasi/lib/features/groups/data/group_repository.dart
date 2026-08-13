@@ -83,7 +83,7 @@ abstract interface class GroupExpenseRepository {
   });
 
   Future<GroupExpense> createExpense(
-    GroupExpense expense, {
+    CreateGroupExpenseRequest request, {
     required String idempotencyKey,
   });
 
@@ -123,12 +123,20 @@ abstract interface class GroupRepository
 
   Future<void> archiveGroup(String groupId);
 
+  Future<void> createInvitation({
+    required String groupId,
+    required String email,
+    GroupRole role = GroupRole.member,
+  });
+
   Future<GroupMember> addMember({
     required String groupId,
     required String userId,
     required String displayName,
     GroupRole role = GroupRole.member,
   });
+
+  Future<void> removeMember({required String groupId, required String userId});
 
   Future<List<Settlement>> listSettlements(String groupId);
 

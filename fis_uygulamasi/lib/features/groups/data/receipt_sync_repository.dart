@@ -15,27 +15,6 @@ class ReceiptSyncRepository {
   final ApiClient apiClient;
   final InstallationIdProvider installationIdProvider;
 
-  Future<ItemizedSplitReceipt?> syncLatestReceipt(
-    Iterable<TransactionEntity> transactions,
-  ) async {
-    final candidates =
-        transactions
-            .where(
-              (transaction) =>
-                  transaction.transactionType == TransactionType.expense &&
-                  transaction.clientRecordId?.trim().isNotEmpty == true &&
-                  transaction.receiptLineItems.isNotEmpty &&
-                  transaction.receiptLineItems.every(
-                    (item) =>
-                        (item.totalAmountInMinor ?? item.priceInMinor) != null,
-                  ),
-            )
-            .toList()
-          ..sort((left, right) => right.date.compareTo(left.date));
-    if (candidates.isEmpty) return null;
-    return syncReceipt(candidates.first);
-  }
-
   Future<ItemizedSplitReceipt> syncReceipt(
     TransactionEntity transaction,
   ) async {

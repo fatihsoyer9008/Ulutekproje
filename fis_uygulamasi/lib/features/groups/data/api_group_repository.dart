@@ -116,9 +116,9 @@ class ApiGroupRepository implements GroupRepository {
 
   @override
   Future<GroupExpense> createExpense(
-    GroupExpense expense, {
+    CreateGroupExpenseRequest request, {
     required String idempotencyKey,
-  }) => _expenses.createExpense(expense, idempotencyKey: idempotencyKey);
+  }) => _expenses.createExpense(request, idempotencyKey: idempotencyKey);
 
   @override
   Future<GroupExpense> createFastSplit(
@@ -162,4 +162,23 @@ class ApiGroupRepository implements GroupRepository {
     Settlement settlement, {
     required String idempotencyKey,
   }) => throw UnsupportedError('Settlement endpointi henüz kullanılamıyor.');
+
+  @override
+  Future<void> createInvitation({
+    required String groupId,
+    required String email,
+    GroupRole role = GroupRole.member,
+  }) => throw UnsupportedError('Davet endpointi henüz kullanılamıyor.');
+
+  @override
+  Future<void> removeMember({
+    required String groupId,
+    required String userId,
+  }) async {
+    await _send(
+      () => _apiClient.dio.delete<Map<String, dynamic>>(
+        '/api/v1/groups/$groupId/members/$userId',
+      ),
+    );
+  }
 }
