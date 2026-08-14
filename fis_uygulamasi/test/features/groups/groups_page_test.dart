@@ -239,6 +239,8 @@ void main() {
     );
 
     expect(find.text('Gruplar yüklenemedi'), findsOneWidget);
+    expect(find.text('Grup bilgileri şu anda alınamıyor.'), findsOneWidget);
+    expect(find.byKey(const Key('groups_error_message')), findsOneWidget);
     expect(find.text('Tekrar dene'), findsOneWidget);
   });
 
