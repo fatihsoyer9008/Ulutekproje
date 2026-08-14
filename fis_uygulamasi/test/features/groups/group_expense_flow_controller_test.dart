@@ -54,6 +54,7 @@ void main() {
       lineItemShares: <ItemizedLineItemShare>[
         ItemizedLineItemShare(
           receiptLineItemId: 'line-1',
+          receiptLineItemPosition: null,
           userId: currentUserId,
           amountInMinor: 10000,
           quantityShareMilli: 1000,
@@ -132,6 +133,7 @@ void main() {
         lineItemShares: <ItemizedLineItemShare>[
           ItemizedLineItemShare(
             receiptLineItemId: 'line-1',
+            receiptLineItemPosition: null,
             userId: currentUserId,
             amountInMinor: 10000,
             quantityShareMilli: 1000,

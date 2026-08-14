@@ -5,7 +5,6 @@ import '../domain/group_models.dart';
 import 'api_group_repository.dart';
 import 'demo_group_seed.dart';
 import 'fake_group_repository.dart';
-import 'group_repository.dart';
 
 final currentGroupUserIdProvider = Provider<String?>(
   (ref) => ref.watch(
