@@ -71,6 +71,9 @@ GoRouter createAppRouter({
         return '/verify-email';
       }
       if (auth.status == AuthStatus.unauthenticated && isProtectedPage) {
+        if (auth.sessionExpired) {
+          return groupsLocation ? groupsLoginLocation(location) : '/login';
+        }
         return '/welcome';
       }
       if (auth.status == AuthStatus.guest && groupsLocation) {
