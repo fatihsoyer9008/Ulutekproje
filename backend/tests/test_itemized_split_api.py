@@ -92,6 +92,8 @@ def _receipt_draft_payload(
                     "quantity_milli": 2_000,
                     "unit_price_in_minor": 3_000,
                     "total_amount_in_minor": 6_000,
+                    "tax_rate_basis_points": 2_000,
+                    "tax_amount_in_minor": 1_000,
                 },
                 {
                     "position": 1,
@@ -604,11 +606,13 @@ async def test_itemized_endpoint_creates_receipt_from_ocr_draft_and_replays(
             line.price_in_minor,
             line.quantity,
             line.unit_price_in_minor,
+            line.tax_rate,
+            line.tax_amount_in_minor,
         )
         for line in stored_lines
     ] == [
-        (0, "Süt", 6_000, Decimal("2.000"), 3_000),
-        (1, "Ekmek", 6_000, Decimal("1.000"), 6_000),
+        (0, "Süt", 6_000, Decimal("2.000"), 3_000, Decimal("20.00"), 1_000),
+        (1, "Ekmek", 6_000, Decimal("1.000"), 6_000, None, None),
     ]
 
     assert receipt_count == 1
@@ -653,6 +657,7 @@ async def test_invalid_ocr_draft_does_not_leave_orphan_receipt(
 
     assert failed.status_code == 422
     assert failed.json()["detail"]["code"] == "unassigned_line_items"
+    assert failed.json()["detail"]["unassigned_receipt_line_item_positions"] == [1]
 
     async with session_factory() as session:
         receipt_count = await session.scalar(

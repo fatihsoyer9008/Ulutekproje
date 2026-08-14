@@ -50,6 +50,8 @@ class ReceiptDraftLineInput:
     quantity_milli: int | None
     unit_price_in_minor: int | None
     total_amount_in_minor: int
+    tax_rate_basis_points: int | None = None
+    tax_amount_in_minor: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,10 +68,14 @@ class ItemizedExpenseValidationError(ValueError):
         code: str,
         *,
         unassigned_receipt_line_item_ids: Sequence[uuid.UUID] = (),
+        unassigned_receipt_line_item_positions: Sequence[int] = (),
     ) -> None:
         super().__init__(code)
         self.code = code
         self.unassigned_receipt_line_item_ids = tuple(unassigned_receipt_line_item_ids)
+        self.unassigned_receipt_line_item_positions = tuple(
+            unassigned_receipt_line_item_positions
+        )
 
 
 class FastSplitValidationError(ValueError):
@@ -310,6 +316,12 @@ class GroupExpenseService:
                     else None
                 ),
                 unit_price_in_minor=line_item.unit_price_in_minor,
+                tax_rate=(
+                    Decimal(line_item.tax_rate_basis_points) / Decimal(100)
+                    if line_item.tax_rate_basis_points is not None
+                    else None
+                ),
+                tax_amount_in_minor=line_item.tax_amount_in_minor,
                 category=line_item.category,
             )
             for line_item in sorted(line_items, key=lambda item: item.position)
@@ -333,19 +345,37 @@ class GroupExpenseService:
             for assignment in assignments
         ]
 
-        return await self.create_itemized(
-            group_id=group_id,
-            receipt_id=receipt.id,
-            actor_user_id=actor_user_id,
-            payer_user_id=payer_user_id,
-            title=title,
-            note=note,
-            expense_date=expense_date,
-            total_amount_in_minor=total_amount_in_minor,
-            currency=currency,
-            assignments=cloud_assignments,
-            extra_amounts=extra_amounts,
-        )
+        try:
+            return await self.create_itemized(
+                group_id=group_id,
+                receipt_id=receipt.id,
+                actor_user_id=actor_user_id,
+                payer_user_id=payer_user_id,
+                title=title,
+                note=note,
+                expense_date=expense_date,
+                total_amount_in_minor=total_amount_in_minor,
+                currency=currency,
+                assignments=cloud_assignments,
+                extra_amounts=extra_amounts,
+            )
+        except ItemizedExpenseValidationError as error:
+            if error.unassigned_receipt_line_item_ids:
+                positions_by_id = {
+                    line.id: line.position for line in receipt.line_items
+                }
+                raise ItemizedExpenseValidationError(
+                    error.code,
+                    unassigned_receipt_line_item_ids=(
+                        error.unassigned_receipt_line_item_ids
+                    ),
+                    unassigned_receipt_line_item_positions=tuple(
+                        positions_by_id[line_id]
+                        for line_id in error.unassigned_receipt_line_item_ids
+                        if line_id in positions_by_id
+                    ),
+                ) from error
+            raise
 
     async def create_itemized(
         self,

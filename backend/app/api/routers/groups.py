@@ -431,6 +431,10 @@ def _raise_itemized_expense_error(
         detail["unassigned_receipt_line_item_ids"] = [
             str(line_item_id) for line_item_id in error.unassigned_receipt_line_item_ids
         ]
+    if error.unassigned_receipt_line_item_positions:
+        detail["unassigned_receipt_line_item_positions"] = list(
+            error.unassigned_receipt_line_item_positions
+        )
 
     raise HTTPException(
         status_code=status_code,
@@ -689,6 +693,8 @@ async def create_itemized_expense(
                         quantity_milli=line_item.quantity_milli,
                         unit_price_in_minor=line_item.unit_price_in_minor,
                         total_amount_in_minor=line_item.total_amount_in_minor,
+                        tax_rate_basis_points=line_item.tax_rate_basis_points,
+                        tax_amount_in_minor=line_item.tax_amount_in_minor,
                     )
                     for line_item in payload.receipt_draft.line_items
                 ],

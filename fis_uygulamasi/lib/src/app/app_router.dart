@@ -277,6 +277,10 @@ Future<void> _createOcrItemizedSplit(
                             meaningfulItems[index].unitPriceInMinor,
                         totalAmountInMinor:
                             meaningfulItems[index].totalAmountInMinor!,
+                        taxRateBasisPoints:
+                            meaningfulItems[index].taxRateBasisPoints,
+                        taxAmountInMinor:
+                            meaningfulItems[index].taxAmountInMinor,
                       ),
                   ],
                 )

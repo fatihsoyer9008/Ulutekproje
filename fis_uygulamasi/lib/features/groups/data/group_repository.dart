@@ -40,6 +40,8 @@ class ItemizedReceiptDraftLineInput {
     required this.quantityMilli,
     required this.unitPriceInMinor,
     required this.totalAmountInMinor,
+    required this.taxRateBasisPoints,
+    required this.taxAmountInMinor,
   });
 
   final int position;
@@ -48,6 +50,8 @@ class ItemizedReceiptDraftLineInput {
   final int? quantityMilli;
   final int? unitPriceInMinor;
   final int totalAmountInMinor;
+  final int? taxRateBasisPoints;
+  final int? taxAmountInMinor;
 }
 
 class ItemizedReceiptDraftInput {

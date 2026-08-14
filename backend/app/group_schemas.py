@@ -199,7 +199,7 @@ class ItemizedLineItemRequest(BaseModel):
 
     receipt_line_item_id: uuid.UUID | None = None
     receipt_line_item_position: int | None = Field(default=None, ge=0)
-    shares: list[ItemizedLineItemShareRequest] = Field(min_length=1)
+    shares: list[ItemizedLineItemShareRequest] = Field(min_length=1, max_length=50)
 
     @model_validator(mode="after")
     def validate_line_reference(self) -> "ItemizedLineItemRequest":
@@ -222,6 +222,10 @@ class ReceiptDraftLineItemRequest(BaseModel):
     quantity_milli: int | None = Field(default=None, gt=0)
     unit_price_in_minor: int | None = Field(default=None, ge=0)
     total_amount_in_minor: int = Field(gt=0)
+    # OCR may return line-level VAT values; preserve them when the draft is
+    # atomically promoted to a CloudReceipt.
+    tax_rate_basis_points: int | None = Field(default=None, ge=0, le=1_000_000)
+    tax_amount_in_minor: int | None = Field(default=None, ge=0)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -234,8 +238,8 @@ class ReceiptDraftRequest(BaseModel):
 
     merchant_name: str | None = Field(default=None, max_length=255)
     category: str | None = Field(default=None, max_length=64)
-    raw_ocr_text: str | None = None
-    line_items: list[ReceiptDraftLineItemRequest] = Field(min_length=1)
+    raw_ocr_text: str | None = Field(default=None, max_length=30_000)
+    line_items: list[ReceiptDraftLineItemRequest] = Field(min_length=1, max_length=100)
 
     @model_validator(mode="after")
     def validate_unique_positions(self) -> "ReceiptDraftRequest":
@@ -258,7 +262,7 @@ class ExpenseExtraAmountRequest(BaseModel):
     type: ExpenseExtraAmountType
     label: str | None = Field(default=None, max_length=255)
     amount_in_minor: int = Field(gt=0)
-    shares: list[ExpenseExtraAmountShareRequest] = Field(min_length=1)
+    shares: list[ExpenseExtraAmountShareRequest] = Field(min_length=1, max_length=50)
 
     @field_validator("label", mode="before")
     @classmethod
@@ -279,8 +283,8 @@ class ItemizedSplitRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["itemized"]
-    line_items: list[ItemizedLineItemRequest] = Field(min_length=1)
-    extra_amounts: list[ExpenseExtraAmountRequest] = Field(default_factory=list)
+    line_items: list[ItemizedLineItemRequest] = Field(min_length=1, max_length=100)
+    extra_amounts: list[ExpenseExtraAmountRequest] = Field(default_factory=list, max_length=20)
 
 
 class ItemizedExpenseCreateRequest(BaseModel):
