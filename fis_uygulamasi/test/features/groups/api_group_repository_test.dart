@@ -25,8 +25,49 @@ void main() {
     expect(container.read(groupRepositoryProvider), isA<ApiGroupRepository>());
     expect(
       container.read(groupRepositoryProvider).capabilities.supportsInvitations,
-      isFalse,
+      isTrue,
     );
+  });
+
+  test('production repository davet oluşturma endpointine POST atar', () async {
+    late RequestOptions captured;
+    final repository = ApiGroupRepository(
+      _client((options) {
+        captured = options;
+        return _jsonResponse(const {
+          'status': 'request_received',
+        }, statusCode: 202);
+      }),
+    );
+
+    await repository.createInvitation(
+      groupId: twoMemberGroupId,
+      email: 'invitee@example.com',
+      role: GroupRole.admin,
+    );
+
+    expect(repository.capabilities.supportsInvitations, isTrue);
+    expect(captured.method, 'POST');
+    expect(captured.path, '/api/v1/groups/$twoMemberGroupId/invitations');
+    expect(captured.data, {'email': 'invitee@example.com', 'role': 'admin'});
+  });
+
+  test('production repository davet kabul endpointine POST atar', () async {
+    late RequestOptions captured;
+    final member = twoMemberGroup.members.first;
+    final repository = ApiGroupRepository(
+      _client((options) {
+        captured = options;
+        return _jsonResponse({'member': member.toJson()}, statusCode: 201);
+      }),
+    );
+
+    final accepted = await repository.acceptInvitation('opaque-token');
+
+    expect(captured.method, 'POST');
+    expect(captured.path, '/api/v1/group-invitations/opaque-token/accept');
+    expect(accepted.groupId, twoMemberGroupId);
+    expect(accepted.userId, member.userId);
   });
 
   test(

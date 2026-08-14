@@ -226,3 +226,15 @@ def test_redaction_removes_email_without_changing_safe_context() -> None:
     )
 
     assert value == ("request_id=req-123 email=<redacted-email> status=failed")
+
+
+def test_group_invitation_token_is_redacted_from_request_path() -> None:
+    token = "secret-single-use-invitation-token"
+    value = redact_personal_data(
+        f"POST /api/v1/group-invitations/{token}/accept status=201"
+    )
+
+    assert token not in value
+    assert value == (
+        "POST /api/v1/group-invitations/<redacted-token>/accept status=201"
+    )

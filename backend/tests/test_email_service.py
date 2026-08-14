@@ -63,6 +63,24 @@ async def test_smtp_sender_uses_real_provider_configuration(
         in reset_plain_body.get_content()
     )
 
+    monkeypatch.setattr(
+        settings,
+        "app_deep_link_base_url",
+        "fiskon://auth",
+    )
+    await SMTPEmailSender().send_group_invitation(
+        email="invitee@example.com",
+        token="invitation-token",
+        group_name="Ev Arkadaşları",
+    )
+    invitation_message = send.await_args.args[0]
+    invitation_plain_body = invitation_message.get_body(preferencelist=("plain",))
+    assert invitation_plain_body is not None
+    assert (
+        "fiskon://auth/group-invitation?token=invitation-token"
+        in invitation_plain_body.get_content()
+    )
+
 
 def test_legacy_smtp_variable_names_remain_supported() -> None:
     configured = Settings(
