@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import AsyncIterator
 
 import httpx
@@ -10,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.dependencies import (
     get_apple_oauth_provider,
+    get_debt_summary_cache,
     get_email_sender,
     get_google_oauth_verifier,
     get_oauth_token_cipher,
@@ -34,6 +36,12 @@ class NoOpEmailSender:
 
     async def send_password_reset(self, *, email: str, token: str) -> None:
         pass
+
+
+class NoOpDebtSummaryCache:
+    async def invalidate_best_effort(self, group_id: uuid.UUID) -> bool:
+        del group_id
+        return True
 
 
 class FakeGoogleVerifier:
@@ -113,6 +121,7 @@ async def oauth_context():
     app.dependency_overrides[get_google_oauth_verifier] = lambda: google
     app.dependency_overrides[get_apple_oauth_provider] = lambda: apple
     app.dependency_overrides[get_oauth_token_cipher] = lambda: cipher
+    app.dependency_overrides[get_debt_summary_cache] = NoOpDebtSummaryCache
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),

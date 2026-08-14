@@ -286,8 +286,13 @@ async def get_debt_summary(
     group_id: uuid.UUID,
     actor_membership: GroupMember = Depends(require_group_member),
     db: AsyncSession = Depends(get_db_session),
+    debt_cache: DebtSummaryCache = Depends(get_debt_summary_cache),
 ) -> DebtSummaryResponse:
     del actor_membership
+
+    cached_summary = await debt_cache.get(group_id)
+    if cached_summary is not None:
+        return DebtSummaryResponse.from_domain(cached_summary)
 
     try:
         summary = await DebtSummaryService(db).get_for_group(group_id)
@@ -300,4 +305,5 @@ async def get_debt_summary(
             },
         ) from None
 
+    await debt_cache.set(summary)
     return DebtSummaryResponse.from_domain(summary)

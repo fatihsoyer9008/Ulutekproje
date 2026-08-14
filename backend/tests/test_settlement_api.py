@@ -1,10 +1,13 @@
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from typing import cast
 
 import httpx
 import pytest
 import pytest_asyncio
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -18,6 +21,7 @@ from app.api.dependencies import (
     get_debt_summary_cache,
 )
 from app.core.database import Base, get_db_session
+from app.domain.debts import DebtSummary
 from app.main import app
 from app.models import (
     ExpenseSplitType,
@@ -27,7 +31,10 @@ from app.models import (
 )
 from app.repositories.group_expenses import GroupExpenseRepository
 from app.repositories.groups import GroupRepository
-from app.services.debt_summary_cache import DebtSummaryCacheUnavailable
+from app.services.debt_summary_cache import (
+    DebtSummaryCache,
+    DebtSummaryCacheUnavailable,
+)
 
 
 class FakeDebtSummaryCache:
@@ -35,6 +42,19 @@ class FakeDebtSummaryCache:
         self.attempted_group_ids: list[uuid.UUID] = []
         self.invalidated_group_ids: list[uuid.UUID] = []
         self.failures_remaining = 0
+        self.summaries: dict[uuid.UUID, DebtSummary] = {}
+        self.get_calls: list[uuid.UUID] = []
+        self.set_calls: list[uuid.UUID] = []
+
+    async def get(self, group_id: uuid.UUID) -> DebtSummary | None:
+        self.get_calls.append(group_id)
+        return self.summaries.get(group_id)
+
+    async def set(self, summary: DebtSummary) -> bool:
+        group_id = uuid.UUID(summary.group_id)
+        self.set_calls.append(group_id)
+        self.summaries[group_id] = summary
+        return True
 
     async def invalidate(self, group_id: uuid.UUID) -> None:
         self.attempted_group_ids.append(group_id)
@@ -44,6 +64,17 @@ class FakeDebtSummaryCache:
             raise DebtSummaryCacheUnavailable("Test cache invalidation failure")
 
         self.invalidated_group_ids.append(group_id)
+        self.summaries.pop(group_id, None)
+
+
+class UnavailableRedis:
+    async def get(self, key: str) -> str | None:
+        del key
+        raise RedisError("redis unavailable")
+
+    async def set(self, key: str, value: str, *, ex: int) -> bool:
+        del key, value, ex
+        raise RedisError("redis unavailable")
 
 
 @pytest_asyncio.fixture
@@ -377,6 +408,15 @@ async def test_settlement_changes_live_debt_summary(
         f"/api/v1/groups/{context['group_id']}/debts"
     )
     assert before_response.status_code == 200
+    cached_before_response = await context["client"].get(
+        f"/api/v1/groups/{context['group_id']}/debts"
+    )
+    assert cached_before_response.json() == before_response.json()
+    assert context["cache"].get_calls == [
+        context["group_id"],
+        context["group_id"],
+    ]
+    assert context["cache"].set_calls == [context["group_id"]]
 
     before_balances = {
         item["user_id"]: item["net_amount_in_minor"]
@@ -403,6 +443,10 @@ async def test_settlement_changes_live_debt_summary(
         f"/api/v1/groups/{context['group_id']}/debts"
     )
     assert after_response.status_code == 200
+    assert context["cache"].set_calls == [
+        context["group_id"],
+        context["group_id"],
+    ]
 
     after_data = after_response.json()
     after_balances = {
@@ -425,6 +469,32 @@ async def test_settlement_changes_live_debt_summary(
     )
     assert list_response.status_code == 200
     assert len(list_response.json()["settlements"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_debt_summary_falls_back_when_redis_is_unavailable(
+    settlement_api_context,
+) -> None:
+    context = settlement_api_context
+    unavailable_cache = DebtSummaryCache(
+        cast(Redis, UnavailableRedis()),
+        max_attempts=1,
+        initial_delay_seconds=0,
+    )
+
+    async def override_unavailable_cache() -> DebtSummaryCache:
+        return unavailable_cache
+
+    app.dependency_overrides[get_debt_summary_cache] = override_unavailable_cache
+    try:
+        response = await context["client"].get(
+            f"/api/v1/groups/{context['group_id']}/debt-summary"
+        )
+    finally:
+        app.dependency_overrides[get_debt_summary_cache] = lambda: context["cache"]
+
+    assert response.status_code == 200
+    assert response.json()["group_id"] == str(context["group_id"])
 
 
 @pytest.mark.asyncio

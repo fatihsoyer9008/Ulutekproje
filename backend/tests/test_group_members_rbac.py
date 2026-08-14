@@ -52,6 +52,7 @@ async def test_only_admin_or_owner_can_add_members(group_api_context) -> None:
     )
     assert added.status_code == 201
     assert added.json()["member"]["role"] == "member"
+    assert current["debt_cache"].invalidated_group_ids == [group_id]
 
     duplicate = await client.post(
         f"/api/v1/groups/{group_id}/members",

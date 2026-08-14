@@ -64,7 +64,7 @@ def test_non_idempotency_integrity_error_is_not_masked() -> None:
 async def test_endpoint_creates_once_and_replays_idempotency_key(
     group_api_context,
 ) -> None:
-    client, session_factory, _, owner, member, _, _ = group_api_context
+    client, session_factory, current, owner, member, _, _ = group_api_context
     async with session_factory() as session:
         group = await GroupRepository(session).create(name="Tatil", created_by=owner.id)
         await GroupRepository(session).add_member(group_id=group.id, user_id=member.id)
@@ -111,6 +111,7 @@ async def test_endpoint_creates_once_and_replays_idempotency_key(
         sum(item["amount_in_minor"] for item in first.json()["expense"]["shares"])
         == 10_000
     )
+    assert current["debt_cache"].invalidated_group_ids == [group_id]
     async with session_factory() as session:
         assert len((await session.execute(GroupExpense.__table__.select())).all()) == 1
 

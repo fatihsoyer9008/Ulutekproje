@@ -14,8 +14,9 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_debt_summary_cache
 from app.core.database import Base, get_db_session
+from app.domain.debts import DebtSummary
 from app.main import app
 from app.models import (
     CloudReceipt,
@@ -28,6 +29,24 @@ from app.models import (
 )
 from app.repositories.group_expenses import GroupExpenseRepository
 from app.repositories.groups import GroupRepository
+
+
+class FakeDebtSummaryCache:
+    def __init__(self) -> None:
+        self.summaries: dict[uuid.UUID, DebtSummary] = {}
+        self.invalidated_group_ids: list[uuid.UUID] = []
+
+    async def get(self, group_id: uuid.UUID) -> DebtSummary | None:
+        return self.summaries.get(group_id)
+
+    async def set(self, summary: DebtSummary) -> bool:
+        self.summaries[uuid.UUID(summary.group_id)] = summary
+        return True
+
+    async def invalidate_best_effort(self, group_id: uuid.UUID) -> bool:
+        self.invalidated_group_ids.append(group_id)
+        self.summaries.pop(group_id, None)
+        return True
 
 
 @pytest_asyncio.fixture
@@ -59,7 +78,8 @@ async def group_api_context():
         session.add_all([owner, member, outsider, former])
         await session.commit()
 
-    current_user = {"value": owner}
+    debt_cache = FakeDebtSummaryCache()
+    current_user = {"value": owner, "debt_cache": debt_cache}
 
     async def override_db() -> AsyncIterator[AsyncSession]:
         async with session_factory() as session:
@@ -68,8 +88,12 @@ async def group_api_context():
     async def override_current_user() -> User:
         return current_user["value"]
 
+    async def override_debt_cache() -> FakeDebtSummaryCache:
+        return debt_cache
+
     app.dependency_overrides[get_db_session] = override_db
     app.dependency_overrides[get_current_user] = override_current_user
+    app.dependency_overrides[get_debt_summary_cache] = override_debt_cache
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),

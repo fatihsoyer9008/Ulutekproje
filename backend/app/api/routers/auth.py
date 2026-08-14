@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import (
     get_apple_oauth_provider,
     get_current_user,
+    get_debt_summary_cache,
     get_email_sender,
     get_google_oauth_verifier,
     get_oauth_token_cipher,
@@ -56,6 +57,7 @@ from app.services.auth_service import (
     InvalidOneTimeToken,
     ReauthenticationRequired,
 )
+from app.services.debt_summary_cache import DebtSummaryCache
 from app.services.email_service import EmailSender
 from app.services.google_oauth import GoogleOAuthVerifier
 from app.services.oauth_service import AccountLinkingRequired, OAuthLoginService
@@ -399,9 +401,10 @@ async def delete_me(
     email_sender: EmailSender = Depends(get_email_sender),
     apple_provider: AppleOAuthProvider = Depends(get_apple_oauth_provider),
     token_cipher: OAuthTokenCipher = Depends(get_oauth_token_cipher),
+    debt_cache: DebtSummaryCache = Depends(get_debt_summary_cache),
 ) -> Response:
     try:
-        await AuthService(db, email_sender).delete_account(
+        affected_group_ids = await AuthService(db, email_sender).delete_account(
             user=user,
             current_password=payload.current_password,
             apple_provider=apple_provider,
@@ -417,6 +420,8 @@ async def delete_me(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Provider revocation is pending; account access was disabled.",
         ) from None
+    for group_id in affected_group_ids:
+        await debt_cache.invalidate_best_effort(group_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
