@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_links/app_links.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:finance_database/finance_database.dart' hide SyncState;
 import 'package:flutter/material.dart';
@@ -11,6 +12,8 @@ import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
 import '../../features/ai_assistant/data/ai_assistant_client.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/backup/data/transaction_json_import_service.dart';
+import '../../features/groups/data/group_providers.dart';
+import '../../features/groups/domain/group_models.dart';
 import '../../features/notifications/notification_navigation_controller.dart';
 import '../../features/sync/application/sync_coordinator.dart';
 import '../../features/sync/domain/sync_state.dart';
@@ -33,6 +36,7 @@ class FinanceApp extends ConsumerStatefulWidget {
     this.transactionImportService,
     this.aiAssistantMessageStream,
     this.profileAiAssistantClient,
+    this.deepLinkStream,
   });
 
   final bool enableAuth;
@@ -47,6 +51,7 @@ class FinanceApp extends ConsumerStatefulWidget {
   final TransactionJsonImportService? transactionImportService;
   final AiAssistantMessageStream? aiAssistantMessageStream;
   final AiAssistantAccessClient? profileAiAssistantClient;
+  final Stream<Uri>? deepLinkStream;
 
   @override
   ConsumerState<FinanceApp> createState() => _FinanceAppState();
@@ -55,6 +60,12 @@ class FinanceApp extends ConsumerStatefulWidget {
 class _FinanceAppState extends ConsumerState<FinanceApp> {
   GoRouter? _router;
   ProviderSubscription<AuthSessionState>? _authSubscription;
+  StreamSubscription<Uri>? _deepLinkSubscription;
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+  String? _pendingGroupInvitationToken;
+  bool _acceptingGroupInvitation = false;
+  bool _invitationLoginMessageShown = false;
 
   @override
   void initState() {
@@ -74,6 +85,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
         }
         if (widget.enableAuth && previous?.status != next.status) {
           _router?.refresh();
+          _continuePendingInvitation(next.status);
         }
       }, fireImmediately: true);
     }
@@ -97,6 +109,14 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
         widget.notificationNavigationController?.attachNavigator((location) {
           unawaited(router.push<void>(location));
         });
+
+        final linkStream = widget.deepLinkStream ?? AppLinks().uriLinkStream;
+        _deepLinkSubscription = linkStream.listen(
+          (uri) => unawaited(_handleDeepLink(uri)),
+          onError: (Object _, StackTrace _) {
+            _showMessage('Bağlantı açılamadı. Lütfen tekrar deneyin.');
+          },
+        );
       }
     }
   }
@@ -104,9 +124,149 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
   @override
   void dispose() {
     _authSubscription?.close();
+    final deepLinkSubscription = _deepLinkSubscription;
+    if (deepLinkSubscription != null) {
+      unawaited(deepLinkSubscription.cancel());
+    }
     widget.notificationNavigationController?.detachNavigator();
     _router?.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleDeepLink(Uri uri) async {
+    if (uri.scheme.toLowerCase() != 'fiskon' ||
+        uri.host.toLowerCase() != 'auth') {
+      return;
+    }
+
+    final token = uri.queryParameters['token']?.trim();
+    if (token == null || token.isEmpty) return;
+
+    if (uri.path == '/verify-email') {
+      _openEmailVerification(token);
+      return;
+    }
+    if (uri.path != '/group-invitation') return;
+
+    _pendingGroupInvitationToken = token;
+    _invitationLoginMessageShown = false;
+    _continuePendingInvitation(ref.read(authSessionControllerProvider).status);
+  }
+
+  void _openEmailVerification(String token) {
+    WidgetsBinding.instance.scheduleFrame();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _router?.go(
+        Uri(
+          path: '/verify-email',
+          queryParameters: {'token': token},
+        ).toString(),
+      );
+    });
+  }
+
+  void _continuePendingInvitation(AuthStatus status) {
+    if (_pendingGroupInvitationToken == null) return;
+
+    switch (status) {
+      case AuthStatus.authenticated:
+        unawaited(_acceptPendingGroupInvitation());
+      case AuthStatus.unauthenticated || AuthStatus.guest:
+        _openInvitationLogin();
+      case AuthStatus.emailVerificationRequired:
+        _showInvitationLoginMessage(
+          'Daveti kabul etmek için e-posta adresinizi doğrulayın.',
+        );
+      case AuthStatus.initializing:
+        break;
+    }
+  }
+
+  void _openInvitationLogin() {
+    WidgetsBinding.instance.scheduleFrame();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _pendingGroupInvitationToken == null) return;
+      _router?.go('/login');
+      _showInvitationLoginMessage(
+        'Grup davetini kabul etmek için giriş yapın.',
+      );
+    });
+  }
+
+  void _showInvitationLoginMessage(String message) {
+    if (_invitationLoginMessageShown) return;
+    _invitationLoginMessageShown = true;
+    _showMessage(message);
+  }
+
+  Future<void> _acceptPendingGroupInvitation() async {
+    if (_acceptingGroupInvitation) return;
+    final token = _pendingGroupInvitationToken;
+    if (token == null) return;
+
+    _acceptingGroupInvitation = true;
+    try {
+      final member = await ref
+          .read(groupRepositoryProvider)
+          .acceptInvitation(token);
+      if (_pendingGroupInvitationToken == token) {
+        _pendingGroupInvitationToken = null;
+      }
+      ref.invalidate(groupsProvider);
+      ref.invalidate(groupDetailProvider(member.groupId));
+      ref.invalidate(groupDebtSummaryProvider(member.groupId));
+      ref.invalidate(groupSettlementsProvider(member.groupId));
+      _navigateAfterInvitation(
+        '/groups/${member.groupId}',
+        'Grup daveti kabul edildi.',
+      );
+    } catch (error) {
+      if (_pendingGroupInvitationToken == token) {
+        _pendingGroupInvitationToken = null;
+      }
+      _showMessage(_invitationErrorMessage(error));
+    } finally {
+      _acceptingGroupInvitation = false;
+      if (_pendingGroupInvitationToken != null &&
+          ref.read(authSessionControllerProvider).status ==
+              AuthStatus.authenticated) {
+        unawaited(_acceptPendingGroupInvitation());
+      }
+    }
+  }
+
+  String _invitationErrorMessage(Object error) {
+    if (error is GroupApiException) {
+      return switch (error.error.detail.code) {
+        'invitation_expired_or_used' =>
+          'Bu davetin süresi dolmuş veya davet daha önce kullanılmış.',
+        'invitation_email_mismatch' =>
+          'Bu davet farklı bir e-posta hesabına ait.',
+        _ => error.error.detail.message,
+      };
+    }
+    return 'Grup daveti kabul edilemedi. Lütfen tekrar deneyin.';
+  }
+
+  void _navigateAfterInvitation(String location, String message) {
+    WidgetsBinding.instance.scheduleFrame();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _router?.go(location);
+      _showMessage(message);
+    });
+  }
+
+  void _showMessage(String message) {
+    WidgetsBinding.instance.scheduleFrame();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = _scaffoldMessengerKey.currentState;
+      messenger
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message)));
+    });
   }
 
   @override
@@ -139,6 +299,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
       return MaterialApp.router(
         title: 'Cüzdanım',
         debugShowCheckedModeBanner: false,
+        scaffoldMessengerKey: _scaffoldMessengerKey,
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: themeMode,

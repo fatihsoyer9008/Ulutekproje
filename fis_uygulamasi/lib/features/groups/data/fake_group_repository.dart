@@ -253,6 +253,33 @@ class FakeGroupRepository implements GroupRepository {
   }
 
   @override
+  Future<GroupMember> acceptInvitation(String token) async {
+    await _beforeRequest();
+    if (token.trim().isEmpty) {
+      throw _apiException(
+        statusCode: 410,
+        code: 'invitation_expired_or_used',
+        message: 'Davet süresi dolmuş veya daha önce kullanılmış.',
+      );
+    }
+
+    final group = _groupsById.values
+        .where(_hasCurrentUserMembership)
+        .firstOrNull;
+    final member = group?.members
+        .where((item) => item.userId == currentUserId && item.leftAt == null)
+        .firstOrNull;
+    if (member == null) {
+      throw _apiException(
+        statusCode: 410,
+        code: 'invitation_expired_or_used',
+        message: 'Davet süresi dolmuş veya daha önce kullanılmış.',
+      );
+    }
+    return GroupMember.fromJson(member.toJson());
+  }
+
+  @override
   Future<GroupMember> addMember({
     required String groupId,
     required String userId,

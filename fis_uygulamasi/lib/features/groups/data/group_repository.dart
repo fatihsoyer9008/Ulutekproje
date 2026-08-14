@@ -137,6 +137,8 @@ abstract interface class GroupRepository
     GroupRole role = GroupRole.member,
   });
 
+  Future<GroupMember> acceptInvitation(String token);
+
   Future<GroupMember> addMember({
     required String groupId,
     required String userId,
