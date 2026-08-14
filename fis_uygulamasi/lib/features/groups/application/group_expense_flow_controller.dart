@@ -83,6 +83,30 @@ class GroupExpenseFlowState {
 
   bool get isSubmitting => status == GroupExpenseFlowStatus.loading;
 
+  /// Mevcut Fast/Itemized Split sonuçlarından aktif kullanıcının payını
+  /// döndürür; yeni bir finans hesaplaması yapmaz.
+  int? get currentUserShareInMinor {
+    final userId = activeUserId;
+    if (userId == null || splitType == null) return null;
+
+    if (splitType != SplitType.itemized) {
+      return fastSplitSharesInMinor[userId] ?? 0;
+    }
+
+    final lineItemTotal = itemizedLineShares
+        .where((share) => share.userId == userId)
+        .fold<int>(0, (total, share) => total + share.amountInMinor);
+
+    final extraAmountTotal = extraAmountShares
+        .where((share) => share.userId == userId)
+        .fold<int>(0, (total, share) => total + share.amountInMinor);
+
+    return lineItemTotal + extraAmountTotal;
+  }
+
+  /// Mevcut Fast/Itemized Split hesaplama sonuçlarından aktif kullanıcının
+  /// payını döndürür; yeni bir finansal hesaplama yapmaz.
+
   GroupExpenseFlowState copyWith({
     GroupExpenseFlowStatus? status,
     GroupExpenseDraft? draft,

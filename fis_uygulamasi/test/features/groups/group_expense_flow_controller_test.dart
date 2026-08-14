@@ -41,6 +41,38 @@ void main() {
     controller.setFastSplit(createFastCalculation());
   }
 
+  void prepareItemizedSplit(GroupExpenseFlowController controller) {
+    controller.start(
+      group: twoMemberGroup,
+      activeUserId: currentUserId,
+      draft: createDraft(),
+    );
+
+    const calculation = ItemizedSplitCalculation(
+      receiptTotalInMinor: 12000,
+      lineItemsTotalInMinor: 10000,
+      lineItemShares: <ItemizedLineItemShare>[
+        ItemizedLineItemShare(
+          receiptLineItemId: 'line-1',
+          userId: currentUserId,
+          amountInMinor: 10000,
+          quantityShareMilli: 1000,
+        ),
+      ],
+      extraAmountShares: <ExtraAmountShare>[
+        ExtraAmountShare(userId: secondUserId, amountInMinor: 2000),
+      ],
+      unassignedReceiptLineItemIds: <String>{},
+      hasUnknownLineTotals: false,
+      hasUnsyncedLineItems: false,
+    );
+
+    controller.setItemizedSplit(
+      receiptId: 'receipt-1',
+      calculation: calculation,
+    );
+  }
+
   test(
     'akış seçili grup, aktif kullanıcı ve taslağı editing state içinde tutar',
     () {
@@ -77,6 +109,7 @@ void main() {
         currentUserId: 6000,
         secondUserId: 6000,
       });
+      expect(controller.state.currentUserShareInMinor, 6000);
     },
   );
 
@@ -122,6 +155,7 @@ void main() {
       expect(controller.state.extraAmountInMinor, 2000);
       expect(controller.state.itemizedLineShares, hasLength(1));
       expect(controller.state.extraAmountShares, hasLength(1));
+      expect(controller.state.currentUserShareInMinor, 10000);
     },
   );
 
@@ -183,6 +217,56 @@ void main() {
     expect(controller.state.status, GroupExpenseFlowStatus.success);
     expect(await repository.listExpenses(twoMemberGroupId), hasLength(1));
   });
+
+  test(
+    'Fake GroupExpenseRepository ile başarılı Itemized Split kaydı success state üretir',
+    () async {
+      final repository = FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      );
+      final controller = GroupExpenseFlowController(repository);
+
+      prepareItemizedSplit(controller);
+      await controller.submitItemizedSplit(
+        idempotencyKey: 'itemized-flow-success',
+      );
+
+      expect(controller.state.status, GroupExpenseFlowStatus.success);
+      expect(controller.state.createdExpense?.splitType, SplitType.itemized);
+      expect(
+        controller.state.createdExpense?.lineItemAssignments,
+        hasLength(1),
+      );
+      expect(controller.state.createdExpense?.extraAmounts, hasLength(1));
+    },
+  );
+
+  test(
+    'Itemized Split repository hatasında taslağı ve atamaları korur',
+    () async {
+      final controller = GroupExpenseFlowController(
+        FakeGroupRepository(
+          groups: const <GroupDetail>[twoMemberGroup],
+          error: groupsApiErrorException,
+        ),
+      );
+
+      prepareItemizedSplit(controller);
+      final draftBeforeSubmit = controller.state.draft;
+
+      await controller.submitItemizedSplit(
+        idempotencyKey: 'itemized-flow-error',
+      );
+
+      expect(controller.state.status, GroupExpenseFlowStatus.error);
+      expect(controller.state.error, isA<GroupApiException>());
+      expect(controller.state.draft, same(draftBeforeSubmit));
+      expect(controller.state.itemizedLineShares, hasLength(1));
+      expect(controller.state.itemizedLineShares.single.amountInMinor, 10000);
+      expect(controller.state.extraAmountShares, hasLength(1));
+      expect(controller.state.extraAmountShares.single.amountInMinor, 2000);
+    },
+  );
 
   test(
     'provider override ile verilen repository kullanılır ve akış temizlenir',
