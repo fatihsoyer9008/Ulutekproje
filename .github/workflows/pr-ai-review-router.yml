@@ -1,0 +1,111 @@
+name: AI PR review router
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ai-pr-router-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  evaluate-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Load trusted router from base revision
+        id: router-source
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          if git cat-file -e "${BASE_SHA}:pr_router.py"; then
+            git show "${BASE_SHA}:pr_router.py" > "${RUNNER_TEMP}/pr_router.py"
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "Router is not on the base branch yet; bootstrap run skipped."
+          fi
+
+      - name: Classify PR and generate filtered diff
+        if: steps.router-source.outputs.available == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          python "${RUNNER_TEMP}/pr_router.py" \
+            "${BASE_SHA}" \
+            "${HEAD_SHA}" \
+            --output filtered_diff.txt > pr_result.txt
+
+      - name: Upload filtered review input
+        if: steps.router-source.outputs.available == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: pr-${{ github.event.pull_request.number }}-filtered-diff
+          path: filtered_diff.txt
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Create or update PR comment
+        if: >-
+          steps.router-source.outputs.available == 'true' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v9
+        env:
+          RESULT_PATH: pr_result.txt
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("fs");
+            const signature = "<!-- AI_PR_ROUTER -->";
+            const result = fs.readFileSync(process.env.RESULT_PATH, "utf8");
+            const artifactUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = `${result}\n\n[Filtrelenmiş diff artifact'ini indir](${artifactUrl})`;
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100,
+              },
+            );
+            const botComment = comments.find(
+              (comment) => comment.user?.type === "Bot" &&
+                comment.body?.includes(signature),
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

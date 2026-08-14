@@ -17,3 +17,7 @@ Desktop.ini
 /.dart-localappdata/
 
 strix_runs
+
+# Local outputs produced by the PR review router
+/filtered_diff.txt
+/pr_result.txt
