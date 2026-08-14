@@ -13,10 +13,17 @@ _EMAIL_PATTERN = re.compile(
     r"(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,63}",
     re.IGNORECASE,
 )
+_GROUP_INVITATION_TOKEN_PATTERN = re.compile(
+    r"(?P<prefix>/api/v1/group-invitations/)[^/?\s]+(?=/accept(?:[/?\s]|$))"
+)
 
 
 def redact_personal_data(value: object) -> str:
-    return _EMAIL_PATTERN.sub("<redacted-email>", str(value))
+    redacted = _EMAIL_PATTERN.sub("<redacted-email>", str(value))
+    return _GROUP_INVITATION_TOKEN_PATTERN.sub(
+        r"\g<prefix><redacted-token>",
+        redacted,
+    )
 
 
 def resolve_request_id(candidate: str | None) -> str:

@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routers.assistant import router as assistant_router
 from app.api.routers.auth import router as auth_router
+from app.api.routers.group_invitations import router as group_invitations_router
 from app.api.routers.groups import router as groups_router
 from app.api.routers.receipts import router as receipt_router
 from app.api.routers.settlements import router as settlements_router
@@ -135,6 +136,7 @@ app.add_middleware(ReceiptImageBodyLimitMiddleware)
 app.include_router(assistant_router)
 app.include_router(auth_router)
 app.include_router(groups_router)
+app.include_router(group_invitations_router)
 app.include_router(receipt_router)
 app.include_router(settlements_router)
 app.include_router(sync_router)
@@ -148,6 +150,7 @@ async def api_http_exception_handler(
     if (
         request.url.path == "/api/v1/groups"
         or request.url.path.startswith("/api/v1/groups/")
+        or request.url.path.startswith("/api/v1/group-invitations/")
     ) and exc.status_code == status.HTTP_401_UNAUTHORIZED:
         return JSONResponse(
             status_code=exc.status_code,
@@ -263,6 +266,7 @@ async def prevent_sensitive_response_caching(
         (
             "/api/v1/auth/",
             "/api/v1/assistant/",
+            "/api/v1/group-invitations/",
             "/api/v1/groups",
         )
     ):
