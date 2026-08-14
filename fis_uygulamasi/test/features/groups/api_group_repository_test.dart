@@ -23,6 +23,10 @@ void main() {
     addTearDown(container.dispose);
 
     expect(container.read(groupRepositoryProvider), isA<ApiGroupRepository>());
+    expect(
+      container.read(groupRepositoryProvider).capabilities.supportsInvitations,
+      isFalse,
+    );
   });
 
   test(

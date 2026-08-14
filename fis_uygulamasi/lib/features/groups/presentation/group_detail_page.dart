@@ -46,6 +46,11 @@ class _GroupDetailContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final expensesAsync = ref.watch(groupExpensesProvider(group.id));
     final currentUserId = ref.watch(authSessionControllerProvider).user?.id;
+    final supportsInvitations = ref.watch(
+      groupRepositoryProvider.select(
+        (repository) => repository.capabilities.supportsInvitations,
+      ),
+    );
     final description = group.description?.trim();
     return SafeArea(
       child: SingleChildScrollView(
@@ -125,12 +130,27 @@ class _GroupDetailContent extends ConsumerWidget {
               action: _canManageMembers
                   ? IconButton(
                       key: const Key('add_group_member_button'),
-                      tooltip: 'Üye ekle',
-                      onPressed: () => _showAddMemberSheet(context, ref),
+                      tooltip: supportsInvitations
+                          ? 'Üye ekle'
+                          : 'Davet sistemi hazırlanıyor',
+                      onPressed: supportsInvitations
+                          ? () => _showAddMemberSheet(context, ref)
+                          : null,
                       icon: const Icon(Icons.person_add_alt_1_rounded),
                     )
                   : null,
             ),
+            if (_canManageMembers && !supportsInvitations) ...[
+              const SizedBox(height: 4),
+              const Row(
+                key: Key('group_invitation_unavailable_message'),
+                children: [
+                  Icon(Icons.info_outline_rounded, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(child: Text('Davet sistemi hazırlanıyor')),
+                ],
+              ),
+            ],
             const SizedBox(height: 8),
             _MembersSection(
               members: group.members,

@@ -63,6 +63,16 @@ void main() {
 
     expect(find.byKey(const Key('add_group_member_button')), findsOneWidget);
     expect(
+      tester
+          .widget<IconButton>(find.byKey(const Key('add_group_member_button')))
+          .onPressed,
+      isNotNull,
+    );
+    expect(
+      find.byKey(const Key('group_invitation_unavailable_message')),
+      findsNothing,
+    );
+    expect(
       find.byKey(Key('remove_group_member_$secondUserId')),
       findsOneWidget,
     );
@@ -84,6 +94,33 @@ void main() {
     expect(find.byKey(const Key('add_group_member_button')), findsNothing);
     expect(find.byKey(Key('remove_group_member_$currentUserId')), findsNothing);
     expect(find.byKey(Key('remove_group_member_$secondUserId')), findsNothing);
+  });
+
+  testWidgets('gerçek API modunda davet aksiyonu capability ile kapatılır', (
+    tester,
+  ) async {
+    await _pumpDetailPage(
+      tester,
+      repository: _InvitationUnavailableRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('add_group_member_button')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    final button = tester.widget<IconButton>(
+      find.byKey(const Key('add_group_member_button')),
+    );
+    expect(button.onPressed, isNull);
+    expect(find.text('Davet sistemi hazırlanıyor'), findsOneWidget);
+    expect(
+      find.byKey(const Key('group_invitation_unavailable_message')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('owner grup daveti gönderebilir', (tester) async {
@@ -375,7 +412,7 @@ void main() {
 
 Future<void> _pumpDetailPage(
   WidgetTester tester, {
-  required FakeGroupRepository repository,
+  required GroupRepository repository,
   String userId = currentUserId,
   String groupId = twoMemberGroupId,
   bool settle = true,
@@ -414,6 +451,14 @@ class _RetryingDetailRepository extends FakeGroupRepository {
 
     return super.getGroup(groupId);
   }
+}
+
+class _InvitationUnavailableRepository extends FakeGroupRepository {
+  _InvitationUnavailableRepository({required super.groups});
+
+  @override
+  GroupRepositoryCapabilities get capabilities =>
+      const GroupRepositoryCapabilities(supportsInvitations: false);
 }
 
 class _RetryingExpenseRepository extends FakeGroupRepository {

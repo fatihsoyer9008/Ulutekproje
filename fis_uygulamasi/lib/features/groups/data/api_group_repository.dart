@@ -11,6 +11,10 @@ class ApiGroupRepository implements GroupRepository {
   ApiGroupRepository(this._apiClient)
     : _expenses = ApiGroupExpenseRepository(_apiClient);
 
+  @override
+  GroupRepositoryCapabilities get capabilities =>
+      const GroupRepositoryCapabilities(supportsInvitations: false);
+
   final ApiClient _apiClient;
   final ApiGroupExpenseRepository _expenses;
 
