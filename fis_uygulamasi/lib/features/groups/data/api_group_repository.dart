@@ -13,7 +13,7 @@ class ApiGroupRepository implements GroupRepository {
 
   @override
   GroupRepositoryCapabilities get capabilities =>
-      const GroupRepositoryCapabilities(supportsInvitations: false);
+      const GroupRepositoryCapabilities(supportsInvitations: true);
 
   final ApiClient _apiClient;
   final ApiGroupExpenseRepository _expenses;
@@ -185,15 +185,25 @@ class ApiGroupRepository implements GroupRepository {
     required String groupId,
     required String email,
     GroupRole role = GroupRole.member,
-  }) => throw const GroupApiException(
-    statusCode: 501,
-    error: GroupApiError(
-      detail: GroupApiErrorDetail(
-        code: 'invitation_unavailable',
-        message: 'Grup daveti özelliği sunucu tarafından henüz desteklenmiyor.',
+  }) async {
+    await _send(
+      () => _apiClient.dio.post<Map<String, dynamic>>(
+        '/api/v1/groups/$groupId/invitations',
+        data: {'email': email, 'role': role.name},
       ),
-    ),
-  );
+    );
+  }
+
+  @override
+  Future<GroupMember> acceptInvitation(String token) async {
+    final encodedToken = Uri.encodeComponent(token);
+    final body = await _send(
+      () => _apiClient.dio.post<Map<String, dynamic>>(
+        '/api/v1/group-invitations/$encodedToken/accept',
+      ),
+    );
+    return GroupMemberEnvelopeApiResponse.fromJson(body).toDomain();
+  }
 
   @override
   Future<void> removeMember({

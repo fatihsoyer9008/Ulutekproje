@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.engine import URL, make_url
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_REVISION = "20260813_0011"
+EXPECTED_REVISION = "20260814_0012"
 PRE_GROUP_REVISION = "20260806_0004"
 PRE_EXPENSE_REVISION = "20260810_0005"
 PRE_ASSIGNMENT_REVISION = "20260811_0006"
@@ -25,6 +25,7 @@ GROUP_TABLES = (
     "group_expense_idempotency_records",
     "settlements",
     "settlement_idempotency_records",
+    "group_invitations",
 )
 
 LEGACY_TABLE_KEYS = (
