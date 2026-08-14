@@ -49,6 +49,10 @@ class FakeGroupRepository implements GroupRepository {
   final GroupApiException? error;
   final DateTime Function() _clock;
 
+  @override
+  GroupRepositoryCapabilities get capabilities =>
+      const GroupRepositoryCapabilities(supportsInvitations: true);
+
   final Map<String, GroupDetail> _groupsById = <String, GroupDetail>{};
   final Map<String, List<GroupExpense>> _expensesByGroup =
       <String, List<GroupExpense>>{};

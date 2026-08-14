@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 
 import '../../../core/network/api_client.dart';
 import '../domain/group_models.dart';
+import 'group_api_failure.dart';
+import 'group_api_models.dart';
 import 'group_repository.dart';
 
 class ApiGroupExpenseRepository implements GroupExpenseRepository {
@@ -132,13 +134,13 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
         data: body,
         options: Options(headers: {'Idempotency-Key': idempotencyKey}),
       );
-      final expense = response.data?['expense'];
-      if (expense is! Map) {
-        throw const FormatException('Grup harcaması cevabı geçersiz.');
-      }
-      return GroupExpense.fromJson(Map<String, Object?>.from(expense));
+      final responseBody = Map<String, Object?>.from(response.data ?? const {});
+      return GroupExpenseEnvelopeApiResponse.fromJson(responseBody).toDomain();
     } on DioException catch (error) {
-      throw groupApiExceptionFromDio(error);
+      throw groupApiExceptionFromDio(
+        error,
+        fallbackMessage: 'Harcama kaydedilemedi. Lütfen tekrar deneyin.',
+      );
     }
   }
 
@@ -158,20 +160,13 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
     required String expenseId,
   }) async {
     final body = await _get('/api/v1/groups/$groupId/expenses/$expenseId');
-    return _expense(body);
+    return GroupExpenseEnvelopeApiResponse.fromJson(body).toDomain();
   }
 
   @override
   Future<List<GroupExpense>> listExpenses(String groupId) async {
     final body = await _get('/api/v1/groups/$groupId/expenses');
-    final expenses = body['expenses'];
-    if (expenses is! List) {
-      throw const FormatException('Grup harcamaları cevabı geçersiz.');
-    }
-    return [
-      for (final item in expenses)
-        if (item is Map) GroupExpense.fromJson(Map<String, Object?>.from(item)),
-    ];
+    return GroupExpensesApiResponse.fromJson(body).toDomain();
   }
 
   Future<Map<String, Object?>> _get(String path) async {
@@ -179,38 +174,10 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
       final response = await _apiClient.dio.get<Map<String, dynamic>>(path);
       return Map<String, Object?>.from(response.data ?? const {});
     } on DioException catch (error) {
-      throw groupApiExceptionFromDio(error);
-    }
-  }
-
-  GroupExpense _expense(Map<String, Object?> body) {
-    final expense = body['expense'];
-    if (expense is! Map) {
-      throw const FormatException('Grup harcaması cevabı geçersiz.');
-    }
-    return GroupExpense.fromJson(Map<String, Object?>.from(expense));
-  }
-}
-
-GroupApiException groupApiExceptionFromDio(DioException error) {
-  final statusCode = error.response?.statusCode ?? 503;
-  final body = error.response?.data;
-  if (body is Map && body['detail'] is Map) {
-    final detail = Map<String, Object?>.from(body['detail'] as Map);
-    if (detail['code'] is String && detail['message'] is String) {
-      return GroupApiException(
-        statusCode: statusCode,
-        error: GroupApiError.fromJson(<String, Object?>{'detail': detail}),
+      throw groupApiExceptionFromDio(
+        error,
+        fallbackMessage: 'Grup harcamaları alınamadı. Lütfen tekrar deneyin.',
       );
     }
   }
-  return GroupApiException(
-    statusCode: statusCode,
-    error: const GroupApiError(
-      detail: GroupApiErrorDetail(
-        code: 'service_unavailable',
-        message: 'Grup harcaması kaydedilemedi. Lütfen tekrar deneyin.',
-      ),
-    ),
-  );
 }
