@@ -5,8 +5,10 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import func, select
 
+from app.group_schemas import ReceiptDraftLineItemRequest
 from app.models import (
     CloudReceipt,
     CloudReceiptLineItem,
@@ -14,6 +16,16 @@ from app.models import (
     GroupExpenseIdempotencyRecord,
 )
 from app.repositories.groups import GroupRepository
+
+
+def test_receipt_draft_tax_rate_cannot_exceed_one_hundred_percent() -> None:
+    with pytest.raises(ValidationError):
+        ReceiptDraftLineItemRequest(
+            position=0,
+            name="Süt",
+            total_amount_in_minor=6_000,
+            tax_rate_basis_points=10_001,
+        )
 
 
 async def _seed_itemized_context(

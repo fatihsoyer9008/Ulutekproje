@@ -55,7 +55,7 @@ class GroupExpenseDraftMapper {
         : roundedQuantityMilli;
     final taxRate = item.taxRate;
     final taxRateBasisPoints =
-        taxRate == null || !taxRate.isFinite || taxRate < 0
+        taxRate == null || !taxRate.isFinite || taxRate < 0 || taxRate > 1
         ? null
         : (taxRate * 10000).round();
     final calculatedTotal = ReceiptTotalValidation.calculateItemTotalInMinor(

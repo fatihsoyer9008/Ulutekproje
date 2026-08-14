@@ -224,7 +224,7 @@ class ReceiptDraftLineItemRequest(BaseModel):
     total_amount_in_minor: int = Field(gt=0)
     # OCR may return line-level VAT values; preserve them when the draft is
     # atomically promoted to a CloudReceipt.
-    tax_rate_basis_points: int | None = Field(default=None, ge=0, le=1_000_000)
+    tax_rate_basis_points: int | None = Field(default=None, ge=0, le=10_000)
     tax_amount_in_minor: int | None = Field(default=None, ge=0)
 
     @field_validator("name", mode="before")

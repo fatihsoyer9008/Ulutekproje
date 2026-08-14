@@ -232,6 +232,23 @@ void main() {
       expect(item.taxAmountInMinor, isNull);
     });
 
+    test('yüzde yüzü aşan vergi oranını taslağa taşımaz', () {
+      final result = mapper.fromTransactionDraft(
+        source: const TransactionDraft(
+          institutionName: 'Market',
+          category: 'Market',
+          amountInMinor: 1000,
+          receiptItems: [
+            ReceiptItem(name: 'Ürün', totalAmountInMinor: 1000, taxRate: 20),
+          ],
+        ),
+        groupId: 'group-1',
+        payerUserId: 'user-1',
+      );
+
+      expect(result.items.single.taxRateBasisPoints, isNull);
+    });
+
     test('kaynak listeyi değiştirmez ve çıktı listesini immutable tutar', () {
       final sourceItems = <ReceiptItem>[const ReceiptItem(name: 'Süt')];
       final source = TransactionDraft(

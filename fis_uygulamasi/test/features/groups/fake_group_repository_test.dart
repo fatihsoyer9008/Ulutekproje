@@ -118,6 +118,20 @@ void main() {
         },
       });
     });
+
+    test('itemized API hatasındaki draft satır pozisyonlarını korur', () {
+      final detail = GroupApiErrorDetail.fromJson(<String, Object?>{
+        'code': 'unassigned_line_items',
+        'message': 'Atanmayan ürünler var.',
+        'unassigned_receipt_line_item_positions': <Object?>[1, 3],
+      });
+
+      expect(detail.unassignedReceiptLineItemPositions, <int>[1, 3]);
+      expect(detail.toJson()['unassigned_receipt_line_item_positions'], <int>[
+        1,
+        3,
+      ]);
+    });
   });
 
   group('FakeGroupRepository', () {

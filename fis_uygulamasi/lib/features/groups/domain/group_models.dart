@@ -740,12 +740,15 @@ class GroupApiErrorDetail {
     required this.message,
     this.fieldErrors,
     this.unassignedReceiptLineItemIds,
+    this.unassignedReceiptLineItemPositions,
   });
 
   factory GroupApiErrorDetail.fromJson(Map<String, Object?> json) {
     final fieldErrorsJson = json['field_errors'] as List<Object?>?;
     final unassignedIdsJson =
         json['unassigned_receipt_line_item_ids'] as List<Object?>?;
+    final unassignedPositionsJson =
+        json['unassigned_receipt_line_item_positions'] as List<Object?>?;
     return GroupApiErrorDetail(
       code: json['code']! as String,
       message: json['message']! as String,
@@ -758,6 +761,9 @@ class GroupApiErrorDetail {
       unassignedReceiptLineItemIds: unassignedIdsJson
           ?.map((item) => item! as String)
           .toList(growable: false),
+      unassignedReceiptLineItemPositions: unassignedPositionsJson
+          ?.map((item) => item! as int)
+          .toList(growable: false),
     );
   }
 
@@ -765,6 +771,7 @@ class GroupApiErrorDetail {
   final String message;
   final List<GroupApiFieldError>? fieldErrors;
   final List<String>? unassignedReceiptLineItemIds;
+  final List<int>? unassignedReceiptLineItemPositions;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'code': code,
@@ -775,6 +782,9 @@ class GroupApiErrorDetail {
           .toList(growable: false),
     if (unassignedReceiptLineItemIds != null)
       'unassigned_receipt_line_item_ids': unassignedReceiptLineItemIds,
+    if (unassignedReceiptLineItemPositions != null)
+      'unassigned_receipt_line_item_positions':
+          unassignedReceiptLineItemPositions,
   };
 }
 

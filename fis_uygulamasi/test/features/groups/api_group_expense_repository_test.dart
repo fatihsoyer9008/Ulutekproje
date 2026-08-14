@@ -115,10 +115,10 @@ void main() {
               name: 'Süt',
               category: 'Gıda',
               quantityMilli: 1000,
-                unitPriceInMinor: 6000,
-                totalAmountInMinor: 6000,
-                taxRateBasisPoints: 2000,
-                taxAmountInMinor: 1000,
+              unitPriceInMinor: 6000,
+              totalAmountInMinor: 6000,
+              taxRateBasisPoints: 2000,
+              taxAmountInMinor: 1000,
             ),
           ],
         ),
@@ -159,6 +159,8 @@ void main() {
       'quantity_milli': 1000,
       'unit_price_in_minor': 6000,
       'total_amount_in_minor': 6000,
+      'tax_rate_basis_points': 2000,
+      'tax_amount_in_minor': 1000,
     });
 
     final split = body['split'] as Map;

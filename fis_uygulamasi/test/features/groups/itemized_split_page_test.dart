@@ -27,6 +27,21 @@ const _receipt = ItemizedSplitReceipt(
   ],
 );
 
+const _draftReceipt = ItemizedSplitReceipt(
+  receiptId: null,
+  totalAmountInMinor: 6000,
+  lineItems: [
+    ItemizedReceiptLine(
+      receiptLineItemId: null,
+      receiptLineItemPosition: 0,
+      name: 'Süt',
+      quantityMilli: 1000,
+      unitPriceInMinor: 6000,
+      totalAmountInMinor: 6000,
+    ),
+  ],
+);
+
 void main() {
   testWidgets('ürün alanlarını ve eksik değerleri doğru gösterir', (
     tester,
@@ -167,6 +182,56 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('1 ürün henüz'), findsOneWidget);
     expect(find.textContaining('Organik tam buğday ekmeği'), findsWidgets);
+    expect(
+      find.text('Atanmayan ürünleri seçip tekrar deneyin.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('backend draft pozisyon hatasını OCR ürününe geri yansıtır', (
+    tester,
+  ) async {
+    await _pumpPage(
+      tester,
+      receipt: _draftReceipt,
+      onSubmit: (_) async => throw const GroupApiException(
+        statusCode: 422,
+        error: GroupApiError(
+          detail: GroupApiErrorDetail(
+            code: 'unassigned_line_items',
+            message: 'Atanmayan ürünler var.',
+            unassignedReceiptLineItemPositions: [0],
+          ),
+        ),
+      ),
+    );
+    await tester.enterText(
+      find.byKey(const Key('itemized_split_title')),
+      'Market',
+    );
+    final member = find.byKey(Key('itemized_line_0_member_$currentUserId'));
+    await _scrollTo(tester, member);
+    await tester.tap(member);
+    await tester.pump();
+
+    final submit = find.byKey(const Key('itemized_split_submit'));
+    await _scrollTo(tester, submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+
+    await tester.fling(
+      find
+          .descendant(
+            of: find.byKey(const Key('itemized_split_scroll_view')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+      const Offset(0, 1200),
+      2000,
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('1 ürün henüz'), findsOneWidget);
+    expect(find.textContaining('Süt'), findsWidgets);
     expect(
       find.text('Atanmayan ürünleri seçip tekrar deneyin.'),
       findsOneWidget,

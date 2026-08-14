@@ -308,10 +308,14 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
       if (!mounted) return;
 
       if (error.code == 'unassigned_line_items') {
+        final detail = error.error.detail;
         setState(() {
-          _splitState = _splitState.withServerUnassignedLineItems(
-            error.error.detail.unassignedReceiptLineItemIds ?? const [],
-          );
+          _splitState = _splitState.withServerUnassignedLineItems(<String>{
+            ...?detail.unassignedReceiptLineItemIds,
+            for (final position
+                in detail.unassignedReceiptLineItemPositions ?? const [])
+              'draft-position-$position',
+          });
         });
         _showError('Atanmayan ürünleri seçip tekrar deneyin.');
       } else if (error.code == 'receipt_not_synced') {
