@@ -23,8 +23,16 @@ IGNORED_SUFFIXES = (
     ".jpeg",
     ".svg",
     ".webp",
-    ".json",
     ".md",
+)
+IGNORED_JSON_FILENAMES = (
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+)
+IGNORED_JSON_SUFFIXES = (
+    ".g.json",
+    ".generated.json",
+    ".lock.json",
 )
 IGNORED_PATH_PARTS = (
     "/generated/",
@@ -48,6 +56,10 @@ CRITICAL_KEYWORDS = (
     "workflow",
     "docker-compose",
     "api_contract",
+    "openapi",
+    "swagger",
+    "contracts/",
+    "api/schema",
 )
 
 
@@ -55,7 +67,12 @@ CRITICAL_KEYWORDS = (
 class DiffEntry:
     added: int | None
     deleted: int | None
-    filename: str
+    filenames: tuple[str, ...]
+
+    @property
+    def filename(self) -> str:
+        """Return the destination path, or the only path for a normal change."""
+        return self.filenames[-1]
 
     @property
     def changed_lines(self) -> int:
@@ -64,37 +81,66 @@ class DiffEntry:
         return self.added + self.deleted
 
 
-def _run_git(*args: str) -> str:
+def _run_git_bytes(*args: str) -> bytes:
     result = subprocess.run(
         ["git", *args],
         capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
         check=False,
     )
     if result.returncode != 0:
-        message = result.stderr.strip() or "Bilinmeyen Git hatası"
-        raise RuntimeError(message)
+        message = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(message or "Bilinmeyen Git hatası")
     return result.stdout
 
 
-def get_git_diff_stats(base_ref: str, head_ref: str) -> list[DiffEntry]:
-    output = _run_git("diff", f"{base_ref}...{head_ref}", "--numstat")
+def _run_git(*args: str) -> str:
+    return _run_git_bytes(*args).decode("utf-8", errors="replace")
+
+
+def parse_numstat_z(output: bytes) -> list[DiffEntry]:
+    """Parse Git's machine-safe ``--numstat -z`` output.
+
+    A normal record ends with one path. Rename/copy entries carry an empty
+    path in the header, followed by the real old and new paths. We retain both
+    paths instead of using Git's display-only ``{old => new}`` notation.
+    """
+    fields = output.decode("utf-8", errors="surrogateescape").split("\0")
     entries: list[DiffEntry] = []
-    for line in output.splitlines():
-        parts = line.split("\t", maxsplit=2)
+    index = 0
+    while index < len(fields):
+        header = fields[index]
+        index += 1
+        if not header:
+            continue
+
+        parts = header.split("\t", maxsplit=2)
         if len(parts) != 3:
             continue
-        added, deleted, filename = parts
+        added, deleted, path = parts
+        if path:
+            filenames = (path,)
+        else:
+            if index + 1 >= len(fields):
+                break
+            old_path, new_path = fields[index], fields[index + 1]
+            index += 2
+            filenames = tuple(path for path in (old_path, new_path) if path)
+            if not filenames:
+                continue
+
         entries.append(
             DiffEntry(
                 added=None if added == "-" else int(added),
                 deleted=None if deleted == "-" else int(deleted),
-                filename=filename,
+                filenames=filenames,
             )
         )
     return entries
+
+
+def get_git_diff_stats(base_ref: str, head_ref: str) -> list[DiffEntry]:
+    output = _run_git_bytes("diff", f"{base_ref}...{head_ref}", "--numstat", "-z")
+    return parse_numstat_z(output)
 
 
 def critical_triggers(filename: str) -> tuple[str, ...]:
@@ -106,6 +152,9 @@ def should_ignore(filename: str) -> bool:
     normalized = f"/{filename.replace('\\', '/').lower().lstrip('/')}"
     if critical_triggers(normalized):
         return False
+    basename = normalized.rsplit("/", maxsplit=1)[-1]
+    if basename in IGNORED_JSON_FILENAMES or basename.endswith(IGNORED_JSON_SUFFIXES):
+        return True
     if normalized.endswith(IGNORED_SUFFIXES):
         return True
     return any(part in normalized for part in IGNORED_PATH_PARTS)
@@ -135,8 +184,19 @@ def generate_filtered_diff(
 
 def evaluate_pr(base_ref: str, head_ref: str, output_path: Path) -> str:
     entries = get_git_diff_stats(base_ref, head_ref)
-    valid_entries = [entry for entry in entries if not should_ignore(entry.filename)]
-    valid_files = list(dict.fromkeys(entry.filename for entry in valid_entries))
+    # Count every file operation once. A rename is reviewable when either the
+    # old or new path is meaningful (e.g. generated JSON renamed to an API
+    # contract), while both real paths are passed to Git as pathspecs.
+    valid_entries = [
+        entry
+        for entry in entries
+        if any(not should_ignore(filename) for filename in entry.filenames)
+    ]
+    valid_files = list(
+        dict.fromkeys(
+            filename for entry in valid_entries for filename in entry.filenames
+        )
+    )
     generate_filtered_diff(base_ref, head_ref, valid_files, output_path)
 
     meaningful_lines = sum(entry.changed_lines for entry in valid_entries)
@@ -144,7 +204,8 @@ def evaluate_pr(base_ref: str, head_ref: str, output_path: Path) -> str:
         {
             trigger
             for entry in valid_entries
-            for trigger in critical_triggers(entry.filename)
+            for filename in entry.filenames
+            for trigger in critical_triggers(filename)
         }
     )
 
@@ -164,10 +225,7 @@ def evaluate_pr(base_ref: str, head_ref: str, output_path: Path) -> str:
         lines.extend(
             [
                 "### Karar: Derin inceleme",
-                (
-                    "Kritik auth, güvenlik, migration veya finansal mantık "
-                    "değişikliği bulundu."
-                ),
+                "Kritik auth, güvenlik, migration veya finansal mantık değişikliği bulundu.",
             ]
         )
     elif meaningful_lines > MEDIUM_MAX:
@@ -181,10 +239,7 @@ def evaluate_pr(base_ref: str, head_ref: str, output_path: Path) -> str:
         lines.extend(
             [
                 "### Karar: Aşamalı inceleme",
-                (
-                    "Önce hızlı modelle özet çıkarın; riskli bölümleri derin "
-                    "incelemeye aktarın."
-                ),
+                "Önce hızlı modelle özet çıkarın; riskli bölümleri derin incelemeye aktarın.",
             ]
         )
     else:
@@ -198,10 +253,8 @@ def evaluate_pr(base_ref: str, head_ref: str, output_path: Path) -> str:
     lines.extend(
         [
             "",
-            (
-                "Token tasarrufu için incelemede workflow artifact'i içindeki "
-                "`filtered_diff.txt` dosyasını kullanın."
-            ),
+            "Token tasarrufu için incelemede workflow artifact'i içindeki "
+            "`filtered_diff.txt` dosyasını kullanın.",
         ]
     )
     return "\n".join(lines)

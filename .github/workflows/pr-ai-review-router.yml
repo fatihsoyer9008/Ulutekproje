@@ -13,6 +13,22 @@ permissions:
   pull-requests: write
 
 jobs:
+  router-regression-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run PR router regression tests
+        run: python -m unittest discover -s tests -p "test_pr_router.py" -v
+
   evaluate-pr:
     runs-on: ubuntu-latest
     timeout-minutes: 5
