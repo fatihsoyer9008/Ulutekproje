@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_main/features/ai_assistant/data/ai_assistant_client.dart';
 import 'package:app_main/features/ai_assistant/presentation/assistant_consent_card.dart';
 import 'package:app_main/features/auth/data/auth_repository.dart';
@@ -155,6 +157,28 @@ void main() {
     expect(find.byType(GroupsPage), findsOneWidget);
   });
 
+  testWidgets('expired API session redirects protected group route to login', (
+    tester,
+  ) async {
+    final unauthorizedEvents = StreamController<void>();
+    addTearDown(unauthorizedEvents.close);
+    final controller = AuthSessionController(
+      _NavigationAuthRepository(),
+      unauthorizedEvents: unauthorizedEvents.stream,
+    );
+    await controller.login('user@example.com', 'password');
+
+    await _pumpApp(tester, controller);
+    await _openGroupsFromDrawer(tester);
+    expect(find.byType(GroupsPage), findsOneWidget);
+
+    unauthorizedEvents.add(null);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('login_submit_button')), findsOneWidget);
+    expect(find.textContaining('Oturum süreniz doldu'), findsOneWidget);
+  });
+
   testWidgets('profile route keeps the AI assistant consent card', (
     tester,
   ) async {
@@ -181,12 +205,16 @@ Future<void> _pumpApp(
     ProviderScope(
       overrides: [
         authSessionControllerProvider.overrideWith((ref) => controller),
-        if (groupRepository != null)
-          groupRepositoryProvider.overrideWithValue(groupRepository)
-        else
-          groupRepositoryProvider.overrideWith(
-            (ref) => ref.watch(fakeGroupRepositoryProvider),
-          ),
+        groupRepositoryProvider.overrideWithValue(
+          groupRepository ??
+              FakeGroupRepository(
+                currentUserId: currentUserId,
+                groups: const [twoMemberGroup],
+                debtSummariesByGroup: const {
+                  twoMemberGroupId: currentUserDebtorDebtSummary,
+                },
+              ),
+        ),
       ],
       child: FinanceApp(
         enableAuth: true,
@@ -230,7 +258,7 @@ class _NavigationAuthRepository implements AuthRepositoryBase {
   Future<AuthUser> login({
     required String email,
     required String password,
-  }) async => AuthUser(id: 'user-id', email: email, isEmailVerified: true);
+  }) async => AuthUser(id: currentUserId, email: email, isEmailVerified: true);
 
   @override
   Future<AuthUser> signInWithGoogle() =>

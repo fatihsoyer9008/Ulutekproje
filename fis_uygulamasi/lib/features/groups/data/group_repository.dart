@@ -1,5 +1,11 @@
 import '../domain/group_models.dart';
 
+class GroupRepositoryCapabilities {
+  const GroupRepositoryCapabilities({required this.supportsInvitations});
+
+  final bool supportsInvitations;
+}
+
 class FastSplitExpenseRequest {
   const FastSplitExpenseRequest({
     required this.groupId,
@@ -146,6 +152,8 @@ abstract interface class DebtSummaryRepository {
 
 abstract interface class GroupRepository
     implements GroupExpenseRepository, DebtSummaryRepository {
+  GroupRepositoryCapabilities get capabilities;
+
   Future<GroupsResponse> listGroups({bool includeArchived = false});
 
   Future<GroupDetail> getGroup(String groupId);
@@ -172,6 +180,8 @@ abstract interface class GroupRepository
     required String email,
     GroupRole role = GroupRole.member,
   });
+
+  Future<GroupMember> acceptInvitation(String token);
 
   Future<GroupMember> addMember({
     required String groupId,

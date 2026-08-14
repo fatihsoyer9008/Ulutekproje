@@ -50,7 +50,8 @@ class FakeGroupRepository implements GroupRepository {
   final DateTime Function() _clock;
 
   @override
-  bool get supportsInvitations => true;
+  GroupRepositoryCapabilities get capabilities =>
+      const GroupRepositoryCapabilities(supportsInvitations: true);
 
   final Map<String, GroupDetail> _groupsById = <String, GroupDetail>{};
   final Map<String, List<GroupExpense>> _expensesByGroup =
@@ -249,6 +250,33 @@ class FakeGroupRepository implements GroupRepository {
     }
 
     // Production davranışı: davet kabul edilmeden üyelik oluşmaz.
+  }
+
+  @override
+  Future<GroupMember> acceptInvitation(String token) async {
+    await _beforeRequest();
+    if (token.trim().isEmpty) {
+      throw _apiException(
+        statusCode: 410,
+        code: 'invitation_expired_or_used',
+        message: 'Davet süresi dolmuş veya daha önce kullanılmış.',
+      );
+    }
+
+    final group = _groupsById.values
+        .where(_hasCurrentUserMembership)
+        .firstOrNull;
+    final member = group?.members
+        .where((item) => item.userId == currentUserId && item.leftAt == null)
+        .firstOrNull;
+    if (member == null) {
+      throw _apiException(
+        statusCode: 410,
+        code: 'invitation_expired_or_used',
+        message: 'Davet süresi dolmuş veya daha önce kullanılmış.',
+      );
+    }
+    return GroupMember.fromJson(member.toJson());
   }
 
   @override

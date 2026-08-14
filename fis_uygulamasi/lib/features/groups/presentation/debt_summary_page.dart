@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../transaction_draft/model/turkish_money.dart';
+import '../data/group_api_failure.dart';
 import '../domain/group_models.dart';
 
 typedef DebtSummaryLoader = Future<DebtSummary> Function();
@@ -73,7 +74,10 @@ class _DebtSummaryPageState extends State<DebtSummaryPage> {
         key: const Key('debt_summary_error'),
         icon: Icons.cloud_off_outlined,
         title: 'Borç özeti yüklenemedi',
-        message: 'Bağlantını kontrol edip tekrar deneyebilirsin.',
+        message: groupUserMessage(
+          _error!,
+          fallbackMessage: 'Bağlantını kontrol edip tekrar deneyebilirsin.',
+        ),
         actionLabel: 'Tekrar Dene',
         onAction: _load,
       );
@@ -228,10 +232,17 @@ class _DebtSummaryPageState extends State<DebtSummaryPage> {
     try {
       await widget.onMarkPaid(transfer);
       await _load();
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ödeme kaydedilemedi. Tekrar deneyin.')),
+          SnackBar(
+            content: Text(
+              groupUserMessage(
+                error,
+                fallbackMessage: 'Ödeme kaydedilemedi. Tekrar deneyin.',
+              ),
+            ),
+          ),
         );
       }
     } finally {

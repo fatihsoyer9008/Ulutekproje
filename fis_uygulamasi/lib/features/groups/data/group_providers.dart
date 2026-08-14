@@ -2,9 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../domain/group_models.dart';
+import 'api_group_repository.dart';
 import 'demo_group_seed.dart';
 import 'fake_group_repository.dart';
-import 'api_group_repository.dart';
+import 'group_repository.dart';
 
 final currentGroupUserIdProvider = Provider<String?>(
   (ref) => ref.watch(
@@ -37,8 +38,12 @@ final fakeGroupRepositoryProvider = Provider<FakeGroupRepository>((ref) {
   );
 });
 
-final groupRepositoryProvider = Provider<GroupRepository>(
+final apiGroupRepositoryProvider = Provider<ApiGroupRepository>(
   (ref) => ApiGroupRepository(ref.watch(apiClientProvider)),
+);
+
+final groupRepositoryProvider = Provider<GroupRepository>(
+  (ref) => ref.watch(apiGroupRepositoryProvider),
 );
 
 final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(

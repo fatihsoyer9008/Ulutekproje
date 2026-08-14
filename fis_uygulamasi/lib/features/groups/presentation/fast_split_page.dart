@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../transaction_draft/model/turkish_money.dart';
 import '../application/fast_split_calculator.dart';
+import '../data/group_api_failure.dart';
 import '../domain/group_models.dart';
 import 'itemized_split_page.dart';
 
@@ -380,8 +381,15 @@ class _FastSplitPageState extends State<FastSplitPage> {
           Navigator.of(context).pop();
         }
       }
-    } catch (_) {
-      if (mounted) _showError('Harcama kaydedilemedi. Lütfen tekrar deneyin.');
+    } catch (error) {
+      if (mounted) {
+        _showError(
+          groupUserMessage(
+            error,
+            fallbackMessage: 'Harcama kaydedilemedi. Lütfen tekrar deneyin.',
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }

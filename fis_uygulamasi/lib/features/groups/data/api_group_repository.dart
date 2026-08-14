@@ -3,11 +3,17 @@ import 'package:dio/dio.dart';
 import '../../../core/network/api_client.dart';
 import '../domain/group_models.dart';
 import 'api_group_expense_repository.dart';
+import 'group_api_failure.dart';
+import 'group_api_models.dart';
 import 'group_repository.dart';
 
 class ApiGroupRepository implements GroupRepository {
   ApiGroupRepository(this._apiClient)
     : _expenses = ApiGroupExpenseRepository(_apiClient);
+
+  @override
+  GroupRepositoryCapabilities get capabilities =>
+      const GroupRepositoryCapabilities(supportsInvitations: true);
 
   final ApiClient _apiClient;
   final ApiGroupExpenseRepository _expenses;
@@ -21,13 +27,13 @@ class ApiGroupRepository implements GroupRepository {
       '/api/v1/groups',
       queryParameters: {'include_archived': includeArchived},
     );
-    return GroupsResponse.fromJson(body);
+    return GroupsApiResponse.fromJson(body).toDomain();
   }
 
   @override
   Future<GroupDetail> getGroup(String groupId) async {
     final body = await _get('/api/v1/groups/$groupId');
-    return GroupDetail.fromJson(_envelope(body, 'group'));
+    return GroupEnvelopeApiResponse.fromJson(body).toDomain();
   }
 
   @override
@@ -42,7 +48,7 @@ class ApiGroupRepository implements GroupRepository {
         data: {'name': name, 'description': description, 'currency': currency},
       ),
     );
-    return GroupDetail.fromJson(_envelope(body, 'group'));
+    return GroupEnvelopeApiResponse.fromJson(body).toDomain();
   }
 
   @override
@@ -62,7 +68,7 @@ class ApiGroupRepository implements GroupRepository {
         },
       ),
     );
-    return GroupDetail.fromJson(_envelope(body, 'group'));
+    return GroupEnvelopeApiResponse.fromJson(body).toDomain();
   }
 
   @override
@@ -87,7 +93,7 @@ class ApiGroupRepository implements GroupRepository {
         data: {'user_id': userId, 'role': role.name},
       ),
     );
-    return GroupMember.fromJson(_envelope(body, 'member'));
+    return GroupMemberEnvelopeApiResponse.fromJson(body).toDomain();
   }
 
   Future<Map<String, Object?>> _get(
@@ -107,14 +113,11 @@ class ApiGroupRepository implements GroupRepository {
       final response = await request();
       return Map<String, Object?>.from(response.data ?? const {});
     } on DioException catch (error) {
-      throw groupApiExceptionFromDio(error);
+      throw groupApiExceptionFromDio(
+        error,
+        fallbackMessage: 'Grup işlemi tamamlanamadı. Lütfen tekrar deneyin.',
+      );
     }
-  }
-
-  Map<String, Object?> _envelope(Map<String, Object?> body, String key) {
-    final value = body[key];
-    if (value is! Map) throw const FormatException('Grup cevabı geçersiz.');
-    return Map<String, Object?>.from(value);
   }
 
   @override
@@ -148,25 +151,13 @@ class ApiGroupRepository implements GroupRepository {
   @override
   Future<DebtSummary> getDebtSummary(String groupId) async {
     final body = await _get('/api/v1/groups/$groupId/debts');
-    return DebtSummary.fromJson(body);
+    return DebtSummaryApiResponse.fromJson(body).toDomain();
   }
 
   @override
   Future<List<Settlement>> listSettlements(String groupId) async {
     final body = await _get('/api/v1/groups/$groupId/settlements');
-    final values = body['settlements'];
-
-    if (values is! List) {
-      throw const FormatException('Settlement listesi cevabı geçersiz.');
-    }
-
-    return [
-      for (final value in values)
-        if (value is Map)
-          Settlement.fromJson(Map<String, Object?>.from(value))
-        else
-          throw const FormatException('Settlement listesi elemanı geçersiz.'),
-    ];
+    return SettlementsApiResponse.fromJson(body).toDomain();
   }
 
   @override
@@ -189,7 +180,7 @@ class ApiGroupRepository implements GroupRepository {
       ),
     );
 
-    return Settlement.fromJson(_envelope(body, 'settlement'));
+    return SettlementEnvelopeApiResponse.fromJson(body).toDomain();
   }
 
   @override
@@ -197,7 +188,25 @@ class ApiGroupRepository implements GroupRepository {
     required String groupId,
     required String email,
     GroupRole role = GroupRole.member,
-  }) => throw UnsupportedError('Davet endpointi henüz kullanılamıyor.');
+  }) async {
+    await _send(
+      () => _apiClient.dio.post<Map<String, dynamic>>(
+        '/api/v1/groups/$groupId/invitations',
+        data: {'email': email, 'role': role.name},
+      ),
+    );
+  }
+
+  @override
+  Future<GroupMember> acceptInvitation(String token) async {
+    final encodedToken = Uri.encodeComponent(token);
+    final body = await _send(
+      () => _apiClient.dio.post<Map<String, dynamic>>(
+        '/api/v1/group-invitations/$encodedToken/accept',
+      ),
+    );
+    return GroupMemberEnvelopeApiResponse.fromJson(body).toDomain();
+  }
 
   @override
   Future<void> removeMember({

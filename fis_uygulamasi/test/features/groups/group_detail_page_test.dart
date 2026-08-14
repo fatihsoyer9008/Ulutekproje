@@ -63,26 +63,20 @@ void main() {
 
     expect(find.byKey(const Key('add_group_member_button')), findsOneWidget);
     expect(
-      find.byKey(Key('remove_group_member_$secondUserId')),
-      findsOneWidget,
+      tester
+          .widget<IconButton>(find.byKey(const Key('add_group_member_button')))
+          .onPressed,
+      isNotNull,
     );
-    expect(find.byKey(Key('remove_group_member_$currentUserId')), findsNothing);
-  });
-  testWidgets('davet desteği yoksa owner davet aksiyonunu görmez', (
-    tester,
-  ) async {
-    await _pumpDetailPage(
-      tester,
-      repository: _NoInvitationGroupRepository(
-        groups: const <GroupDetail>[twoMemberGroup],
-      ),
+    expect(
+      find.byKey(const Key('group_invitation_unavailable_message')),
+      findsNothing,
     );
-
-    expect(find.byKey(const Key('add_group_member_button')), findsNothing);
     expect(
       find.byKey(Key('remove_group_member_$secondUserId')),
       findsOneWidget,
     );
+    expect(find.byKey(Key('remove_group_member_$currentUserId')), findsNothing);
   });
   testWidgets('member kullanıcı üye yönetim aksiyonlarını görmez', (
     tester,
@@ -99,6 +93,33 @@ void main() {
     expect(find.byKey(const Key('add_group_member_button')), findsNothing);
     expect(find.byKey(Key('remove_group_member_$currentUserId')), findsNothing);
     expect(find.byKey(Key('remove_group_member_$secondUserId')), findsNothing);
+  });
+
+  testWidgets('gerçek API modunda davet aksiyonu capability ile kapatılır', (
+    tester,
+  ) async {
+    await _pumpDetailPage(
+      tester,
+      repository: _InvitationUnavailableRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('add_group_member_button')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    final button = tester.widget<IconButton>(
+      find.byKey(const Key('add_group_member_button')),
+    );
+    expect(button.onPressed, isNull);
+    expect(find.text('Davet sistemi hazırlanıyor'), findsOneWidget);
+    expect(
+      find.byKey(const Key('group_invitation_unavailable_message')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('owner grup daveti gönderebilir', (tester) async {
@@ -310,6 +331,8 @@ void main() {
     );
 
     expect(find.text('Grup detayı yüklenemedi'), findsOneWidget);
+    expect(find.text('Grup bilgileri şu anda alınamıyor.'), findsOneWidget);
+    expect(find.byKey(const Key('group_detail_error_message')), findsOneWidget);
     expect(find.byKey(const Key('group_detail_retry_button')), findsOneWidget);
   });
 
@@ -388,7 +411,7 @@ void main() {
 
 Future<void> _pumpDetailPage(
   WidgetTester tester, {
-  required FakeGroupRepository repository,
+  required GroupRepository repository,
   String userId = currentUserId,
   String groupId = twoMemberGroupId,
   bool settle = true,
@@ -413,13 +436,6 @@ Future<void> _pumpDetailPage(
   }
 }
 
-class _NoInvitationGroupRepository extends FakeGroupRepository {
-  _NoInvitationGroupRepository({required super.groups});
-
-  @override
-  bool get supportsInvitations => false;
-}
-
 class _RetryingDetailRepository extends FakeGroupRepository {
   _RetryingDetailRepository({required super.groups});
 
@@ -434,6 +450,14 @@ class _RetryingDetailRepository extends FakeGroupRepository {
 
     return super.getGroup(groupId);
   }
+}
+
+class _InvitationUnavailableRepository extends FakeGroupRepository {
+  _InvitationUnavailableRepository({required super.groups});
+
+  @override
+  GroupRepositoryCapabilities get capabilities =>
+      const GroupRepositoryCapabilities(supportsInvitations: false);
 }
 
 class _RetryingExpenseRepository extends FakeGroupRepository {

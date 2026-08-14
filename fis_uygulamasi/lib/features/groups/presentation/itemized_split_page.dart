@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../transaction_draft/model/turkish_money.dart';
 import '../application/itemized_split_calculator.dart';
+import '../data/group_api_failure.dart';
 import '../domain/group_models.dart';
 
 class ItemizedSplitReceipt {
@@ -318,11 +319,21 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
           'Fiş henüz buluta eşitlenmedi. Eşit, yüzde veya tutar bölüşümünü kullanın.',
         );
       } else {
-        _showError(error.error.detail.message);
+        _showError(
+          groupUserMessage(
+            error,
+            fallbackMessage: 'Harcama kaydedilemedi. Lütfen tekrar deneyin.',
+          ),
+        );
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        _showError('Harcama kaydedilemedi. Lütfen tekrar deneyin.');
+        _showError(
+          groupUserMessage(
+            error,
+            fallbackMessage: 'Harcama kaydedilemedi. Lütfen tekrar deneyin.',
+          ),
+        );
       }
     } finally {
       if (mounted) {

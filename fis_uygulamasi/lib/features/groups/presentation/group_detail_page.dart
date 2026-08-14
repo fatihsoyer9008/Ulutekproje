@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../../transaction_draft/model/turkish_money.dart';
+import '../data/group_api_failure.dart';
 import '../data/group_providers.dart';
 import '../domain/group_models.dart';
 import 'debt_summary_page.dart';
@@ -23,7 +24,11 @@ class GroupDetailPage extends ConsumerWidget {
       appBar: AppBar(title: const Text('Grup Detayı')),
       body: groupAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => _DetailErrorState(
+        error: (error, _) => _DetailErrorState(
+          message: groupUserMessage(
+            error,
+            fallbackMessage: 'Grup detayı yüklenemedi. Lütfen tekrar deneyin.',
+          ),
           onRetry: () => ref.invalidate(groupDetailProvider(groupId)),
         ),
         data: (group) => _GroupDetailContent(group: group),
@@ -41,9 +46,11 @@ class _GroupDetailContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final expensesAsync = ref.watch(groupExpensesProvider(group.id));
     final currentUserId = ref.watch(authSessionControllerProvider).user?.id;
-    final supportsInvitations = ref
-        .watch(groupRepositoryProvider)
-        .supportsInvitations;
+    final supportsInvitations = ref.watch(
+      groupRepositoryProvider.select(
+        (repository) => repository.capabilities.supportsInvitations,
+      ),
+    );
     final description = group.description?.trim();
 
     return SafeArea(
@@ -121,15 +128,30 @@ class _GroupDetailContent extends ConsumerWidget {
 
             _SectionTitle(
               title: 'Üyeler',
-              action: _canManageMembers && supportsInvitations
+              action: _canManageMembers
                   ? IconButton(
                       key: const Key('add_group_member_button'),
-                      tooltip: 'Üye ekle',
-                      onPressed: () => _showAddMemberSheet(context, ref),
+                      tooltip: supportsInvitations
+                          ? 'Üye ekle'
+                          : 'Davet sistemi hazırlanıyor',
+                      onPressed: supportsInvitations
+                          ? () => _showAddMemberSheet(context, ref)
+                          : null,
                       icon: const Icon(Icons.person_add_alt_1_rounded),
                     )
                   : null,
             ),
+            if (_canManageMembers && !supportsInvitations) ...[
+              const SizedBox(height: 4),
+              const Row(
+                key: Key('group_invitation_unavailable_message'),
+                children: [
+                  Icon(Icons.info_outline_rounded, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(child: Text('Davet sistemi hazırlanıyor')),
+                ],
+              ),
+            ],
             const SizedBox(height: 8),
             _MembersSection(
               members: group.members,
@@ -410,11 +432,17 @@ class _GroupDetailContent extends ConsumerWidget {
           context,
         ).showSnackBar(const SnackBar(content: Text('Üye gruptan çıkarıldı.')));
       }
-    } catch (_) {
+    } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Üye gruptan çıkarılamadı. Lütfen tekrar deneyin.'),
+          SnackBar(
+            content: Text(
+              groupUserMessage(
+                error,
+                fallbackMessage:
+                    'Üye gruptan çıkarılamadı. Lütfen tekrar deneyin.',
+              ),
+            ),
           ),
         );
       }
@@ -457,12 +485,16 @@ class _ExpensesSection extends StatelessWidget {
           ),
         ),
       ),
-      error: (_, _) => AppCard(
+      error: (error, _) => AppCard(
         child: ListTile(
           leading: const Icon(Icons.error_outline_rounded),
           title: const Text('Masraflar yüklenemedi'),
-          subtitle: const Text(
-            'Bağlantını kontrol edip tekrar deneyebilirsin.',
+          subtitle: Text(
+            groupUserMessage(
+              error,
+              fallbackMessage: 'Bağlantını kontrol edip tekrar deneyebilirsin.',
+            ),
+            key: const Key('group_expenses_error_message'),
           ),
           trailing: TextButton(
             key: const Key('retry_group_expenses_button'),
@@ -730,12 +762,20 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
       if (mounted) Navigator.of(context).pop();
     } on GroupApiException catch (error) {
       if (mounted) {
-        setState(() => _errorMessage = error.error.detail.message);
+        setState(
+          () => _errorMessage = groupUserMessage(
+            error,
+            fallbackMessage: 'Davet gönderilemedi. Lütfen tekrar deneyin.',
+          ),
+        );
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(
-          () => _errorMessage = 'Davet gönderilemedi. Lütfen tekrar deneyin.',
+          () => _errorMessage = groupUserMessage(
+            error,
+            fallbackMessage: 'Davet gönderilemedi. Lütfen tekrar deneyin.',
+          ),
         );
       }
     } finally {
@@ -762,8 +802,9 @@ class _RoleChip extends StatelessWidget {
 }
 
 class _DetailErrorState extends StatelessWidget {
-  const _DetailErrorState({required this.onRetry});
+  const _DetailErrorState({required this.message, required this.onRetry});
 
+  final String message;
   final VoidCallback onRetry;
 
   @override
@@ -782,8 +823,9 @@ class _DetailErrorState extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Lütfen bağlantınızı kontrol edip tekrar deneyin.',
+              Text(
+                message,
+                key: const Key('group_detail_error_message'),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
