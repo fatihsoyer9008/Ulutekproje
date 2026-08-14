@@ -211,6 +211,16 @@ void main() {
     );
     final member = find.byKey(Key('itemized_line_0_member_$currentUserId'));
     await _scrollTo(tester, member);
+    await tester.drag(
+      find
+          .descendant(
+            of: find.byKey(const Key('itemized_split_scroll_view')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+      const Offset(0, -150),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(member);
     await tester.pump();
 

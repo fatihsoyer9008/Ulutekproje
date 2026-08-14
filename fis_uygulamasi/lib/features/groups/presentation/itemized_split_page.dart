@@ -309,13 +309,20 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
 
       if (error.code == 'unassigned_line_items') {
         final detail = error.error.detail;
+        // Draft receipts are recreated with fresh server-side line-item ids on
+        // every retry, so only their positions stay meaningful across
+        // attempts; cloud-synced receipts keep the same ids instead.
+        final unassignedKeys = receiptId == null
+            ? <String>{
+                for (final position
+                    in detail.unassignedReceiptLineItemPositions ?? const [])
+                  'draft-position-$position',
+              }
+            : <String>{...?detail.unassignedReceiptLineItemIds};
         setState(() {
-          _splitState = _splitState.withServerUnassignedLineItems(<String>{
-            ...?detail.unassignedReceiptLineItemIds,
-            for (final position
-                in detail.unassignedReceiptLineItemPositions ?? const [])
-              'draft-position-$position',
-          });
+          _splitState = _splitState.withServerUnassignedLineItems(
+            unassignedKeys,
+          );
         });
         _showError('Atanmayan ürünleri seçip tekrar deneyin.');
       } else if (error.code == 'receipt_not_synced') {

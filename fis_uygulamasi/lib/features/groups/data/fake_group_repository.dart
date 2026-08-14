@@ -826,6 +826,8 @@ class FakeGroupRepository implements GroupRepository {
                     'quantity_milli': line.quantityMilli,
                     'unit_price_in_minor': line.unitPriceInMinor,
                     'total_amount_in_minor': line.totalAmountInMinor,
+                    'tax_rate_basis_points': line.taxRateBasisPoints,
+                    'tax_amount_in_minor': line.taxAmountInMinor,
                   },
               ],
             },
