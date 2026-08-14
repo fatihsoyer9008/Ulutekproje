@@ -40,36 +40,74 @@ void main() {
     },
   );
 
-  testWidgets('giriş yapmamış kullanıcı login sonrası daveti kabul eder', (
+  testWidgets('kapalı uygulama initial link ile daveti kabul eder', (
     tester,
   ) async {
     final auth = AuthSessionController(_InvitationAuthRepository());
+    await auth.login('user@example.com', 'password');
     final repository = _InvitationRepository();
 
     await _pumpInvitationApp(
       tester,
       auth: auth,
       repository: repository,
-      deepLinks: Stream.value(_invitationUri('pending-login-token')),
+      initialDeepLink: _invitationUri('cold-start-token'),
     );
 
-    expect(repository.acceptedTokens, isEmpty);
-    expect(find.byKey(const Key('login_submit_button')), findsOneWidget);
-    expect(
-      find.text('Grup davetini kabul etmek için giriş yapın.'),
-      findsOneWidget,
-    );
-
-    await tester.enterText(
-      find.byType(TextFormField).at(0),
-      'user@example.com',
-    );
-    await tester.enterText(find.byType(TextFormField).at(1), 'password');
-    await tester.tap(find.byKey(const Key('login_submit_button')));
-    await tester.pumpAndSettle();
-
-    expect(repository.acceptedTokens, ['pending-login-token']);
+    expect(repository.acceptedTokens, ['cold-start-token']);
     expect(find.byType(GroupDetailPage), findsOneWidget);
+  });
+
+  testWidgets(
+    'kapalı uygulamada giriş yapmamış kullanıcı login sonrası daveti kabul eder',
+    (tester) async {
+      final auth = AuthSessionController(_InvitationAuthRepository());
+      final repository = _InvitationRepository();
+
+      await _pumpInvitationApp(
+        tester,
+        auth: auth,
+        repository: repository,
+        initialDeepLink: _invitationUri('pending-login-token'),
+      );
+
+      expect(repository.acceptedTokens, isEmpty);
+      expect(find.byKey(const Key('login_submit_button')), findsOneWidget);
+      expect(
+        find.text('Grup davetini kabul etmek için giriş yapın.'),
+        findsOneWidget,
+      );
+
+      await tester.enterText(
+        find.byType(TextFormField).at(0),
+        'user@example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).at(1), 'password');
+      await tester.tap(find.byKey(const Key('login_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(repository.acceptedTokens, ['pending-login-token']);
+      expect(find.byType(GroupDetailPage), findsOneWidget);
+    },
+  );
+
+  testWidgets('initial ve stream aynı daveti yalnızca bir kez işler', (
+    tester,
+  ) async {
+    final auth = AuthSessionController(_InvitationAuthRepository());
+    await auth.login('user@example.com', 'password');
+    final repository = _InvitationRepository();
+    final uri = _invitationUri('duplicate-token');
+
+    await _pumpInvitationApp(
+      tester,
+      auth: auth,
+      repository: repository,
+      initialDeepLink: uri,
+      deepLinks: Stream.value(uri),
+    );
+
+    expect(repository.acceptedTokens, ['duplicate-token']);
   });
 
   testWidgets('ortak deep-link dinleyicisi e-posta doğrulamayı korur', (
@@ -124,7 +162,12 @@ void main() {
         tester,
         auth: auth,
         repository: repository,
-        deepLinks: Stream.value(_invitationUri('invalid-token')),
+        initialDeepLink: testCase.status == 410
+            ? _invitationUri('invalid-token')
+            : null,
+        deepLinks: testCase.status == 410
+            ? const Stream<Uri>.empty()
+            : Stream.value(_invitationUri('invalid-token')),
       );
 
       expect(repository.acceptedTokens, ['invalid-token']);
@@ -138,7 +181,8 @@ Future<void> _pumpInvitationApp(
   WidgetTester tester, {
   required AuthSessionController auth,
   required _InvitationRepository repository,
-  required Stream<Uri> deepLinks,
+  Stream<Uri> deepLinks = const Stream<Uri>.empty(),
+  Uri? initialDeepLink,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -150,6 +194,7 @@ Future<void> _pumpInvitationApp(
         enableAuth: true,
         transactionStream: Stream.value(const <TransactionEntity>[]),
         deepLinkStream: deepLinks,
+        initialDeepLinkLoader: () async => initialDeepLink,
       ),
     ),
   );

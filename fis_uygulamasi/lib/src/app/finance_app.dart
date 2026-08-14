@@ -21,6 +21,8 @@ import '../screens/expense_screen.dart';
 import 'app_router.dart';
 import 'finance_home.dart';
 
+typedef InitialDeepLinkLoader = Future<Uri?> Function();
+
 class FinanceApp extends ConsumerStatefulWidget {
   const FinanceApp({
     super.key,
@@ -37,6 +39,7 @@ class FinanceApp extends ConsumerStatefulWidget {
     this.aiAssistantMessageStream,
     this.profileAiAssistantClient,
     this.deepLinkStream,
+    this.initialDeepLinkLoader,
   });
 
   final bool enableAuth;
@@ -52,6 +55,7 @@ class FinanceApp extends ConsumerStatefulWidget {
   final AiAssistantMessageStream? aiAssistantMessageStream;
   final AiAssistantAccessClient? profileAiAssistantClient;
   final Stream<Uri>? deepLinkStream;
+  final InitialDeepLinkLoader? initialDeepLinkLoader;
 
   @override
   ConsumerState<FinanceApp> createState() => _FinanceAppState();
@@ -64,6 +68,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
   String? _pendingGroupInvitationToken;
+  final Set<String> _handledDeepLinkKeys = <String>{};
   bool _acceptingGroupInvitation = false;
   bool _invitationLoginMessageShown = false;
 
@@ -110,12 +115,18 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
           unawaited(router.push<void>(location));
         });
 
-        final linkStream = widget.deepLinkStream ?? AppLinks().uriLinkStream;
+        final appLinks = AppLinks();
+        final linkStream = widget.deepLinkStream ?? appLinks.uriLinkStream;
         _deepLinkSubscription = linkStream.listen(
-          (uri) => unawaited(_handleDeepLink(uri)),
+          (uri) => unawaited(_handleDeepLinkOnce(uri)),
           onError: (Object _, StackTrace _) {
             _showMessage('Bağlantı açılamadı. Lütfen tekrar deneyin.');
           },
+        );
+        unawaited(
+          _loadInitialDeepLink(
+            widget.initialDeepLinkLoader ?? appLinks.getInitialLink,
+          ),
         );
       }
     }
@@ -131,6 +142,21 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
     widget.notificationNavigationController?.detachNavigator();
     _router?.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadInitialDeepLink(InitialDeepLinkLoader loader) async {
+    try {
+      final uri = await loader();
+      if (uri != null) await _handleDeepLinkOnce(uri);
+    } on Exception {
+      // Stream dinleyicisi çalışmaya devam eder; token veya URI loglanmaz.
+    }
+  }
+
+  Future<void> _handleDeepLinkOnce(Uri uri) async {
+    final key = uri.toString();
+    if (!_handledDeepLinkKeys.add(key)) return;
+    await _handleDeepLink(uri);
   }
 
   Future<void> _handleDeepLink(Uri uri) async {
