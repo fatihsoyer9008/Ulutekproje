@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/api_client.dart';
@@ -22,6 +24,7 @@ class AuthSessionState {
     this.isLoading = false,
     this.errorMessage,
     this.infoMessage,
+    this.sessionExpired = false,
   });
 
   const AuthSessionState.initial()
@@ -33,6 +36,7 @@ class AuthSessionState {
   final bool isLoading;
   final String? errorMessage;
   final String? infoMessage;
+  final bool sessionExpired;
 
   AuthSessionState copyWith({
     AuthStatus? status,
@@ -45,6 +49,7 @@ class AuthSessionState {
     bool clearError = false,
     String? infoMessage,
     bool clearInfo = false,
+    bool? sessionExpired,
   }) => AuthSessionState(
     status: status ?? this.status,
     user: clearUser ? null : (user ?? this.user),
@@ -54,6 +59,7 @@ class AuthSessionState {
     isLoading: isLoading ?? this.isLoading,
     errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
     infoMessage: clearInfo ? null : (infoMessage ?? this.infoMessage),
+    sessionExpired: sessionExpired ?? this.sessionExpired,
   );
 }
 
@@ -75,16 +81,36 @@ final authRepositoryProvider = Provider<AuthRepository>(
 );
 
 final authSessionControllerProvider =
-    StateNotifierProvider<AuthSessionController, AuthSessionState>(
-      (ref) => AuthSessionController(ref.watch(authRepositoryProvider)),
-    );
+    StateNotifierProvider<AuthSessionController, AuthSessionState>((ref) {
+      final apiClient = ref.watch(apiClientProvider);
+      return AuthSessionController(
+        ref.watch(authRepositoryProvider),
+        unauthorizedEvents: apiClient.unauthorizedEvents,
+      );
+    });
 
 class AuthSessionController extends StateNotifier<AuthSessionState> {
-  AuthSessionController(this._repository)
-    : super(const AuthSessionState.initial());
+  AuthSessionController(this._repository, {Stream<void>? unauthorizedEvents})
+    : super(const AuthSessionState.initial()) {
+    _unauthorizedSubscription = unauthorizedEvents?.listen((_) {
+      _pendingPassword = null;
+      state = const AuthSessionState(
+        status: AuthStatus.unauthenticated,
+        errorMessage: 'Oturum süreniz doldu. Lütfen yeniden giriş yapın.',
+        sessionExpired: true,
+      );
+    });
+  }
 
   final AuthRepositoryBase _repository;
+  StreamSubscription<void>? _unauthorizedSubscription;
   String? _pendingPassword;
+
+  @override
+  void dispose() {
+    _unauthorizedSubscription?.cancel();
+    super.dispose();
+  }
 
   Future<void> initialize() async {
     state = const AuthSessionState.initial();

@@ -60,16 +60,20 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
   void initState() {
     super.initState();
 
-    if (widget.enableStartupSync) {
+    if (widget.enableAuth || widget.enableStartupSync) {
       _authSubscription = ref.listenManual(authSessionControllerProvider, (
         previous,
         next,
       ) {
-        if (next.status == AuthStatus.authenticated &&
+        if (widget.enableStartupSync &&
+            next.status == AuthStatus.authenticated &&
             previous?.status != AuthStatus.authenticated) {
           unawaited(
             ref.read(syncCoordinatorProvider.notifier).syncPendingTasks(),
           );
+        }
+        if (widget.enableAuth && previous?.status != next.status) {
+          _router?.refresh();
         }
       }, fireImmediately: true);
     }

@@ -51,6 +51,45 @@ void main() {
     expect(responses.every((response) => response.data?['ok'] == true), isTrue);
     expect(storage.token, 'n' * 32);
   });
+
+  test(
+    'başarısız refresh oturumu temizler ve unauthorized olayı yayar',
+    () async {
+      final storage = _MemoryTokenStorage()..token = 'r' * 32;
+      final adapter = _HandlerAdapter(
+        (options) async =>
+            _jsonResponse({'detail': 'unauthorized'}, statusCode: 401),
+      );
+      final dio = Dio(BaseOptions(baseUrl: 'https://example.com'))
+        ..httpClientAdapter = adapter;
+      final refreshDio = Dio(BaseOptions(baseUrl: 'https://example.com'))
+        ..httpClientAdapter = adapter;
+      final client = ApiClient(
+        baseUrl: 'https://example.com',
+        tokenStorage: storage,
+        dio: dio,
+        refreshDio: refreshDio,
+      );
+      addTearDown(client.close);
+      await client.setSession(
+        AuthTokenBundle(
+          accessToken: 'expired-access-token',
+          refreshToken: storage.token!,
+          user: const <String, dynamic>{},
+        ),
+      );
+      final unauthorized = client.unauthorizedEvents.first;
+
+      await expectLater(
+        client.dio.get<Map<String, dynamic>>('/protected'),
+        throwsA(isA<DioException>()),
+      );
+      await unauthorized.timeout(const Duration(seconds: 1));
+
+      expect(client.hasAccessToken, isFalse);
+      expect(storage.token, isNull);
+    },
+  );
 }
 
 ResponseBody _jsonResponse(Map<String, dynamic> body, {int statusCode = 200}) =>
