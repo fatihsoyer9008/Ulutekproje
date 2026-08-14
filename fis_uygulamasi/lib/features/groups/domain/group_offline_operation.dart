@@ -134,7 +134,7 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
     required super.clientRecordId,
     required super.ownerKey,
     required super.syncState,
-    required this.expense,
+    required Map<String, Object?>? expenseSnapshot,
   }) : assert(
          type == GroupOfflineOperationType.groupExpenseCreate ||
              type == GroupOfflineOperationType.groupExpenseUpdate ||
@@ -142,9 +142,12 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
        ),
        assert(
          type == GroupOfflineOperationType.groupExpenseDelete
-             ? expense == null
-             : expense != null,
+             ? expenseSnapshot == null
+             : expenseSnapshot != null,
        ),
+       _expenseSnapshot = expenseSnapshot == null
+           ? null
+           : _immutableJsonSnapshot(expenseSnapshot),
        expenseId = _validUuid(expenseId, 'expenseId');
 
   factory GroupExpenseOfflineOperation.create({
@@ -159,7 +162,7 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
     clientRecordId: clientRecordId,
     ownerKey: ownerKey,
     syncState: syncState,
-    expense: expense,
+    expenseSnapshot: expense.toJson(),
   );
 
   factory GroupExpenseOfflineOperation.update({
@@ -174,7 +177,7 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
     clientRecordId: clientRecordId,
     ownerKey: ownerKey,
     syncState: syncState,
-    expense: expense,
+    expenseSnapshot: expense.toJson(),
   );
 
   factory GroupExpenseOfflineOperation.delete({
@@ -190,16 +193,29 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
     clientRecordId: clientRecordId,
     ownerKey: ownerKey,
     syncState: syncState,
-    expense: null,
+    expenseSnapshot: null,
   );
 
   final String expenseId;
-  final GroupExpense? expense;
+  final Map<String, Object?>? _expenseSnapshot;
+
+  /// Snapshot'ın dışarıdan değiştirilememesi için her okumada bağımsız model
+  /// üretir. Dönen modelin listeleri değiştirilse bile kuyruk payload'ı sabit
+  /// kalır.
+  GroupExpense? get expense {
+    final snapshot = _expenseSnapshot;
+    return snapshot == null
+        ? null
+        : GroupExpense.fromJson(_copyJsonMap(snapshot));
+  }
 
   @override
-  Map<String, Object?> payloadToJson() =>
-      expense?.toJson() ??
-      <String, Object?>{'group_id': groupId, 'expense_id': expenseId};
+  Map<String, Object?> payloadToJson() {
+    final snapshot = _expenseSnapshot;
+    return snapshot == null
+        ? <String, Object?>{'group_id': groupId, 'expense_id': expenseId}
+        : _copyJsonMap(snapshot);
+  }
 
   @override
   GroupExpenseOfflineOperation withSyncState(SyncState syncState) =>
@@ -210,7 +226,7 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
         clientRecordId: clientRecordId,
         ownerKey: ownerKey,
         syncState: syncState,
-        expense: expense,
+        expenseSnapshot: _expenseSnapshot,
       );
 }
 
@@ -372,6 +388,49 @@ final class _OperationCommon {
   final String clientRecordId;
   final String ownerKey;
   final SyncState syncState;
+}
+
+/// Queue'ya alınan payload'ı kaynak domain nesnesinden tamamen ayırır.
+/// İç içe map ve listeler de unmodifiable olduğu için snapshot sınıf içinde
+/// yanlışlıkla değiştirilemez.
+Map<String, Object?> _immutableJsonSnapshot(Map<String, Object?> source) =>
+    Map<String, Object?>.unmodifiable(<String, Object?>{
+      for (final entry in source.entries)
+        entry.key: _immutableJsonValue(entry.value),
+    });
+
+Object? _immutableJsonValue(Object? value) {
+  if (value is Map) {
+    return Map<String, Object?>.unmodifiable(<String, Object?>{
+      for (final entry in value.entries)
+        entry.key as String: _immutableJsonValue(entry.value),
+    });
+  }
+  if (value is List) {
+    return List<Object?>.unmodifiable(value.map(_immutableJsonValue));
+  }
+  return value;
+}
+
+/// JSON çağrısının döndürdüğü map'in değiştirilmesi iç snapshot'a sızmasın
+/// diye her serialization için bağımsız bir derin kopya üretir.
+Map<String, Object?> _copyJsonMap(
+  Map<String, Object?> source,
+) => <String, Object?>{
+  for (final entry in source.entries) entry.key: _copyJsonValue(entry.value),
+};
+
+Object? _copyJsonValue(Object? value) {
+  if (value is Map) {
+    return <String, Object?>{
+      for (final entry in value.entries)
+        entry.key as String: _copyJsonValue(entry.value),
+    };
+  }
+  if (value is List) {
+    return <Object?>[for (final item in value) _copyJsonValue(item)];
+  }
+  return value;
 }
 
 final RegExp _uuidPattern = RegExp(

@@ -1,4 +1,5 @@
 import 'package:app_main/features/groups/domain/group_offline_operation.dart';
+import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -45,8 +46,14 @@ void main() {
     });
 
     test('GroupExpense create/update snapshot, delete yalnız kimlik taşır', () {
-      expect(groupExpenseCreateOperation.expense, fastSplitTransferExpense);
-      expect(groupExpenseUpdateOperation.expense, itemizedMarketExpense);
+      expect(
+        groupExpenseCreateOperation.expense?.toJson(),
+        fastSplitTransferExpense.toJson(),
+      );
+      expect(
+        groupExpenseUpdateOperation.expense?.toJson(),
+        itemizedMarketExpense.toJson(),
+      );
       expect(groupExpenseDeleteOperation.expense, isNull);
       expect(groupExpenseDeleteOperation.syncState, SyncState.pendingDelete);
       expect(groupExpenseDeleteOperation.payloadToJson(), <String, Object?>{
@@ -54,6 +61,53 @@ void main() {
         'expense_id': fastSplitTransferExpense.id,
       });
     });
+
+    test(
+      'GroupExpense operation oluşturulduğu andaki derin snapshotı korur',
+      () {
+        final sourceShares = List<ExpenseShare>.of(
+          itemizedMarketExpense.shares,
+        );
+        final sourceAssignments = List<ReceiptLineItemAssignment>.of(
+          itemizedMarketExpense.lineItemAssignments,
+        );
+        final sourceExtraAmounts = List<ExpenseExtraAmount>.of(
+          itemizedMarketExpense.extraAmounts,
+        );
+        final source = _copyExpenseWithMutableLists(
+          itemizedMarketExpense,
+          shares: sourceShares,
+          lineItemAssignments: sourceAssignments,
+          extraAmounts: sourceExtraAmounts,
+        );
+        final operation = GroupExpenseOfflineOperation.create(
+          expense: source,
+          clientRecordId: '61000000-0000-4000-8000-000000000099',
+          ownerKey: groupOperationOwnerKey,
+        );
+        final queuedJson = operation.toJson();
+
+        const changedShare = ExpenseShare(
+          expenseId: '40000000-0000-4000-8000-000000000002',
+          userId: currentUserId,
+          displayName: 'Değiştirildi',
+          amountInMinor: 1,
+          status: ShareStatus.open,
+          settledAt: null,
+        );
+        sourceShares[0] = changedShare;
+        sourceAssignments.clear();
+        sourceExtraAmounts.clear();
+
+        expect(operation.toJson(), queuedJson);
+
+        operation.expense!.shares[0] = changedShare;
+        final exposedPayload = operation.payloadToJson();
+        (exposedPayload['shares']! as List<Object?>).clear();
+
+        expect(operation.toJson(), queuedJson);
+      },
+    );
 
     test(
       'ExpenseShare create/update snapshot, delete bileşik kimlik taşır',
@@ -160,6 +214,32 @@ void main() {
     });
   });
 }
+
+GroupExpense _copyExpenseWithMutableLists(
+  GroupExpense source, {
+  required List<ExpenseShare> shares,
+  required List<ReceiptLineItemAssignment> lineItemAssignments,
+  required List<ExpenseExtraAmount> extraAmounts,
+}) => GroupExpense(
+  id: source.id,
+  groupId: source.groupId,
+  receiptId: source.receiptId,
+  payerUserId: source.payerUserId,
+  createdBy: source.createdBy,
+  title: source.title,
+  note: source.note,
+  expenseDate: source.expenseDate,
+  totalAmountInMinor: source.totalAmountInMinor,
+  currency: source.currency,
+  splitType: source.splitType,
+  isFinanciallyLocked: source.isFinanciallyLocked,
+  shares: shares,
+  lineItemAssignments: lineItemAssignments,
+  extraAmounts: extraAmounts,
+  createdAt: source.createdAt,
+  updatedAt: source.updatedAt,
+  deletedAt: source.deletedAt,
+);
 
 void _expectMinorAmountsAreIntegers(Object? value) {
   if (value is Map) {
