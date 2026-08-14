@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
@@ -9,7 +10,11 @@ from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.api.dependencies import get_email_sender, get_rate_limiter
+from app.api.dependencies import (
+    get_debt_summary_cache,
+    get_email_sender,
+    get_rate_limiter,
+)
 from app.core.database import Base, get_db_session
 from app.core.rate_limit import NoOpRateLimiter
 from app.main import app
@@ -43,6 +48,15 @@ class DelayedVerificationEmailSender(CapturingEmailSender):
     async def send_verification(self, *, email: str, token: str) -> None:
         await asyncio.sleep(0.01)
         await super().send_verification(email=email, token=token)
+
+
+class FakeDebtSummaryCache:
+    def __init__(self) -> None:
+        self.invalidated_group_ids: list[uuid.UUID] = []
+
+    async def invalidate_best_effort(self, group_id: uuid.UUID) -> bool:
+        self.invalidated_group_ids.append(group_id)
+        return True
 
 
 @pytest_asyncio.fixture
@@ -81,6 +95,7 @@ async def auth_context():
     app.dependency_overrides[get_db_session] = override_db
     app.dependency_overrides[get_email_sender] = override_sender
     app.dependency_overrides[get_rate_limiter] = override_limiter
+    app.dependency_overrides[get_debt_summary_cache] = FakeDebtSummaryCache
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
@@ -476,6 +491,8 @@ async def test_delete_account_transfers_owned_group_and_archives_empty_group(
         json={"email": "user@example.com", "password": password},
     )
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    debt_cache = FakeDebtSummaryCache()
+    app.dependency_overrides[get_debt_summary_cache] = lambda: debt_cache
 
     async with session_factory() as session:
         owner = await session.scalar(
@@ -513,6 +530,10 @@ async def test_delete_account_transfers_owned_group_and_archives_empty_group(
         json={"current_password": password},
     )
     assert deleted.status_code == 204
+    assert set(debt_cache.invalidated_group_ids) == {
+        promotable_group_id,
+        empty_group_id,
+    }
 
     async with session_factory() as session:
         assert await session.get(User, owner_id) is None
@@ -642,6 +663,8 @@ async def test_delete_account_preserves_share_only_participant(
         json={"email": deleting_email, "password": password},
     )
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    debt_cache = FakeDebtSummaryCache()
+    app.dependency_overrides[get_debt_summary_cache] = lambda: debt_cache
 
     async with session_factory() as session:
         deleting_user = await session.scalar(
@@ -681,6 +704,7 @@ async def test_delete_account_preserves_share_only_participant(
         await session.commit()
 
         deleting_user_id = deleting_user.id
+        group_id = group.id
         group_owner_id = group_owner.id
         expense_id = expense.id
 
@@ -691,6 +715,7 @@ async def test_delete_account_preserves_share_only_participant(
         json={"current_password": password},
     )
     assert deleted.status_code == 204
+    assert debt_cache.invalidated_group_ids == [group_id]
 
     async with session_factory() as session:
         assert await session.get(User, deleting_user_id) is None

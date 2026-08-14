@@ -183,11 +183,11 @@ async def test_user_deletion_promotes_admin_and_archives_group_without_successor
     admin_id = admin.id
     member_id = member.id
 
-    resolved_groups = await repository.prepare_for_user_deletion(
+    resolved_group_ids = await repository.prepare_for_user_deletion(
         user_id=owner.id,
         archived_at=now,
     )
-    assert {group.id for group in resolved_groups} == {
+    assert set(resolved_group_ids) == {
         promotable_group.id,
         lone_group.id,
     }

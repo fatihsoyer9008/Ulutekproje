@@ -136,13 +136,15 @@ class GroupRepository:
         *,
         user_id: uuid.UUID,
         archived_at: datetime,
-    ) -> list[Group]:
-        """Resolve owned groups before the user row is hard-deleted.
+    ) -> list[uuid.UUID]:
+        """Resolve and return affected groups before the user is deleted.
 
         The database removes the user's memberships with ON DELETE CASCADE and
         preserves groups by setting groups.created_by to NULL. Before that
         happens, this method promotes the oldest active admin/member. A group
-        with no successor is archived.
+        with no successor is archived. All active groups containing the user
+        are returned so their derived debt summaries can be invalidated after
+        the deletion transaction commits.
         """
 
         statement = (
@@ -150,14 +152,13 @@ class GroupRepository:
             .join(GroupMember)
             .where(
                 GroupMember.user_id == user_id,
-                GroupMember.role == GroupRole.owner,
                 GroupMember.left_at.is_(None),
                 Group.archived_at.is_(None),
             )
             .options(selectinload(Group.members))
             .execution_options(populate_existing=True)
         )
-        owned_groups = list(
+        affected_groups = list(
             (await self.session.scalars(statement)).unique().all()
         )
 
@@ -166,7 +167,15 @@ class GroupRepository:
             GroupRole.member: 1,
             GroupRole.owner: 2,
         }
-        for group in owned_groups:
+        for group in affected_groups:
+            deleting_membership = next(
+                member
+                for member in group.members
+                if member.user_id == user_id and member.left_at is None
+            )
+            if deleting_membership.role is not GroupRole.owner:
+                continue
+
             candidates = [
                 member
                 for member in group.members
@@ -187,7 +196,7 @@ class GroupRepository:
             successor.role = GroupRole.owner
 
         await self.session.flush()
-        return owned_groups
+        return [group.id for group in affected_groups]
 
     async def delete(self, group: Group) -> None:
         await self.session.delete(group)
