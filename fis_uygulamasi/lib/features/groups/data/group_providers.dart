@@ -4,6 +4,13 @@ import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../domain/group_models.dart';
 import 'demo_group_seed.dart';
 import 'fake_group_repository.dart';
+import 'api_group_repository.dart';
+
+final currentGroupUserIdProvider = Provider<String?>(
+  (ref) => ref.watch(
+    authSessionControllerProvider.select((state) => state.user?.id),
+  ),
+);
 
 final fakeGroupRepositoryProvider = Provider<FakeGroupRepository>((ref) {
   final user = ref.watch(authSessionControllerProvider).user;
@@ -31,7 +38,7 @@ final fakeGroupRepositoryProvider = Provider<FakeGroupRepository>((ref) {
 });
 
 final groupRepositoryProvider = Provider<GroupRepository>(
-  (ref) => ref.watch(fakeGroupRepositoryProvider),
+  (ref) => ApiGroupRepository(ref.watch(apiClientProvider)),
 );
 
 final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(

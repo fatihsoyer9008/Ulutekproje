@@ -27,16 +27,22 @@ class FastSplitPage extends StatefulWidget {
     required this.group,
     required this.currentUserId,
     required this.onSubmit,
+    this.initialTitle = '',
+    this.initialTotalAmountInMinor,
     this.itemizedReceipt,
     this.onItemizedSubmit,
+    this.popSavedResult = false,
     super.key,
   });
 
   final GroupDetail group;
   final String currentUserId;
   final FastSplitSubmit onSubmit;
+  final String initialTitle;
+  final int? initialTotalAmountInMinor;
   final ItemizedSplitReceipt? itemizedReceipt;
   final ItemizedSplitSubmit? onItemizedSubmit;
+  final bool popSavedResult;
 
   @override
   State<FastSplitPage> createState() => _FastSplitPageState();
@@ -44,8 +50,8 @@ class FastSplitPage extends StatefulWidget {
 
 class _FastSplitPageState extends State<FastSplitPage> {
   final _formKey = GlobalKey<FormState>();
-  final _titleController = TextEditingController();
-  final _totalController = TextEditingController();
+  late final TextEditingController _titleController;
+  late final TextEditingController _totalController;
   final Map<String, TextEditingController> _percentageControllers = {};
   final Map<String, TextEditingController> _fixedAmountControllers = {};
   late final Set<String> _selectedMemberIds;
@@ -60,6 +66,13 @@ class _FastSplitPageState extends State<FastSplitPage> {
   @override
   void initState() {
     super.initState();
+    final initialTotal = widget.initialTotalAmountInMinor;
+    _titleController = TextEditingController(text: widget.initialTitle.trim());
+    _totalController = TextEditingController(
+      text: initialTotal != null && initialTotal > 0
+          ? formatMinorAsTurkishLira(initialTotal)
+          : '',
+    );
     _selectedMemberIds = _activeMembers.map((member) => member.userId).toSet();
     _payerUserId = _activeMembers.any((m) => m.userId == widget.currentUserId)
         ? widget.currentUserId
@@ -360,7 +373,13 @@ class _FastSplitPageState extends State<FastSplitPage> {
           percentageBasisPoints: _percentageBasisPoints,
         ),
       );
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        if (widget.popSavedResult) {
+          Navigator.of(context).pop<bool>(true);
+        } else {
+          Navigator.of(context).pop();
+        }
+      }
     } catch (_) {
       if (mounted) _showError('Harcama kaydedilemedi. Lütfen tekrar deneyin.');
     } finally {

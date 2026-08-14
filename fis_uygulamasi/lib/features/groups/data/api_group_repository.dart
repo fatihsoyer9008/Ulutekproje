@@ -13,6 +13,9 @@ class ApiGroupRepository implements GroupRepository {
   final ApiGroupExpenseRepository _expenses;
 
   @override
+  bool get supportsInvitations => false;
+
+  @override
   Future<GroupsResponse> listGroups({bool includeArchived = false}) async {
     final body = await _get(
       '/api/v1/groups',

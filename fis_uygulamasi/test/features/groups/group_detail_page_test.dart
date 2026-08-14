@@ -68,7 +68,22 @@ void main() {
     );
     expect(find.byKey(Key('remove_group_member_$currentUserId')), findsNothing);
   });
+  testWidgets('davet desteği yoksa owner davet aksiyonunu görmez', (
+    tester,
+  ) async {
+    await _pumpDetailPage(
+      tester,
+      repository: _NoInvitationGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      ),
+    );
 
+    expect(find.byKey(const Key('add_group_member_button')), findsNothing);
+    expect(
+      find.byKey(Key('remove_group_member_$secondUserId')),
+      findsOneWidget,
+    );
+  });
   testWidgets('member kullanıcı üye yönetim aksiyonlarını görmez', (
     tester,
   ) async {
@@ -396,6 +411,13 @@ Future<void> _pumpDetailPage(
   if (settle) {
     await tester.pumpAndSettle();
   }
+}
+
+class _NoInvitationGroupRepository extends FakeGroupRepository {
+  _NoInvitationGroupRepository({required super.groups});
+
+  @override
+  bool get supportsInvitations => false;
 }
 
 class _RetryingDetailRepository extends FakeGroupRepository {

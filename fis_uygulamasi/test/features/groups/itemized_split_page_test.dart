@@ -173,9 +173,11 @@ void main() {
     );
   });
 
-  testWidgets('negatif fark uyarı gösterir ve gönderimi engeller', (
+  testWidgets('negatif farkta gönderimi engeller ve Fast Split geçişi sunar', (
     tester,
   ) async {
+    var useFastSplitCalls = 0;
+
     const receipt = ItemizedSplitReceipt(
       receiptId: 'receipt',
       totalAmountInMinor: 5999,
@@ -189,26 +191,45 @@ void main() {
         ),
       ],
     );
-    await _pumpPage(tester, receipt: receipt);
+
+    await _pumpPage(
+      tester,
+      receipt: receipt,
+      onUseFastSplit: () {
+        useFastSplitCalls++;
+      },
+    );
+
     final member = find.byKey(Key('itemized_line_0_member_$currentUserId'));
     await _scrollTo(tester, member);
     await tester.tap(member);
     await tester.pump();
 
-    await _scrollTo(
-      tester,
-      find.byKey(const Key('itemized_negative_difference_warning')),
+    final warning = find.byKey(
+      const Key('itemized_negative_difference_warning'),
     );
-    expect(
-      find.byKey(const Key('itemized_negative_difference_warning')),
-      findsOneWidget,
+    await _scrollTo(tester, warning);
+
+    expect(warning, findsOneWidget);
+
+    final fastSplitButton = find.byKey(
+      const Key('itemized_use_fast_split_button'),
     );
+    await _scrollTo(tester, fastSplitButton);
+
+    expect(fastSplitButton, findsOneWidget);
+
     expect(
       tester
           .widget<FilledButton>(find.byKey(const Key('itemized_split_submit')))
           .onPressed,
       isNull,
     );
+
+    await tester.tap(fastSplitButton);
+    await tester.pump();
+
+    expect(useFastSplitCalls, 1);
   });
 
   testWidgets('pasif üyeyi seçeneklerde göstermez', (tester) async {
@@ -338,6 +359,7 @@ Future<void> _pumpPage(
   String currentUser = currentUserId,
   Brightness brightness = Brightness.light,
   ItemizedSplitSubmit? onSubmit,
+  VoidCallback? onUseFastSplit,
 }) => tester.pumpWidget(
   MaterialApp(
     theme: ThemeData(colorSchemeSeed: Colors.teal, brightness: brightness),
@@ -346,6 +368,7 @@ Future<void> _pumpPage(
       currentUserId: currentUser,
       receipt: receipt,
       onSubmit: onSubmit ?? (_) async {},
+      onUseFastSplit: onUseFastSplit,
     ),
   ),
 );

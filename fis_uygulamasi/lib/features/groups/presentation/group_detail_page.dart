@@ -41,7 +41,11 @@ class _GroupDetailContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final expensesAsync = ref.watch(groupExpensesProvider(group.id));
     final currentUserId = ref.watch(authSessionControllerProvider).user?.id;
+    final supportsInvitations = ref
+        .watch(groupRepositoryProvider)
+        .supportsInvitations;
     final description = group.description?.trim();
+
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -117,7 +121,7 @@ class _GroupDetailContent extends ConsumerWidget {
 
             _SectionTitle(
               title: 'Üyeler',
-              action: _canManageMembers
+              action: _canManageMembers && supportsInvitations
                   ? IconButton(
                       key: const Key('add_group_member_button'),
                       tooltip: 'Üye ekle',
@@ -289,7 +293,7 @@ class _GroupDetailContent extends ConsumerWidget {
   }
 
   void _openGroupOcr(BuildContext context) {
-    context.push('/groups/${Uri.encodeComponent(group.id)}/ocr');
+    context.push('/groups/${Uri.encodeComponent(group.id)}/ocr', extra: group);
   }
 
   Future<void> _openDebtSummary(

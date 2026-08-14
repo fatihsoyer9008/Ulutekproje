@@ -26,15 +26,52 @@ class FastSplitExpenseRequest {
   final Map<String, int> fixedAmountsInMinor;
 }
 
+class ItemizedReceiptDraftLineInput {
+  const ItemizedReceiptDraftLineInput({
+    required this.position,
+    required this.name,
+    required this.category,
+    required this.quantityMilli,
+    required this.unitPriceInMinor,
+    required this.totalAmountInMinor,
+  });
+
+  final int position;
+  final String name;
+  final String? category;
+  final int? quantityMilli;
+  final int? unitPriceInMinor;
+  final int totalAmountInMinor;
+}
+
+class ItemizedReceiptDraftInput {
+  const ItemizedReceiptDraftInput({
+    required this.merchantName,
+    required this.category,
+    required this.rawOcrText,
+    required this.lineItems,
+  });
+
+  final String? merchantName;
+  final String? category;
+  final String? rawOcrText;
+  final List<ItemizedReceiptDraftLineInput> lineItems;
+}
+
 class ItemizedLineShareInput {
   const ItemizedLineShareInput({
-    required this.receiptLineItemId,
+    this.receiptLineItemId,
+    this.receiptLineItemPosition,
     required this.userId,
     required this.amountInMinor,
     required this.quantityShareMilli,
-  });
+  }) : assert(
+         (receiptLineItemId == null) != (receiptLineItemPosition == null),
+         'Tam olarak bir satır referansı verilmelidir.',
+       );
 
-  final String receiptLineItemId;
+  final String? receiptLineItemId;
+  final int? receiptLineItemPosition;
   final String userId;
   final int amountInMinor;
   final int? quantityShareMilli;
@@ -53,7 +90,8 @@ class ItemizedExtraShareInput {
 class ItemizedExpenseRequest {
   const ItemizedExpenseRequest({
     required this.groupId,
-    required this.receiptId,
+    this.receiptId,
+    this.receiptDraft,
     required this.title,
     required this.payerUserId,
     required this.expenseDate,
@@ -61,10 +99,14 @@ class ItemizedExpenseRequest {
     required this.currency,
     required this.lineShares,
     required this.extraShares,
-  });
+  }) : assert(
+         (receiptId == null) != (receiptDraft == null),
+         'Tam olarak bir fiş kaynağı verilmelidir.',
+       );
 
   final String groupId;
-  final String receiptId;
+  final String? receiptId;
+  final ItemizedReceiptDraftInput? receiptDraft;
   final String title;
   final String payerUserId;
   final String expenseDate;
@@ -122,6 +164,8 @@ abstract interface class GroupRepository
   });
 
   Future<void> archiveGroup(String groupId);
+
+  bool get supportsInvitations;
 
   Future<void> createInvitation({
     required String groupId,

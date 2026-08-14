@@ -50,12 +50,14 @@ from app.repositories.group_expense_idempotency import (
 from app.repositories.group_expenses import GroupExpenseRepository
 from app.services.debt_summary_cache import DebtSummaryCache
 from app.services.group_expense_service import (
+    DraftLineItemAssignmentInput,
     ExtraAmountInput,
     ExtraAmountShareInput,
     FastSplitValidationError,
     GroupExpenseService,
     ItemizedExpenseValidationError,
     LineItemAssignmentInput,
+    ReceiptDraftLineInput,
 )
 from app.services.group_service import GroupService, GroupServiceError
 
@@ -90,8 +92,21 @@ _EXPENSE_ERRORS = {
 def _group_expense_request_hash(
     payload: GroupExpenseCreateRequest | ItemizedExpenseCreateRequest,
 ) -> str:
+    canonical_payload = payload.model_dump(mode="json")
+
+    if (
+        isinstance(payload, ItemizedExpenseCreateRequest)
+        and payload.receipt_id is not None
+    ):
+        # Eski deployment'ların itemized hash biçimini koru. Yeni nullable
+        # alanlar eski idempotency kayıtlarında bulunmadığı için kaldırılır.
+        canonical_payload.pop("receipt_draft", None)
+
+        for line_item in canonical_payload["split"]["line_items"]:
+            line_item.pop("receipt_line_item_position", None)
+
     canonical = json.dumps(
-        payload.model_dump(mode="json"),
+        canonical_payload,
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
@@ -282,6 +297,7 @@ async def create_group_expense(
     if isinstance(payload, ItemizedExpenseCreateRequest):
         expense = await create_itemized_expense(
             group_id=group_id,
+            receipt_client_record_id=idempotency_record.id,
             payload=payload,
             actor_membership=actor_membership,
             db=db,
@@ -612,22 +628,13 @@ async def remove_group_member(
 async def create_itemized_expense(
     *,
     group_id: uuid.UUID,
+    receipt_client_record_id: uuid.UUID,
     payload: ItemizedExpenseCreateRequest,
     actor_membership: GroupMember,
     db: AsyncSession,
 ) -> GroupExpense:
     actor_user_id = actor_membership.user_id
 
-    assignments = [
-        LineItemAssignmentInput(
-            receipt_line_item_id=line_item.receipt_line_item_id,
-            user_id=share.user_id,
-            amount_in_minor=share.amount_in_minor,
-            quantity_share_milli=share.quantity_share_milli,
-        )
-        for line_item in payload.split.line_items
-        for share in line_item.shares
-    ]
     extra_amounts = [
         ExtraAmountInput(
             type=extra_amount.type,
@@ -645,7 +652,67 @@ async def create_itemized_expense(
     ]
 
     service = GroupExpenseService(db)
+
     try:
+        if payload.receipt_draft is not None:
+            draft_assignments = [
+                DraftLineItemAssignmentInput(
+                    receipt_line_item_position=line_item.receipt_line_item_position,
+                    user_id=share.user_id,
+                    amount_in_minor=share.amount_in_minor,
+                    quantity_share_milli=share.quantity_share_milli,
+                )
+                for line_item in payload.split.line_items
+                if line_item.receipt_line_item_position is not None
+                for share in line_item.shares
+            ]
+
+            return await service.create_itemized_from_receipt_draft(
+                group_id=group_id,
+                receipt_client_record_id=receipt_client_record_id,
+                installation_id_hash=privacy_hash(f"group-ocr-receipt:{actor_user_id}"),
+                actor_user_id=actor_user_id,
+                payer_user_id=payload.payer_user_id,
+                merchant_name=payload.receipt_draft.merchant_name,
+                category=payload.receipt_draft.category,
+                raw_ocr_text=payload.receipt_draft.raw_ocr_text,
+                title=payload.title,
+                note=payload.note,
+                expense_date=payload.expense_date,
+                total_amount_in_minor=payload.total_amount_in_minor,
+                currency=payload.currency,
+                line_items=[
+                    ReceiptDraftLineInput(
+                        position=line_item.position,
+                        name=line_item.name,
+                        category=line_item.category,
+                        quantity_milli=line_item.quantity_milli,
+                        unit_price_in_minor=line_item.unit_price_in_minor,
+                        total_amount_in_minor=line_item.total_amount_in_minor,
+                    )
+                    for line_item in payload.receipt_draft.line_items
+                ],
+                assignments=draft_assignments,
+                extra_amounts=extra_amounts,
+            )
+
+        if payload.receipt_id is None:
+            raise ItemizedExpenseValidationError("invalid_request")
+
+        assignments: list[LineItemAssignmentInput] = []
+        for line_item in payload.split.line_items:
+            if line_item.receipt_line_item_id is None:
+                raise ItemizedExpenseValidationError("invalid_request")
+            assignments.extend(
+                LineItemAssignmentInput(
+                    receipt_line_item_id=line_item.receipt_line_item_id,
+                    user_id=share.user_id,
+                    amount_in_minor=share.amount_in_minor,
+                    quantity_share_milli=share.quantity_share_milli,
+                )
+                for share in line_item.shares
+            )
+
         return await service.create_itemized(
             group_id=group_id,
             receipt_id=payload.receipt_id,

@@ -93,6 +93,7 @@ class GroupExpenseCreateRequest(BaseModel):
     def normalize_currency(cls, value: str) -> str:
         return value.strip().upper()
 
+
 class GroupCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -196,8 +197,52 @@ class ItemizedLineItemShareRequest(BaseModel):
 class ItemizedLineItemRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    receipt_line_item_id: uuid.UUID
+    receipt_line_item_id: uuid.UUID | None = None
+    receipt_line_item_position: int | None = Field(default=None, ge=0)
     shares: list[ItemizedLineItemShareRequest] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_line_reference(self) -> "ItemizedLineItemRequest":
+        has_cloud_id = self.receipt_line_item_id is not None
+        has_draft_position = self.receipt_line_item_position is not None
+        if has_cloud_id == has_draft_position:
+            raise ValueError(
+                "Exactly one of receipt_line_item_id or "
+                "receipt_line_item_position is required"
+            )
+        return self
+
+
+class ReceiptDraftLineItemRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    position: int = Field(ge=0)
+    name: str = Field(min_length=1, max_length=500)
+    category: str | None = Field(default=None, max_length=64)
+    quantity_milli: int | None = Field(default=None, gt=0)
+    unit_price_in_minor: int | None = Field(default=None, ge=0)
+    total_amount_in_minor: int = Field(gt=0)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class ReceiptDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    merchant_name: str | None = Field(default=None, max_length=255)
+    category: str | None = Field(default=None, max_length=64)
+    raw_ocr_text: str | None = None
+    line_items: list[ReceiptDraftLineItemRequest] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unique_positions(self) -> "ReceiptDraftRequest":
+        positions = [item.position for item in self.line_items]
+        if len(positions) != len(set(positions)):
+            raise ValueError("Receipt draft line positions must be unique")
+        return self
 
 
 class ExpenseExtraAmountShareRequest(BaseModel):
@@ -241,7 +286,8 @@ class ItemizedSplitRequest(BaseModel):
 class ItemizedExpenseCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    receipt_id: uuid.UUID
+    receipt_id: uuid.UUID | None = None
+    receipt_draft: ReceiptDraftRequest | None = None
     payer_user_id: uuid.UUID
     title: str = Field(min_length=1, max_length=255)
     note: str | None = None
@@ -259,6 +305,25 @@ class ItemizedExpenseCreateRequest(BaseModel):
     @classmethod
     def normalize_currency(cls, value: str) -> str:
         return value.strip().upper()
+
+    @model_validator(mode="after")
+    def validate_receipt_source(self) -> "ItemizedExpenseCreateRequest":
+        has_cloud_receipt = self.receipt_id is not None
+        has_receipt_draft = self.receipt_draft is not None
+        if has_cloud_receipt == has_receipt_draft:
+            raise ValueError("Exactly one of receipt_id or receipt_draft is required")
+
+        for line_item in self.split.line_items:
+            if has_cloud_receipt and line_item.receipt_line_item_id is None:
+                raise ValueError(
+                    "Cloud receipts require receipt_line_item_id references"
+                )
+            if has_receipt_draft and line_item.receipt_line_item_position is None:
+                raise ValueError(
+                    "Receipt drafts require receipt_line_item_position references"
+                )
+
+        return self
 
 
 class ExpenseShareResponse(BaseModel):

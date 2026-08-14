@@ -67,13 +67,20 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
     required String idempotencyKey,
   }) {
     final sharesByLine = <String, List<ItemizedLineShareInput>>{};
+
     for (final share in request.lineShares) {
-      (sharesByLine[share.receiptLineItemId] ??= []).add(share);
+      final key =
+          share.receiptLineItemId ??
+          'position:${share.receiptLineItemPosition}';
+      (sharesByLine[key] ??= []).add(share);
     }
+
     final extraAmountInMinor = request.extraShares.fold<int>(
       0,
       (total, share) => total + share.amountInMinor,
     );
+    final receiptDraft = request.receiptDraft;
+
     return _create(
       groupId: request.groupId,
       idempotencyKey: idempotencyKey,
@@ -84,13 +91,34 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
         'total_amount_in_minor': request.totalAmountInMinor,
         'currency': request.currency,
         'receipt_id': request.receiptId,
+        if (receiptDraft != null)
+          'receipt_draft': <String, Object?>{
+            'merchant_name': receiptDraft.merchantName,
+            'category': receiptDraft.category,
+            'raw_ocr_text': receiptDraft.rawOcrText,
+            'line_items': [
+              for (final line in receiptDraft.lineItems)
+                <String, Object?>{
+                  'position': line.position,
+                  'name': line.name,
+                  'category': line.category,
+                  'quantity_milli': line.quantityMilli,
+                  'unit_price_in_minor': line.unitPriceInMinor,
+                  'total_amount_in_minor': line.totalAmountInMinor,
+                },
+            ],
+          },
         'payer_user_id': request.payerUserId,
         'split': <String, Object?>{
           'type': 'itemized',
           'line_items': [
             for (final entry in sharesByLine.entries)
               <String, Object?>{
-                'receipt_line_item_id': entry.key,
+                if (entry.value.first.receiptLineItemId != null)
+                  'receipt_line_item_id': entry.value.first.receiptLineItemId,
+                if (entry.value.first.receiptLineItemPosition != null)
+                  'receipt_line_item_position':
+                      entry.value.first.receiptLineItemPosition,
                 'shares': [
                   for (final share in entry.value)
                     <String, Object?>{

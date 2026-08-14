@@ -29,14 +29,32 @@ class GroupExpenseDraft {
   /// Itemized Split yalnızca liste boş değilse ve bütün ürünler hesaplanabilir
   /// pozitif satır toplamına sahipse güvenle açılabilir. Eksik tutarlı OCR
   /// ürünleri taslakta korunur ancak kullanıcıyı kilitleyen akışı tetiklemez.
-  bool get hasMeaningfulItems =>
-      items.isNotEmpty &&
-      items.every(
-        (item) =>
-            item.name.trim().isNotEmpty &&
-            item.totalAmountInMinor != null &&
-            item.totalAmountInMinor! > 0,
-      );
+  List<GroupExpenseDraftItem> get meaningfulItems => List.unmodifiable(
+    items.where(
+      (item) =>
+          item.name.trim().isNotEmpty &&
+          item.totalAmountInMinor != null &&
+          item.totalAmountInMinor! > 0,
+    ),
+  );
+
+  bool get hasMeaningfulItems => meaningfulItems.isNotEmpty;
+
+  int get meaningfulItemsTotalInMinor => meaningfulItems.fold<int>(
+    0,
+    (total, item) => total + item.totalAmountInMinor!,
+  );
+
+  int? get resolvedItemizedTotalInMinor {
+    final receiptTotal = totalAmountInMinor;
+    if (receiptTotal != null && receiptTotal > 0) return receiptTotal;
+    final itemTotal = meaningfulItemsTotalInMinor;
+    return itemTotal > 0 ? itemTotal : null;
+  }
+
+  bool get itemizedTotalWasDerived =>
+      (totalAmountInMinor == null || totalAmountInMinor! <= 0) &&
+      resolvedItemizedTotalInMinor != null;
 }
 
 /// Grup masrafına aktarılmış, düzenlenebilir OCR ürün kalemi.
