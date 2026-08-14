@@ -21,3 +21,8 @@ strix_runs
 # Local outputs produced by the PR review router
 /filtered_diff.txt
 /pr_result.txt
+
+# Local code-review scratch directories
+/.codex-tmp/
+/.review/
+/review_receipt_validation_*/
