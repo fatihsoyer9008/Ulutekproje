@@ -19,6 +19,7 @@ from app.api.dependencies import (
     get_debt_summary_cache,
 )
 from app.core.database import get_db_session
+from app.domain.debts import DebtSummary
 from app.main import app
 from app.models import (
     Group,
@@ -37,6 +38,14 @@ class NoopDebtSummaryCache:
 
     async def invalidate(self, group_id: uuid.UUID) -> None:
         self.invalidated_group_ids.append(group_id)
+
+    async def get(self, group_id: uuid.UUID) -> DebtSummary | None:
+        del group_id
+        return None
+
+    async def set(self, summary: DebtSummary) -> bool:
+        del summary
+        return True
 
 
 @pytest_asyncio.fixture

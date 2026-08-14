@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://receipt_app:receipt_app@127.0.0.1:5432/receipt_app"
     )
     redis_url: SecretStr = SecretStr("redis://127.0.0.1:6379/0")
+    debt_summary_cache_ttl_seconds: int = Field(default=300, ge=1, le=3600)
 
     jwt_secret: SecretStr = SecretStr(
         "development-only-change-this-secret-before-production"
