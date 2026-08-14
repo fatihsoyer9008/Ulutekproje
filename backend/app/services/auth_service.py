@@ -228,7 +228,7 @@ class AuthService:
         current_password: str | None,
         apple_provider: AppleOAuthProvider | None = None,
         token_cipher: OAuthTokenCipher | None = None,
-    ) -> None:
+    ) -> tuple[uuid.UUID, ...]:
         if user.password_hash is not None:
             if current_password is None or not verify_password(
                 user.password_hash,
@@ -263,13 +263,14 @@ class AuthService:
                 raise AccountDeletionFailed(
                     "Apple account revocation failed"
                 ) from exc
-        await self.groups.prepare_for_user_deletion(
+        affected_group_ids = await self.groups.prepare_for_user_deletion(
             user_id=user.id,
             archived_at=utc_now(),
         )
         await self.db.flush()
         await self.db.delete(user)
         await self.db.commit()
+        return tuple(affected_group_ids)
 
     async def _create_one_time_token(
         self,

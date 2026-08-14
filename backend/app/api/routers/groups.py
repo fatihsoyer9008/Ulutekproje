@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
     get_current_user,
+    get_debt_summary_cache,
     require_group_admin,
     require_group_member,
     require_group_owner,
@@ -47,6 +48,7 @@ from app.repositories.group_expense_idempotency import (
     GroupExpenseIdempotencyRepository,
 )
 from app.repositories.group_expenses import GroupExpenseRepository
+from app.services.debt_summary_cache import DebtSummaryCache
 from app.services.group_expense_service import (
     ExtraAmountInput,
     ExtraAmountShareInput,
@@ -207,6 +209,7 @@ async def create_group_expense(
         max_length=128,
     ),
     db: AsyncSession = Depends(get_db_session),
+    debt_cache: DebtSummaryCache = Depends(get_debt_summary_cache),
 ) -> GroupExpenseEnvelope:
     actor_user_id = actor_membership.user_id
     request_hash = _group_expense_request_hash(payload)
@@ -339,6 +342,7 @@ async def create_group_expense(
 
     idempotency_record.expense_id = expense.id
     await db.commit()
+    await debt_cache.invalidate_best_effort(group_id)
     return await _expense_response(expense, db)
 
 
@@ -545,6 +549,7 @@ async def add_group_member(
     payload: GroupMemberCreateRequest,
     actor_membership: GroupMember = Depends(require_group_admin),
     db: AsyncSession = Depends(get_db_session),
+    debt_cache: DebtSummaryCache = Depends(get_debt_summary_cache),
 ) -> GroupMemberEnvelope:
     try:
         member = await GroupService(db).add_member(
@@ -555,6 +560,7 @@ async def add_group_member(
         )
     except GroupServiceError as error:
         _raise_group_error(error)
+    await debt_cache.invalidate_best_effort(group_id)
     return GroupMemberEnvelope(member=member)
 
 
@@ -566,6 +572,7 @@ async def leave_group(
     group_id: uuid.UUID,
     actor_membership: GroupMember = Depends(require_group_member),
     db: AsyncSession = Depends(get_db_session),
+    debt_cache: DebtSummaryCache = Depends(get_debt_summary_cache),
 ) -> Response:
     try:
         await GroupService(db).remove_member(
@@ -575,6 +582,7 @@ async def leave_group(
         )
     except GroupServiceError as error:
         _raise_group_error(error)
+    await debt_cache.invalidate_best_effort(group_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -587,6 +595,7 @@ async def remove_group_member(
     user_id: uuid.UUID,
     actor_membership: GroupMember = Depends(require_group_member),
     db: AsyncSession = Depends(get_db_session),
+    debt_cache: DebtSummaryCache = Depends(get_debt_summary_cache),
 ) -> Response:
     try:
         await GroupService(db).remove_member(
@@ -596,6 +605,7 @@ async def remove_group_member(
         )
     except GroupServiceError as error:
         _raise_group_error(error)
+    await debt_cache.invalidate_best_effort(group_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -663,6 +673,7 @@ async def update_group_member_role(
     payload: GroupMemberRoleUpdateRequest,
     actor_membership: GroupMember = Depends(require_group_owner),
     db: AsyncSession = Depends(get_db_session),
+    debt_cache: DebtSummaryCache = Depends(get_debt_summary_cache),
 ) -> GroupMemberEnvelope:
     try:
         member = await GroupService(db).update_member_role(
@@ -673,6 +684,7 @@ async def update_group_member_role(
         )
     except GroupServiceError as error:
         _raise_group_error(error)
+    await debt_cache.invalidate_best_effort(group_id)
     return GroupMemberEnvelope(member=member)
 
 

@@ -48,7 +48,10 @@ async def get_rate_limiter(redis: Redis = Depends(get_redis)) -> RateLimiter:
 async def get_debt_summary_cache(
     redis: Redis = Depends(get_redis),
 ) -> DebtSummaryCache:
-    return DebtSummaryCache(redis)
+    return DebtSummaryCache(
+        redis,
+        ttl_seconds=settings.debt_summary_cache_ttl_seconds,
+    )
 
 
 def request_ip(request: Request) -> str:
