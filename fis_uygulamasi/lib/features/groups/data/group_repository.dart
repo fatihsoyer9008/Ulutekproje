@@ -173,8 +173,6 @@ abstract interface class GroupRepository
 
   Future<void> archiveGroup(String groupId);
 
-  bool get supportsInvitations;
-
   Future<void> createInvitation({
     required String groupId,
     required String email,
