@@ -78,7 +78,6 @@ void main() {
     );
     expect(find.byKey(Key('remove_group_member_$currentUserId')), findsNothing);
   });
-
   testWidgets('member kullanıcı üye yönetim aksiyonlarını görmez', (
     tester,
   ) async {

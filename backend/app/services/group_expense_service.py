@@ -2,7 +2,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import ROUND_FLOOR, Decimal
 
 from sqlalchemy import select
@@ -42,16 +42,40 @@ class ExtraAmountInput:
     shares: Sequence[ExtraAmountShareInput]
 
 
+@dataclass(frozen=True, slots=True)
+class ReceiptDraftLineInput:
+    position: int
+    name: str
+    category: str | None
+    quantity_milli: int | None
+    unit_price_in_minor: int | None
+    total_amount_in_minor: int
+    tax_rate_basis_points: int | None = None
+    tax_amount_in_minor: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DraftLineItemAssignmentInput:
+    receipt_line_item_position: int
+    user_id: uuid.UUID
+    amount_in_minor: int
+    quantity_share_milli: int | None = None
+
+
 class ItemizedExpenseValidationError(ValueError):
     def __init__(
         self,
         code: str,
         *,
         unassigned_receipt_line_item_ids: Sequence[uuid.UUID] = (),
+        unassigned_receipt_line_item_positions: Sequence[int] = (),
     ) -> None:
         super().__init__(code)
         self.code = code
         self.unassigned_receipt_line_item_ids = tuple(unassigned_receipt_line_item_ids)
+        self.unassigned_receipt_line_item_positions = tuple(
+            unassigned_receipt_line_item_positions
+        )
 
 
 class FastSplitValidationError(ValueError):
@@ -228,6 +252,131 @@ class GroupExpenseService:
             for user_id in user_ids
         }
 
+    async def create_itemized_from_receipt_draft(
+        self,
+        *,
+        group_id: uuid.UUID,
+        receipt_client_record_id: uuid.UUID,
+        installation_id_hash: str,
+        actor_user_id: uuid.UUID,
+        payer_user_id: uuid.UUID,
+        merchant_name: str | None,
+        category: str | None,
+        raw_ocr_text: str | None,
+        title: str,
+        expense_date: datetime,
+        total_amount_in_minor: int,
+        currency: str,
+        line_items: Sequence[ReceiptDraftLineInput],
+        assignments: Sequence[DraftLineItemAssignmentInput],
+        extra_amounts: Sequence[ExtraAmountInput] = (),
+        note: str | None = None,
+    ) -> GroupExpense:
+        if not line_items:
+            raise ItemizedExpenseValidationError("invalid_request")
+
+        positions = [line_item.position for line_item in line_items]
+        if len(positions) != len(set(positions)):
+            raise ItemizedExpenseValidationError("invalid_request")
+
+        requested_positions = {
+            assignment.receipt_line_item_position for assignment in assignments
+        }
+        if not requested_positions.issubset(set(positions)):
+            raise ItemizedExpenseValidationError("invalid_request")
+
+        timestamp = datetime.now(UTC)
+        receipt = CloudReceipt(
+            user_id=actor_user_id,
+            client_record_id=receipt_client_record_id,
+            installation_id_hash=installation_id_hash,
+            merchant_name=merchant_name,
+            total_amount_in_minor=total_amount_in_minor,
+            currency=currency.upper(),
+            receipt_date=expense_date,
+            category=category,
+            raw_ocr_text=raw_ocr_text,
+            is_parse_successful=True,
+            client_created_at=timestamp,
+            client_updated_at=timestamp,
+        )
+
+        receipt.line_items = [
+            CloudReceiptLineItem(
+                client_record_id=uuid.uuid5(
+                    receipt_client_record_id,
+                    f"line-item:{line_item.position}",
+                ),
+                position=line_item.position,
+                name=line_item.name,
+                price_in_minor=line_item.total_amount_in_minor,
+                quantity=(
+                    Decimal(line_item.quantity_milli) / Decimal(1000)
+                    if line_item.quantity_milli is not None
+                    else None
+                ),
+                unit_price_in_minor=line_item.unit_price_in_minor,
+                tax_rate=(
+                    Decimal(line_item.tax_rate_basis_points) / Decimal(100)
+                    if line_item.tax_rate_basis_points is not None
+                    else None
+                ),
+                tax_amount_in_minor=line_item.tax_amount_in_minor,
+                category=line_item.category,
+            )
+            for line_item in sorted(line_items, key=lambda item: item.position)
+        ]
+
+        self.session.add(receipt)
+        await self.session.flush()
+
+        stored_lines_by_position = {
+            line_item.position: line_item for line_item in receipt.line_items
+        }
+        cloud_assignments = [
+            LineItemAssignmentInput(
+                receipt_line_item_id=stored_lines_by_position[
+                    assignment.receipt_line_item_position
+                ].id,
+                user_id=assignment.user_id,
+                amount_in_minor=assignment.amount_in_minor,
+                quantity_share_milli=assignment.quantity_share_milli,
+            )
+            for assignment in assignments
+        ]
+
+        try:
+            return await self.create_itemized(
+                group_id=group_id,
+                receipt_id=receipt.id,
+                actor_user_id=actor_user_id,
+                payer_user_id=payer_user_id,
+                title=title,
+                note=note,
+                expense_date=expense_date,
+                total_amount_in_minor=total_amount_in_minor,
+                currency=currency,
+                assignments=cloud_assignments,
+                extra_amounts=extra_amounts,
+            )
+        except ItemizedExpenseValidationError as error:
+            if error.unassigned_receipt_line_item_ids:
+                positions_by_id = {
+                    line.id: line.position for line in receipt.line_items
+                }
+                raise ItemizedExpenseValidationError(
+                    error.code,
+                    unassigned_receipt_line_item_ids=(
+                        error.unassigned_receipt_line_item_ids
+                    ),
+                    unassigned_receipt_line_item_positions=tuple(
+                        positions_by_id[line_id]
+                        for line_id in error.unassigned_receipt_line_item_ids
+                        if line_id in positions_by_id
+                    ),
+                ) from error
+            raise
+
     async def create_itemized(
         self,
         *,
@@ -327,15 +476,15 @@ class GroupExpenseService:
             ):
                 raise ItemizedExpenseValidationError("invalid_request")
 
-            amounts_by_line_item[assignment.receipt_line_item_id] += (
-                assignment.amount_in_minor
-            )
+            amounts_by_line_item[
+                assignment.receipt_line_item_id
+            ] += assignment.amount_in_minor
             amounts_by_user[assignment.user_id] += assignment.amount_in_minor
 
             if assignment.quantity_share_milli is not None:
-                quantities_by_line_item[assignment.receipt_line_item_id] += (
-                    assignment.quantity_share_milli
-                )
+                quantities_by_line_item[
+                    assignment.receipt_line_item_id
+                ] += assignment.quantity_share_milli
 
         extra_amount_values: list[
             tuple[

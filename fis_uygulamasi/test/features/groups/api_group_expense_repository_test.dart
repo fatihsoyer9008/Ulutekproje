@@ -92,7 +92,97 @@ void main() {
     expect(extraAmount['amount_in_minor'], 6500);
     expect(extraAmount['shares'], hasLength(1));
   });
+  test('OCR itemized request serializes receipt draft positions', () async {
+    late RequestOptions captured;
 
+    final repository = ApiGroupExpenseRepository(
+      _client((options) {
+        captured = options;
+        return _jsonResponse({'expense': itemizedMarketExpense.toJson()});
+      }),
+    );
+
+    await repository.createItemizedSplit(
+      const ItemizedExpenseRequest(
+        groupId: twoMemberGroupId,
+        receiptDraft: ItemizedReceiptDraftInput(
+          merchantName: 'Market',
+          category: 'Market',
+          rawOcrText: 'MARKET SÜT 60,00',
+          lineItems: [
+            ItemizedReceiptDraftLineInput(
+              position: 0,
+              name: 'Süt',
+              category: 'Gıda',
+              quantityMilli: 1000,
+              unitPriceInMinor: 6000,
+              totalAmountInMinor: 6000,
+              taxRateBasisPoints: 2000,
+              taxAmountInMinor: 1000,
+            ),
+          ],
+        ),
+        title: 'Market',
+        payerUserId: currentUserId,
+        expenseDate: '2026-08-14T12:00:00Z',
+        totalAmountInMinor: 6000,
+        currency: 'TRY',
+        lineShares: [
+          ItemizedLineShareInput(
+            receiptLineItemPosition: 0,
+            userId: currentUserId,
+            amountInMinor: 6000,
+            quantityShareMilli: 1000,
+          ),
+        ],
+        extraShares: [],
+      ),
+      idempotencyKey: 'ocr-itemized-request-1',
+    );
+
+    expect(captured.headers['Idempotency-Key'], 'ocr-itemized-request-1');
+
+    final body = captured.data as Map<String, Object?>;
+    expect(body['receipt_id'], isNull);
+
+    final receiptDraft = body['receipt_draft'] as Map;
+    expect(receiptDraft['merchant_name'], 'Market');
+    expect(receiptDraft['category'], 'Market');
+    expect(receiptDraft['raw_ocr_text'], 'MARKET SÜT 60,00');
+
+    final receiptLines = receiptDraft['line_items'] as List;
+    expect(receiptLines, hasLength(1));
+    expect(receiptLines.single, {
+      'position': 0,
+      'name': 'Süt',
+      'category': 'Gıda',
+      'quantity_milli': 1000,
+      'unit_price_in_minor': 6000,
+      'total_amount_in_minor': 6000,
+      'tax_rate_basis_points': 2000,
+      'tax_amount_in_minor': 1000,
+    });
+
+    final split = body['split'] as Map;
+    expect(split['type'], 'itemized');
+
+    final splitLines = split['line_items'] as List;
+    expect(splitLines, hasLength(1));
+
+    final splitLine = splitLines.single as Map;
+    expect(splitLine.containsKey('receipt_line_item_id'), isFalse);
+    expect(splitLine['receipt_line_item_position'], 0);
+
+    final shares = splitLine['shares'] as List;
+    expect(shares, hasLength(1));
+    expect(shares.single, {
+      'user_id': currentUserId,
+      'amount_in_minor': 6000,
+      'quantity_share_milli': 1000,
+    });
+
+    expect(split['extra_amounts'], isEmpty);
+  });
   test('generic create forwards the merged request contract', () async {
     late RequestOptions captured;
     final repository = ApiGroupExpenseRepository(

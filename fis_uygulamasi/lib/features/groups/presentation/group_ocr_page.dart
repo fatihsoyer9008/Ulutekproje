@@ -9,8 +9,13 @@ import '../../receipt_scanning/data/receipt_gallery_picker.dart';
 import '../../transaction_draft/data/receipt_parser_client.dart';
 import '../../transaction_draft/model/transaction_draft.dart';
 import '../../transaction_draft/model/turkish_money.dart';
-import '../data/group_api_failure.dart';
+import '../application/group_expense_draft_mapper.dart';
+import '../application/itemized_split_calculator.dart';
 import '../data/group_providers.dart';
+import '../domain/group_expense_draft.dart';
+import '../domain/group_models.dart';
+import 'fast_split_page.dart';
+import 'itemized_split_page.dart';
 
 typedef GroupReceiptLauncher = Future<String?> Function(BuildContext context);
 typedef GroupReceiptParser =
@@ -18,17 +23,34 @@ typedef GroupReceiptParser =
       String text, {
       CancelToken? cancelToken,
     });
+typedef GroupFastSplitSubmit =
+    Future<void> Function(
+      GroupExpenseDraft draft,
+      FastSplitFormValue value,
+      String idempotencyKey,
+    );
+
+typedef GroupItemizedSplitSubmit =
+    Future<void> Function(
+      GroupExpenseDraft draft,
+      ItemizedSplitFormValue value,
+      String idempotencyKey,
+    );
 
 class GroupOcrPage extends ConsumerStatefulWidget {
   const GroupOcrPage({
     super.key,
-    required this.groupId,
+    required this.group,
+    required this.onFastSplitSubmit,
+    required this.onItemizedSplitSubmit,
     this.scanReceipt,
     this.pickGalleryReceipt,
     this.parseReceipt,
   });
 
-  final String groupId;
+  final GroupDetail group;
+  final GroupFastSplitSubmit onFastSplitSubmit;
+  final GroupItemizedSplitSubmit onItemizedSplitSubmit;
   final GroupReceiptLauncher? scanReceipt;
   final GroupReceiptLauncher? pickGalleryReceipt;
   final GroupReceiptParser? parseReceipt;
@@ -39,8 +61,12 @@ class GroupOcrPage extends ConsumerStatefulWidget {
 
 class _GroupOcrPageState extends ConsumerState<GroupOcrPage> {
   bool _isLoading = false;
+  bool _openingSplit = false;
   String? _message;
   ReceiptParseResult? _result;
+  String? _rawOcrText;
+  String? _submissionKey;
+  DateTime? _submissionDate;
   CancelToken? _cancelToken;
   int _flowId = 0;
 
@@ -52,68 +78,62 @@ class _GroupOcrPageState extends ConsumerState<GroupOcrPage> {
 
   @override
   Widget build(BuildContext context) {
-    final groupAsync = ref.watch(groupDetailProvider(widget.groupId));
+    final group = widget.group;
 
     return Scaffold(
       key: const Key('group_ocr_page'),
       appBar: AppBar(title: const Text('Grup Fişi Tara')),
-      body: groupAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _GroupLoadError(
-          message: groupUserMessage(
-            error,
-            fallbackMessage: 'Grup bilgileri yüklenemedi. Tekrar deneyin.',
-          ),
-          onRetry: () => ref.invalidate(groupDetailProvider(widget.groupId)),
-        ),
-        data: (group) => SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-            children: [
-              Text(
-                group.name,
-                key: const Key('group_ocr_group_name'),
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Bu fiş ${group.name} grubuyla paylaşılacak.',
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-              const SizedBox(height: 24),
-              if (_isLoading)
-                _LoadingCard(onCancel: _cancelParsing)
-              else if (_result != null)
-                _ResultView(result: _result!, onShare: _shareWithGroup)
-              else ...[
-                FilledButton.icon(
-                  key: const Key('group_ocr_camera_button'),
-                  onPressed: () =>
-                      _runOcr(widget.scanReceipt ?? _launchReceiptScanner),
-                  icon: const Icon(Icons.camera_alt_rounded),
-                  label: const Text('Kamerayla Fiş Çek'),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(56),
-                  ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          children: [
+            Text(
+              group.name,
+              key: const Key('group_ocr_group_name'),
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Bu fiş ${group.name} grubuyla paylaşılacak.',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 24),
+            if (_isLoading)
+              _LoadingCard(onCancel: _cancelParsing)
+            else if (_result != null)
+              _ResultView(
+                result: _result!,
+                onShare: _openingSplit ? null : _shareWithGroup,
+                isOpening: _openingSplit,
+              )
+            else ...[
+              FilledButton.icon(
+                key: const Key('group_ocr_camera_button'),
+                onPressed: () =>
+                    _runOcr(widget.scanReceipt ?? _launchReceiptScanner),
+                icon: const Icon(Icons.camera_alt_rounded),
+                label: const Text('Kamerayla Fiş Çek'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
                 ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  key: const Key('group_ocr_gallery_button'),
-                  onPressed: () =>
-                      _runOcr(widget.pickGalleryReceipt ?? _pickGalleryReceipt),
-                  icon: const Icon(Icons.photo_library_outlined),
-                  label: const Text('Galeriden Fiş Seç'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(56),
-                  ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                key: const Key('group_ocr_gallery_button'),
+                onPressed: () =>
+                    _runOcr(widget.pickGalleryReceipt ?? _pickGalleryReceipt),
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('Galeriden Fiş Seç'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
                 ),
-                if (_message != null) ...[
-                  const SizedBox(height: 20),
-                  _MessageCard(message: _message!),
-                ],
+              ),
+              if (_message != null) ...[
+                const SizedBox(height: 20),
+                _MessageCard(message: _message!),
               ],
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -124,8 +144,12 @@ class _GroupOcrPageState extends ConsumerState<GroupOcrPage> {
     final flowId = ++_flowId;
     setState(() {
       _isLoading = true;
+      _openingSplit = false;
       _message = null;
       _result = null;
+      _rawOcrText = null;
+      _submissionKey = null;
+      _submissionDate = null;
       _cancelToken = null;
     });
 
@@ -173,9 +197,16 @@ class _GroupOcrPageState extends ConsumerState<GroupOcrPage> {
         );
         return;
       }
+      final submissionDate = DateTime.now().toUtc();
+
       setState(() {
         _isLoading = false;
         _result = result;
+        _rawOcrText = rawText;
+        _submissionDate = submissionDate;
+        _submissionKey =
+            'group-ocr-${widget.group.id}-$flowId-'
+            '${submissionDate.microsecondsSinceEpoch}';
       });
     } on ReceiptParserException catch (error) {
       if (flowId != _flowId) return;
@@ -227,8 +258,123 @@ class _GroupOcrPageState extends ConsumerState<GroupOcrPage> {
     return selection?.rawOcrText;
   }
 
-  void _shareWithGroup() {
-    Navigator.of(context).pop(_result);
+  Future<void> _shareWithGroup() async {
+    if (_openingSplit) return;
+
+    final result = _result;
+    final submissionKey = _submissionKey;
+    final submissionDate = _submissionDate;
+
+    if (result == null || submissionKey == null || submissionDate == null) {
+      return;
+    }
+
+    final currentUserId = ref.read(currentGroupUserIdProvider)?.trim();
+    if (currentUserId == null || currentUserId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Aktif kullanıcı bilgisi bulunamadı. Lütfen yeniden giriş yapın.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _openingSplit = true);
+
+    try {
+      final parsedDraft = result.draft;
+      final source = TransactionDraft(
+        institutionName: parsedDraft.institutionName,
+        category: parsedDraft.category,
+        amountInMinor: parsedDraft.amountInMinor,
+        transactionDate: parsedDraft.transactionDate ?? submissionDate,
+        rawOcrText:
+            _rawOcrText ?? parsedDraft.rawOcrText ?? result.normalizedOcrText,
+        receiptItems: parsedDraft.receiptItems,
+      );
+
+      final draft = const GroupExpenseDraftMapper().fromTransactionDraft(
+        source: source,
+        groupId: widget.group.id,
+        payerUserId: currentUserId,
+        currency: widget.group.currency,
+      );
+
+      final meaningfulItems = draft.meaningfulItems;
+      final itemizedTotal = draft.resolvedItemizedTotalInMinor;
+
+      MaterialPageRoute<bool> buildFastSplitRoute() {
+        final receiptTotal = draft.totalAmountInMinor;
+
+        return MaterialPageRoute<bool>(
+          builder: (_) => FastSplitPage(
+            group: widget.group,
+            currentUserId: currentUserId,
+            initialTitle: draft.merchantName,
+            initialTotalAmountInMinor: receiptTotal != null && receiptTotal > 0
+                ? receiptTotal
+                : null,
+            popSavedResult: true,
+            onSubmit: (value) =>
+                widget.onFastSplitSubmit(draft, value, submissionKey),
+          ),
+        );
+      }
+
+      final MaterialPageRoute<bool> initialRoute;
+
+      if (draft.hasMeaningfulItems && itemizedTotal != null) {
+        initialRoute = MaterialPageRoute<bool>(
+          builder: (splitContext) => ItemizedSplitPage(
+            group: widget.group,
+            currentUserId: currentUserId,
+            initialTitle: draft.merchantName,
+            popSavedResult: true,
+            receipt: ItemizedSplitReceipt(
+              receiptId: null,
+              totalAmountInMinor: itemizedTotal,
+              lineItems: [
+                for (var index = 0; index < meaningfulItems.length; index += 1)
+                  ItemizedReceiptLine(
+                    receiptLineItemId: null,
+                    receiptLineItemPosition: index,
+                    name: meaningfulItems[index].name,
+                    quantityMilli: meaningfulItems[index].quantityMilli,
+                    unitPriceInMinor: meaningfulItems[index].unitPriceInMinor,
+                    totalAmountInMinor:
+                        meaningfulItems[index].totalAmountInMinor,
+                  ),
+              ],
+            ),
+            onUseFastSplit: () => Navigator.of(splitContext).pop<bool>(false),
+            onSubmit: (value) =>
+                widget.onItemizedSplitSubmit(draft, value, submissionKey),
+          ),
+        );
+      } else {
+        initialRoute = buildFastSplitRoute();
+      }
+
+      var saved = await Navigator.of(context).push<bool>(initialRoute);
+
+      if (!mounted) return;
+
+      if (saved == false) {
+        saved = await Navigator.of(context).push<bool>(buildFastSplitRoute());
+
+        if (!mounted) return;
+      }
+
+      if (saved == true) {
+        Navigator.of(context).pop<bool>(true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _openingSplit = false);
+      }
+    }
   }
 }
 
@@ -270,10 +416,15 @@ class _LoadingCard extends StatelessWidget {
 }
 
 class _ResultView extends StatelessWidget {
-  const _ResultView({required this.result, required this.onShare});
+  const _ResultView({
+    required this.result,
+    required this.onShare,
+    required this.isOpening,
+  });
 
   final ReceiptParseResult result;
-  final VoidCallback onShare;
+  final VoidCallback? onShare;
+  final bool isOpening;
 
   @override
   Widget build(BuildContext context) {
@@ -324,8 +475,13 @@ class _ResultView extends StatelessWidget {
         FilledButton.icon(
           key: const Key('share_with_group_button'),
           onPressed: onShare,
-          icon: const Icon(Icons.group_outlined),
-          label: const Text('Grupla Paylaş'),
+          icon: isOpening
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.group_outlined),
+          label: Text(isOpening ? 'Açılıyor' : 'Grupla Paylaş'),
           style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
         ),
       ],
@@ -386,37 +542,6 @@ class _MessageCard extends StatelessWidget {
                 message,
                 style: TextStyle(color: colors.onErrorContainer),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GroupLoadError extends StatelessWidget {
-  const _GroupLoadError({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline_rounded, size: 40),
-            const SizedBox(height: 12),
-            Text(message, key: const Key('group_ocr_error_message')),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              key: const Key('group_ocr_group_retry_button'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Tekrar dene'),
             ),
           ],
         ),

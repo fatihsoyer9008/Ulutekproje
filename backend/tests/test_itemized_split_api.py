@@ -1,12 +1,31 @@
+import hashlib
+import json
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import func, select
 
-from app.models import CloudReceipt, CloudReceiptLineItem, GroupExpense
+from app.group_schemas import ReceiptDraftLineItemRequest
+from app.models import (
+    CloudReceipt,
+    CloudReceiptLineItem,
+    GroupExpense,
+    GroupExpenseIdempotencyRecord,
+)
 from app.repositories.groups import GroupRepository
+
+
+def test_receipt_draft_tax_rate_cannot_exceed_one_hundred_percent() -> None:
+    with pytest.raises(ValidationError):
+        ReceiptDraftLineItemRequest(
+            position=0,
+            name="Süt",
+            total_amount_in_minor=6_000,
+            tax_rate_basis_points=10_001,
+        )
 
 
 async def _seed_itemized_context(
@@ -59,6 +78,93 @@ async def _seed_itemized_context(
             line_item_ids[0] if line_item_ids else None,
             line_item_ids[1] if len(line_item_ids) > 1 else None,
         )
+
+
+def _receipt_draft_payload(
+    *,
+    owner_id: uuid.UUID,
+    member_id: uuid.UUID,
+) -> dict[str, object]:
+    return {
+        "title": "OCR market fişi",
+        "note": "Grup OCR ekranından oluşturuldu",
+        "expense_date": "2026-08-12T12:00:00Z",
+        "total_amount_in_minor": 12_500,
+        "currency": "TRY",
+        "payer_user_id": str(owner_id),
+        "receipt_draft": {
+            "merchant_name": "Mahalle Market",
+            "category": "Market",
+            "raw_ocr_text": "2 x Süt 60,00\nEkmek 60,00",
+            "line_items": [
+                {
+                    "position": 0,
+                    "name": "Süt",
+                    "category": "Gıda",
+                    "quantity_milli": 2_000,
+                    "unit_price_in_minor": 3_000,
+                    "total_amount_in_minor": 6_000,
+                    "tax_rate_basis_points": 2_000,
+                    "tax_amount_in_minor": 1_000,
+                },
+                {
+                    "position": 1,
+                    "name": "Ekmek",
+                    "category": "Gıda",
+                    "quantity_milli": 1_000,
+                    "unit_price_in_minor": 6_000,
+                    "total_amount_in_minor": 6_000,
+                },
+            ],
+        },
+        "split": {
+            "type": "itemized",
+            "line_items": [
+                {
+                    "receipt_line_item_position": 0,
+                    "shares": [
+                        {
+                            "user_id": str(owner_id),
+                            "amount_in_minor": 3_000,
+                            "quantity_share_milli": 1_000,
+                        },
+                        {
+                            "user_id": str(member_id),
+                            "amount_in_minor": 3_000,
+                            "quantity_share_milli": 1_000,
+                        },
+                    ],
+                },
+                {
+                    "receipt_line_item_position": 1,
+                    "shares": [
+                        {
+                            "user_id": str(member_id),
+                            "amount_in_minor": 6_000,
+                            "quantity_share_milli": 1_000,
+                        }
+                    ],
+                },
+            ],
+            "extra_amounts": [
+                {
+                    "type": "tax",
+                    "label": "KDV",
+                    "amount_in_minor": 500,
+                    "shares": [
+                        {
+                            "user_id": str(owner_id),
+                            "amount_in_minor": 250,
+                        },
+                        {
+                            "user_id": str(member_id),
+                            "amount_in_minor": 250,
+                        },
+                    ],
+                }
+            ],
+        },
+    }
 
 
 def _itemized_payload(
@@ -119,6 +225,16 @@ def _itemized_payload(
             ],
         },
     }
+
+
+def _legacy_itemized_request_hash(payload: dict[str, object]) -> str:
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 @pytest.mark.asyncio
@@ -185,6 +301,59 @@ async def test_itemized_endpoint_creates_multi_member_split_and_replays(
     async with session_factory() as session:
         count = await session.scalar(select(func.count()).select_from(GroupExpense))
         assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_itemized_idempotency_hash_replays_after_schema_upgrade(
+    group_api_context,
+) -> None:
+    client, session_factory, _, owner, member, _, _ = group_api_context
+
+    group_id, receipt_id, milk_id, bread_id = await _seed_itemized_context(
+        session_factory,
+        owner_id=owner.id,
+        member_id=member.id,
+    )
+    assert milk_id is not None and bread_id is not None
+
+    payload = _itemized_payload(
+        owner_id=owner.id,
+        member_id=member.id,
+        receipt_id=receipt_id,
+        milk_id=milk_id,
+        bread_id=bread_id,
+    )
+    headers = {"Idempotency-Key": "legacy-itemized-replay-0001"}
+
+    first = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        json=payload,
+        headers=headers,
+    )
+
+    assert first.status_code == 201
+
+    async with session_factory() as session:
+        record = await session.scalar(
+            select(GroupExpenseIdempotencyRecord).where(
+                GroupExpenseIdempotencyRecord.group_id == group_id,
+                GroupExpenseIdempotencyRecord.actor_user_id == owner.id,
+            )
+        )
+        assert record is not None
+
+        record.request_hash = _legacy_itemized_request_hash(payload)
+        await session.commit()
+
+    replay = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        json=payload,
+        headers=headers,
+    )
+
+    assert replay.status_code == 200
+    assert replay.headers["idempotency-replayed"] == "true"
+    assert replay.json() == first.json()
 
 
 @pytest.mark.asyncio
@@ -366,3 +535,160 @@ async def test_itemized_request_schema_rejects_ambiguous_or_duplicate_assignment
     )
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "invalid_request"
+
+
+@pytest.mark.asyncio
+async def test_itemized_endpoint_creates_receipt_from_ocr_draft_and_replays(
+    group_api_context,
+) -> None:
+    client, session_factory, _, owner, member, _, _ = group_api_context
+
+    async with session_factory() as session:
+        groups = GroupRepository(session)
+        group = await groups.create(
+            name="OCR Market Grubu",
+            created_by=owner.id,
+        )
+        await groups.add_member(
+            group_id=group.id,
+            user_id=member.id,
+        )
+        await session.commit()
+        group_id = group.id
+
+    payload = _receipt_draft_payload(
+        owner_id=owner.id,
+        member_id=member.id,
+    )
+    headers = {"Idempotency-Key": "ocr-receipt-draft-0001"}
+
+    first = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        json=payload,
+        headers=headers,
+    )
+    replay = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        json=payload,
+        headers=headers,
+    )
+
+    assert first.status_code == 201
+    assert replay.status_code == 200
+    assert replay.headers["idempotency-replayed"] == "true"
+    assert replay.json() == first.json()
+
+    expense = first.json()["expense"]
+    assert expense["split_type"] == "itemized"
+    assert expense["receipt_id"] is not None
+    assert len(expense["line_item_assignments"]) == 3
+
+    receipt_id = uuid.UUID(expense["receipt_id"])
+
+    async with session_factory() as session:
+        stored_receipt = await session.get(CloudReceipt, receipt_id)
+        stored_lines = list(
+            (
+                await session.scalars(
+                    select(CloudReceiptLineItem)
+                    .where(CloudReceiptLineItem.receipt_id == receipt_id)
+                    .order_by(CloudReceiptLineItem.position)
+                )
+            ).all()
+        )
+        receipt_count = await session.scalar(
+            select(func.count()).select_from(CloudReceipt)
+        )
+        expense_count = await session.scalar(
+            select(func.count()).select_from(GroupExpense)
+        )
+
+    assert stored_receipt is not None
+    assert stored_receipt.user_id == owner.id
+    assert stored_receipt.merchant_name == "Mahalle Market"
+    assert stored_receipt.category == "Market"
+    assert stored_receipt.raw_ocr_text == "2 x Süt 60,00\nEkmek 60,00"
+    assert stored_receipt.total_amount_in_minor == 12_500
+    assert stored_receipt.is_parse_successful is True
+
+    assert [
+        (
+            line.position,
+            line.name,
+            line.price_in_minor,
+            line.quantity,
+            line.unit_price_in_minor,
+            line.tax_rate,
+            line.tax_amount_in_minor,
+        )
+        for line in stored_lines
+    ] == [
+        (0, "Süt", 6_000, Decimal("2.000"), 3_000, Decimal("20.00"), 1_000),
+        (1, "Ekmek", 6_000, Decimal("1.000"), 6_000, None, None),
+    ]
+
+    assert receipt_count == 1
+    assert expense_count == 1
+
+
+@pytest.mark.asyncio
+async def test_invalid_ocr_draft_does_not_leave_orphan_receipt(
+    group_api_context,
+) -> None:
+    client, session_factory, _, owner, member, _, _ = group_api_context
+
+    async with session_factory() as session:
+        groups = GroupRepository(session)
+        group = await groups.create(
+            name="OCR Rollback Grubu",
+            created_by=owner.id,
+        )
+        await groups.add_member(
+            group_id=group.id,
+            user_id=member.id,
+        )
+        await session.commit()
+        group_id = group.id
+
+    payload = _receipt_draft_payload(
+        owner_id=owner.id,
+        member_id=member.id,
+    )
+    split = payload["split"]
+    assert isinstance(split, dict)
+    line_items = split["line_items"]
+    assert isinstance(line_items, list)
+    split["line_items"] = line_items[:1]
+
+    headers = {"Idempotency-Key": "ocr-receipt-rollback-0001"}
+    failed = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        json=payload,
+        headers=headers,
+    )
+
+    assert failed.status_code == 422
+    assert failed.json()["detail"]["code"] == "unassigned_line_items"
+    assert failed.json()["detail"]["unassigned_receipt_line_item_positions"] == [1]
+
+    async with session_factory() as session:
+        receipt_count = await session.scalar(
+            select(func.count()).select_from(CloudReceipt)
+        )
+        expense_count = await session.scalar(
+            select(func.count()).select_from(GroupExpense)
+        )
+
+    assert receipt_count == 0
+    assert expense_count == 0
+
+    recovered = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        json=_receipt_draft_payload(
+            owner_id=owner.id,
+            member_id=member.id,
+        ),
+        headers=headers,
+    )
+
+    assert recovered.status_code == 201

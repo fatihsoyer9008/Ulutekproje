@@ -5,15 +5,19 @@ import 'package:app_main/features/ai_assistant/presentation/assistant_consent_ca
 import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
-import 'package:app_main/features/groups/data/fake_group_repository.dart';
+import 'package:app_main/features/groups/data/fake_group_repository.dart'
+    show FakeGroupRepository;
 import 'package:app_main/features/groups/data/group_providers.dart';
-import 'package:app_main/features/groups/presentation/groups_page.dart';
+import 'package:app_main/features/groups/data/group_repository.dart';
+import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:app_main/features/groups/presentation/group_ocr_page.dart';
+import 'package:app_main/features/groups/presentation/groups_page.dart';
 import 'package:app_main/src/app/finance_app.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../fixtures/group_fixtures.dart';
 
@@ -46,11 +50,76 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(GroupOcrPage), findsOneWidget);
-    expect(
-      tester.widget<GroupOcrPage>(find.byType(GroupOcrPage)).groupId,
-      '10000000-0000-4000-8000-000000000001',
-    );
+    final groupOcrPage = tester.widget<GroupOcrPage>(find.byType(GroupOcrPage));
+    expect(groupOcrPage.group.id, '10000000-0000-4000-8000-000000000001');
+    expect(groupOcrPage.group.name, 'Ev Arkadaşları');
     expect(find.text('Ev Arkadaşları'), findsOneWidget);
+  });
+  testWidgets('OCR route state.extra olmadan grup bilgisini yükler', (
+    tester,
+  ) async {
+    final controller = AuthSessionController(_NavigationAuthRepository());
+    await controller.login('user@example.com', 'password');
+
+    await _pumpApp(tester, controller);
+
+    final routerContext = tester.element(
+      find.byKey(const Key('app_menu_button')),
+    );
+
+    GoRouter.of(
+      routerContext,
+    ).go('/groups/10000000-0000-4000-8000-000000000001/ocr');
+
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GroupOcrPage), findsOneWidget);
+
+    final groupOcrPage = tester.widget<GroupOcrPage>(find.byType(GroupOcrPage));
+
+    expect(groupOcrPage.group.id, '10000000-0000-4000-8000-000000000001');
+    expect(groupOcrPage.group.name, 'Ev Arkadaşları');
+    expect(find.text('Ev Arkadaşları'), findsOneWidget);
+  });
+
+  testWidgets('OCR route grup yükleme hatasında retry ile açılır', (
+    tester,
+  ) async {
+    final controller = AuthSessionController(_NavigationAuthRepository());
+    await controller.login('user@example.com', 'password');
+
+    final repository = _RetryingOcrRouteRepository();
+
+    await _pumpApp(tester, controller, groupRepository: repository);
+
+    final routerContext = tester.element(
+      find.byKey(const Key('app_menu_button')),
+    );
+
+    GoRouter.of(routerContext).go('/groups/$twoMemberGroupId/ocr');
+
+    await tester.pumpAndSettle();
+
+    expect(repository.getGroupCalls, 1);
+    expect(find.byType(GroupOcrPage), findsNothing);
+    expect(
+      find.text(
+        'Grup bilgisi yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Tekrar Dene'), findsOneWidget);
+
+    await tester.tap(find.text('Tekrar Dene'));
+    await tester.pumpAndSettle();
+
+    expect(repository.getGroupCalls, 2);
+    expect(find.byType(GroupOcrPage), findsOneWidget);
+
+    final groupOcrPage = tester.widget<GroupOcrPage>(find.byType(GroupOcrPage));
+
+    expect(groupOcrPage.group.id, twoMemberGroupId);
+    expect(groupOcrPage.group.name, 'Ev Arkadaşları');
   });
 
   testWidgets('guest returns to groups after email login', (tester) async {
@@ -129,20 +198,22 @@ void main() {
 
 Future<void> _pumpApp(
   WidgetTester tester,
-  AuthSessionController controller,
-) async {
+  AuthSessionController controller, {
+  GroupRepository? groupRepository,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         authSessionControllerProvider.overrideWith((ref) => controller),
         groupRepositoryProvider.overrideWithValue(
-          FakeGroupRepository(
-            currentUserId: currentUserId,
-            groups: const [twoMemberGroup],
-            debtSummariesByGroup: const {
-              twoMemberGroupId: currentUserDebtorDebtSummary,
-            },
-          ),
+          groupRepository ??
+              FakeGroupRepository(
+                currentUserId: currentUserId,
+                groups: const [twoMemberGroup],
+                debtSummariesByGroup: const {
+                  twoMemberGroupId: currentUserDebtorDebtSummary,
+                },
+              ),
         ),
       ],
       child: FinanceApp(
@@ -160,6 +231,26 @@ Future<void> _openGroupsFromDrawer(WidgetTester tester) async {
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('drawer_groups_tile')));
   await tester.pumpAndSettle();
+}
+
+class _RetryingOcrRouteRepository extends FakeGroupRepository {
+  _RetryingOcrRouteRepository()
+    : super(currentUserId: currentUserId, groups: const [twoMemberGroup]);
+
+  var getGroupCalls = 0;
+  var _shouldFail = true;
+
+  @override
+  Future<GroupDetail> getGroup(String groupId) async {
+    getGroupCalls += 1;
+
+    if (_shouldFail) {
+      _shouldFail = false;
+      throw groupsApiErrorException;
+    }
+
+    return super.getGroup(groupId);
+  }
 }
 
 class _NavigationAuthRepository implements AuthRepositoryBase {

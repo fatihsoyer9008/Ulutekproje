@@ -131,26 +131,34 @@ void main() {
       expect(result.hasMeaningfulItems, isFalse);
     });
 
-    test('geçerli ve eksik toplamlı karışık listeyi itemized adayı saymaz', () {
-      final result = mapper.fromTransactionDraft(
-        source: const TransactionDraft(
-          institutionName: 'Market',
-          category: 'Market',
-          amountInMinor: 5000,
-          receiptItems: [
-            ReceiptItem(name: 'Hesaplanabilen', totalAmountInMinor: 2500),
-            ReceiptItem(name: 'Fiyatı okunamayan'),
-          ],
-        ),
-        groupId: 'group-1',
-        payerUserId: 'user-1',
-      );
+    test(
+      'geçerli ve eksik toplamlı karışık listede anlamlı ürünü itemized adayı sayar',
+      () {
+        final result = mapper.fromTransactionDraft(
+          source: const TransactionDraft(
+            institutionName: 'Market',
+            category: 'Market',
+            amountInMinor: 5000,
+            receiptItems: [
+              ReceiptItem(name: 'Hesaplanabilen', totalAmountInMinor: 2500),
+              ReceiptItem(name: 'Fiyatı okunamayan'),
+            ],
+          ),
+          groupId: 'group-1',
+          payerUserId: 'user-1',
+        );
 
-      expect(result.items, hasLength(2));
-      expect(result.items.first.totalAmountInMinor, 2500);
-      expect(result.items.last.totalAmountInMinor, isNull);
-      expect(result.hasMeaningfulItems, isFalse);
-    });
+        expect(result.items, hasLength(2));
+        expect(result.items.first.totalAmountInMinor, 2500);
+        expect(result.items.last.totalAmountInMinor, isNull);
+
+        expect(result.hasMeaningfulItems, isTrue);
+        expect(result.meaningfulItems, hasLength(1));
+        expect(result.meaningfulItems.single.name, 'Hesaplanabilen');
+        expect(result.meaningfulItems.single.totalAmountInMinor, 2500);
+        expect(result.meaningfulItemsTotalInMinor, 2500);
+      },
+    );
 
     test('binde birimin altında sıfıra yuvarlanan miktarı null yapar', () {
       final result = mapper.fromTransactionDraft(
@@ -222,6 +230,23 @@ void main() {
       expect(item.totalAmountInMinor, isNull);
       expect(item.taxRateBasisPoints, isNull);
       expect(item.taxAmountInMinor, isNull);
+    });
+
+    test('yüzde yüzü aşan vergi oranını taslağa taşımaz', () {
+      final result = mapper.fromTransactionDraft(
+        source: const TransactionDraft(
+          institutionName: 'Market',
+          category: 'Market',
+          amountInMinor: 1000,
+          receiptItems: [
+            ReceiptItem(name: 'Ürün', totalAmountInMinor: 1000, taxRate: 20),
+          ],
+        ),
+        groupId: 'group-1',
+        payerUserId: 'user-1',
+      );
+
+      expect(result.items.single.taxRateBasisPoints, isNull);
     });
 
     test('kaynak listeyi değiştirmez ve çıktı listesini immutable tutar', () {

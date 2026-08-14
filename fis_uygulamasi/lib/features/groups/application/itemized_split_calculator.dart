@@ -3,6 +3,7 @@ import '../domain/group_models.dart';
 class ItemizedReceiptLine {
   const ItemizedReceiptLine({
     required this.receiptLineItemId,
+    this.receiptLineItemPosition,
     required this.name,
     required this.quantityMilli,
     required this.unitPriceInMinor,
@@ -10,35 +11,56 @@ class ItemizedReceiptLine {
   });
 
   final String? receiptLineItemId;
+  final int? receiptLineItemPosition;
   final String name;
   final int? quantityMilli;
   final int? unitPriceInMinor;
   final int? totalAmountInMinor;
 
   bool get isCloudSynced => receiptLineItemId?.trim().isNotEmpty == true;
+
+  bool get isResolvable => isCloudSynced || receiptLineItemPosition != null;
+
+  String selectionKey(int fallbackIndex) {
+    final cloudId = receiptLineItemId?.trim();
+    if (cloudId != null && cloudId.isNotEmpty) return cloudId;
+    final position = receiptLineItemPosition;
+    return position == null
+        ? 'unresolved-$fallbackIndex'
+        : 'draft-position-$position';
+  }
 }
 
 class ItemizedLineItemShare {
   const ItemizedLineItemShare({
     required this.receiptLineItemId,
+    required this.receiptLineItemPosition,
     required this.userId,
     required this.amountInMinor,
     required this.quantityShareMilli,
   });
 
-  final String receiptLineItemId;
+  final String? receiptLineItemId;
+  final int? receiptLineItemPosition;
   final String userId;
   final int amountInMinor;
   final int? quantityShareMilli;
 
-  ReceiptLineItemAssignment toAssignment({required String expenseId}) =>
-      ReceiptLineItemAssignment(
-        expenseId: expenseId,
-        receiptLineItemId: receiptLineItemId,
-        userId: userId,
-        amountInMinor: amountInMinor,
-        quantityShareMilli: quantityShareMilli,
+  ReceiptLineItemAssignment toAssignment({required String expenseId}) {
+    final cloudId = receiptLineItemId;
+    if (cloudId == null) {
+      throw StateError(
+        'Yerel OCR satırı bulut assignment modeline doğrudan çevrilemez.',
       );
+    }
+    return ReceiptLineItemAssignment(
+      expenseId: expenseId,
+      receiptLineItemId: cloudId,
+      userId: userId,
+      amountInMinor: amountInMinor,
+      quantityShareMilli: quantityShareMilli,
+    );
+  }
 }
 
 class ExtraAmountShare {
@@ -259,14 +281,17 @@ class ItemizedSplitCalculator {
     for (var index = 0; index < lineItems.length; index += 1) {
       final item = lineItems[index];
       final lineId = item.receiptLineItemId;
-      final selectionKey = lineId ?? 'unsynced-$index';
+      final linePosition = item.receiptLineItemPosition;
+      final selectionKey = item.selectionKey(index);
       final selected = [
         for (final memberId in orderedActiveMemberIds)
           if (selectedMemberIdsByLineItem[selectionKey]?.contains(memberId) ??
               false)
             memberId,
       ];
-      if (lineId == null || lineId.trim().isEmpty) unsynced = true;
+
+      if (!item.isResolvable) unsynced = true;
+
       final total = item.totalAmountInMinor;
       if (total == null) {
         unknownTotal = true;
@@ -276,19 +301,23 @@ class ItemizedSplitCalculator {
         }
         itemTotal += total;
       }
+
       if (selected.isEmpty) {
         unassigned.add(selectionKey);
         continue;
       }
-      if (lineId == null || total == null) continue;
+      if (!item.isResolvable || total == null) continue;
+
       final amounts = _equalAmounts(total, selected);
       final quantities = item.quantityMilli == null
           ? null
           : _equalAmounts(item.quantityMilli!, selected);
+
       for (var shareIndex = 0; shareIndex < selected.length; shareIndex += 1) {
         shares.add(
           ItemizedLineItemShare(
             receiptLineItemId: lineId,
+            receiptLineItemPosition: linePosition,
             userId: selected[shareIndex],
             amountInMinor: amounts[shareIndex],
             quantityShareMilli: quantities?[shareIndex],

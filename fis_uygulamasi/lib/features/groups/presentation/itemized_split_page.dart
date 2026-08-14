@@ -21,6 +21,13 @@ class ItemizedSplitReceipt {
       receiptId?.trim().isNotEmpty == true &&
       lineItems.isNotEmpty &&
       lineItems.every((item) => item.isCloudSynced);
+
+  bool get canSubmit {
+    if (lineItems.isEmpty) return false;
+    if (isCloudSynced) return true;
+    return receiptId == null &&
+        lineItems.every((item) => item.receiptLineItemPosition != null);
+  }
 }
 
 class ItemizedSplitFormValue {
@@ -33,7 +40,7 @@ class ItemizedSplitFormValue {
 
   final String title;
   final String payerUserId;
-  final String receiptId;
+  final String? receiptId;
   final ItemizedSplitCalculation calculation;
 }
 
@@ -46,7 +53,9 @@ class ItemizedSplitPage extends StatefulWidget {
     required this.currentUserId,
     required this.receipt,
     required this.onSubmit,
+    this.onUseFastSplit,
     this.initialTitle = '',
+    this.popSavedResult = false,
     super.key,
   });
 
@@ -54,7 +63,9 @@ class ItemizedSplitPage extends StatefulWidget {
   final String currentUserId;
   final ItemizedSplitReceipt receipt;
   final ItemizedSplitSubmit onSubmit;
+  final VoidCallback? onUseFastSplit;
   final String initialTitle;
+  final bool popSavedResult;
 
   @override
   State<ItemizedSplitPage> createState() => _ItemizedSplitPageState();
@@ -203,14 +214,30 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
                   ),
                   const SizedBox(height: 12),
                 ],
-                if (calculation.hasNegativeDifference)
+                if (calculation.hasNegativeDifference) ...[
                   _ValidationWarning(
                     key: const Key('itemized_negative_difference_warning'),
-                    message:
-                        'Ürün toplamı fiş toplamını '
-                        '${(-calculation.extraAmountInMinor).toTLDisplay} aşıyor. '
-                        'Fiş veya ürün tutarlarını düzeltin.',
+                    message: widget.onUseFastSplit == null
+                        ? 'Ürün toplamı fiş toplamını '
+                              '${(-calculation.extraAmountInMinor).toTLDisplay} aşıyor. '
+                              'Fiş veya ürün tutarlarını düzeltin.'
+                        : 'Ürün toplamı fiş toplamını '
+                              '${(-calculation.extraAmountInMinor).toTLDisplay} aşıyor. '
+                              'Fişi yeniden tarayın veya hızlı bölüştürmeye geçin.',
                   ),
+                  if (widget.onUseFastSplit != null) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        key: const Key('itemized_use_fast_split_button'),
+                        onPressed: _submitting ? null : widget.onUseFastSplit,
+                        icon: const Icon(Icons.call_split_rounded),
+                        label: const Text('Hızlı Bölüştürmeye Geç'),
+                      ),
+                    ),
+                  ],
+                ],
                 if (calculation.hasUnknownLineTotals)
                   const _ValidationWarning(
                     key: Key('itemized_unknown_total_warning'),
@@ -226,7 +253,7 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
                 key: const Key('itemized_split_submit'),
                 onPressed:
                     !_submitting &&
-                        widget.receipt.isCloudSynced &&
+                        widget.receipt.canSubmit &&
                         calculation.isBalanced &&
                         _payerUserId != null
                     ? _submit
@@ -247,15 +274,19 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
   }
 
   String _lineSelectionKey(int index) =>
-      widget.receipt.lineItems[index].receiptLineItemId ?? 'unsynced-$index';
+      widget.receipt.lineItems[index].selectionKey(index);
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
     final receiptId = widget.receipt.receiptId;
     final payerId = _payerUserId;
     final calculation = _splitState.calculation;
-    if (receiptId == null || payerId == null || !calculation.isBalanced) return;
+
+    if (payerId == null || !calculation.isBalanced) return;
+
     setState(() => _submitting = true);
+
     try {
       await widget.onSubmit(
         ItemizedSplitFormValue(
@@ -265,13 +296,32 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
           calculation: calculation,
         ),
       );
-      if (mounted) Navigator.of(context).pop();
+
+      if (mounted) {
+        if (widget.popSavedResult) {
+          Navigator.of(context).pop<bool>(true);
+        } else {
+          Navigator.of(context).pop();
+        }
+      }
     } on GroupApiException catch (error) {
       if (!mounted) return;
+
       if (error.code == 'unassigned_line_items') {
+        final detail = error.error.detail;
+        // Draft receipts are recreated with fresh server-side line-item ids on
+        // every retry, so only their positions stay meaningful across
+        // attempts; cloud-synced receipts keep the same ids instead.
+        final unassignedKeys = receiptId == null
+            ? <String>{
+                for (final position
+                    in detail.unassignedReceiptLineItemPositions ?? const [])
+                  'draft-position-$position',
+              }
+            : <String>{...?detail.unassignedReceiptLineItemIds};
         setState(() {
           _splitState = _splitState.withServerUnassignedLineItems(
-            error.error.detail.unassignedReceiptLineItemIds ?? const [],
+            unassignedKeys,
           );
         });
         _showError('Atanmayan ürünleri seçip tekrar deneyin.');
@@ -297,7 +347,9 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
         );
       }
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
     }
   }
 
@@ -500,7 +552,7 @@ class _UnassignedWarning extends StatelessWidget {
   Widget build(BuildContext context) {
     final names = <String>[];
     for (var index = 0; index < lineItems.length; index += 1) {
-      final id = lineItems[index].receiptLineItemId ?? 'unsynced-$index';
+      final id = lineItems[index].selectionKey(index);
       if (unassignedIds.contains(id)) names.add(lineItems[index].name);
     }
     final scheme = Theme.of(context).colorScheme;

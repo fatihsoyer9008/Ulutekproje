@@ -787,10 +787,50 @@ class FakeGroupRepository implements GroupRepository {
     _requireCurrentUserMembership(group);
     _validateIdempotencyKey(idempotencyKey);
 
+    final receiptDraft = request.receiptDraft;
+    final effectiveReceiptId =
+        request.receiptId ?? 'draft-receipt-$idempotencyKey';
+
+    String effectiveLineItemId(ItemizedLineShareInput share) {
+      final cloudId = share.receiptLineItemId;
+      if (cloudId != null && cloudId.trim().isNotEmpty) return cloudId;
+
+      final position = share.receiptLineItemPosition;
+      if (position == null) {
+        throw _apiException(
+          statusCode: 422,
+          code: 'invalid_request',
+          message: 'Ürün satırı referansı geçersiz.',
+        );
+      }
+
+      return '$effectiveReceiptId-line-$position';
+    }
+
     final fingerprint = jsonEncode(<String, Object?>{
       'type': 'itemized',
       'group_id': request.groupId,
       'receipt_id': request.receiptId,
+      'receipt_draft': receiptDraft == null
+          ? null
+          : <String, Object?>{
+              'merchant_name': receiptDraft.merchantName,
+              'category': receiptDraft.category,
+              'raw_ocr_text': receiptDraft.rawOcrText,
+              'line_items': [
+                for (final line in receiptDraft.lineItems)
+                  <String, Object?>{
+                    'position': line.position,
+                    'name': line.name,
+                    'category': line.category,
+                    'quantity_milli': line.quantityMilli,
+                    'unit_price_in_minor': line.unitPriceInMinor,
+                    'total_amount_in_minor': line.totalAmountInMinor,
+                    'tax_rate_basis_points': line.taxRateBasisPoints,
+                    'tax_amount_in_minor': line.taxAmountInMinor,
+                  },
+              ],
+            },
       'title': request.title,
       'payer_user_id': request.payerUserId,
       'expense_date': request.expenseDate,
@@ -800,6 +840,7 @@ class FakeGroupRepository implements GroupRepository {
         for (final share in request.lineShares)
           <String, Object?>{
             'receipt_line_item_id': share.receiptLineItemId,
+            'receipt_line_item_position': share.receiptLineItemPosition,
             'user_id': share.userId,
             'amount_in_minor': share.amountInMinor,
             'quantity_share_milli': share.quantityShareMilli,
@@ -843,7 +884,7 @@ class FakeGroupRepository implements GroupRepository {
     final stored = GroupExpense(
       id: expenseId,
       groupId: request.groupId,
-      receiptId: request.receiptId,
+      receiptId: effectiveReceiptId,
       payerUserId: request.payerUserId,
       createdBy: currentUserId,
       title: request.title.trim(),
@@ -869,7 +910,7 @@ class FakeGroupRepository implements GroupRepository {
         for (final share in request.lineShares)
           ReceiptLineItemAssignment(
             expenseId: expenseId,
-            receiptLineItemId: share.receiptLineItemId,
+            receiptLineItemId: effectiveLineItemId(share),
             userId: share.userId,
             amountInMinor: share.amountInMinor,
             quantityShareMilli: share.quantityShareMilli,
@@ -901,7 +942,8 @@ class FakeGroupRepository implements GroupRepository {
       deletedAt: null,
     );
 
-    if (request.title.trim().isEmpty || request.receiptId.trim().isEmpty) {
+    if (request.title.trim().isEmpty ||
+        (request.receiptId == null && request.receiptDraft == null)) {
       throw _apiException(
         statusCode: 422,
         code: 'invalid_split_total',

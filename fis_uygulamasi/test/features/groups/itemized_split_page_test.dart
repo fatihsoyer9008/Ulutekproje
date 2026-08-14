@@ -27,6 +27,21 @@ const _receipt = ItemizedSplitReceipt(
   ],
 );
 
+const _draftReceipt = ItemizedSplitReceipt(
+  receiptId: null,
+  totalAmountInMinor: 6000,
+  lineItems: [
+    ItemizedReceiptLine(
+      receiptLineItemId: null,
+      receiptLineItemPosition: 0,
+      name: 'Süt',
+      quantityMilli: 1000,
+      unitPriceInMinor: 6000,
+      totalAmountInMinor: 6000,
+    ),
+  ],
+);
+
 void main() {
   testWidgets('ürün alanlarını ve eksik değerleri doğru gösterir', (
     tester,
@@ -173,9 +188,71 @@ void main() {
     );
   });
 
-  testWidgets('negatif fark uyarı gösterir ve gönderimi engeller', (
+  testWidgets('backend draft pozisyon hatasını OCR ürününe geri yansıtır', (
     tester,
   ) async {
+    await _pumpPage(
+      tester,
+      receipt: _draftReceipt,
+      onSubmit: (_) async => throw const GroupApiException(
+        statusCode: 422,
+        error: GroupApiError(
+          detail: GroupApiErrorDetail(
+            code: 'unassigned_line_items',
+            message: 'Atanmayan ürünler var.',
+            unassignedReceiptLineItemPositions: [0],
+          ),
+        ),
+      ),
+    );
+    await tester.enterText(
+      find.byKey(const Key('itemized_split_title')),
+      'Market',
+    );
+    final member = find.byKey(Key('itemized_line_0_member_$currentUserId'));
+    await _scrollTo(tester, member);
+    await tester.drag(
+      find
+          .descendant(
+            of: find.byKey(const Key('itemized_split_scroll_view')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+      const Offset(0, -150),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(member);
+    await tester.pump();
+
+    final submit = find.byKey(const Key('itemized_split_submit'));
+    await _scrollTo(tester, submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+
+    await tester.fling(
+      find
+          .descendant(
+            of: find.byKey(const Key('itemized_split_scroll_view')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+      const Offset(0, 1200),
+      2000,
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('1 ürün henüz'), findsOneWidget);
+    expect(find.textContaining('Süt'), findsWidgets);
+    expect(
+      find.text('Atanmayan ürünleri seçip tekrar deneyin.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('negatif farkta gönderimi engeller ve Fast Split geçişi sunar', (
+    tester,
+  ) async {
+    var useFastSplitCalls = 0;
+
     const receipt = ItemizedSplitReceipt(
       receiptId: 'receipt',
       totalAmountInMinor: 5999,
@@ -189,26 +266,45 @@ void main() {
         ),
       ],
     );
-    await _pumpPage(tester, receipt: receipt);
+
+    await _pumpPage(
+      tester,
+      receipt: receipt,
+      onUseFastSplit: () {
+        useFastSplitCalls++;
+      },
+    );
+
     final member = find.byKey(Key('itemized_line_0_member_$currentUserId'));
     await _scrollTo(tester, member);
     await tester.tap(member);
     await tester.pump();
 
-    await _scrollTo(
-      tester,
-      find.byKey(const Key('itemized_negative_difference_warning')),
+    final warning = find.byKey(
+      const Key('itemized_negative_difference_warning'),
     );
-    expect(
-      find.byKey(const Key('itemized_negative_difference_warning')),
-      findsOneWidget,
+    await _scrollTo(tester, warning);
+
+    expect(warning, findsOneWidget);
+
+    final fastSplitButton = find.byKey(
+      const Key('itemized_use_fast_split_button'),
     );
+    await _scrollTo(tester, fastSplitButton);
+
+    expect(fastSplitButton, findsOneWidget);
+
     expect(
       tester
           .widget<FilledButton>(find.byKey(const Key('itemized_split_submit')))
           .onPressed,
       isNull,
     );
+
+    await tester.tap(fastSplitButton);
+    await tester.pump();
+
+    expect(useFastSplitCalls, 1);
   });
 
   testWidgets('pasif üyeyi seçeneklerde göstermez', (tester) async {
@@ -338,6 +434,7 @@ Future<void> _pumpPage(
   String currentUser = currentUserId,
   Brightness brightness = Brightness.light,
   ItemizedSplitSubmit? onSubmit,
+  VoidCallback? onUseFastSplit,
 }) => tester.pumpWidget(
   MaterialApp(
     theme: ThemeData(colorSchemeSeed: Colors.teal, brightness: brightness),
@@ -346,6 +443,7 @@ Future<void> _pumpPage(
       currentUserId: currentUser,
       receipt: receipt,
       onSubmit: onSubmit ?? (_) async {},
+      onUseFastSplit: onUseFastSplit,
     ),
   ),
 );
