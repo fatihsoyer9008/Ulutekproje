@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
@@ -55,6 +57,26 @@ void main() {
     expect(controller.state.pendingEmail, isNull);
     expect(await controller.confirmEmailVerification(), isFalse);
     expect(repository.loginCallCount, 0);
+  });
+
+  test('unauthorized olayı oturumu güvenli biçimde sonlandırır', () async {
+    final unauthorizedEvents = StreamController<void>();
+    addTearDown(unauthorizedEvents.close);
+    final repository = _FakeAuthRepository()..verified = true;
+    final controller = AuthSessionController(
+      repository,
+      unauthorizedEvents: unauthorizedEvents.stream,
+    );
+    addTearDown(controller.dispose);
+    await controller.login(email, password);
+
+    unauthorizedEvents.add(null);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.state.status, AuthStatus.unauthenticated);
+    expect(controller.state.sessionExpired, isTrue);
+    expect(controller.state.user, isNull);
+    expect(controller.state.errorMessage, contains('Oturum süreniz doldu'));
   });
 }
 

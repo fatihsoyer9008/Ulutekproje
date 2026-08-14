@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:app_main/features/ai_assistant/data/ai_assistant_client.dart';
 import 'package:app_main/features/ai_assistant/presentation/assistant_consent_card.dart';
 import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
+import 'package:app_main/features/groups/data/fake_group_repository.dart';
+import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/presentation/groups_page.dart';
 import 'package:app_main/features/groups/presentation/group_ocr_page.dart';
 import 'package:app_main/src/app/finance_app.dart';
@@ -10,6 +14,8 @@ import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../fixtures/group_fixtures.dart';
 
 void main() {
   testWidgets('authenticated user opens groups from the drawer', (
@@ -82,6 +88,28 @@ void main() {
     expect(find.byType(GroupsPage), findsOneWidget);
   });
 
+  testWidgets('expired API session redirects protected group route to login', (
+    tester,
+  ) async {
+    final unauthorizedEvents = StreamController<void>();
+    addTearDown(unauthorizedEvents.close);
+    final controller = AuthSessionController(
+      _NavigationAuthRepository(),
+      unauthorizedEvents: unauthorizedEvents.stream,
+    );
+    await controller.login('user@example.com', 'password');
+
+    await _pumpApp(tester, controller);
+    await _openGroupsFromDrawer(tester);
+    expect(find.byType(GroupsPage), findsOneWidget);
+
+    unauthorizedEvents.add(null);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('login_submit_button')), findsOneWidget);
+    expect(find.textContaining('Oturum süreniz doldu'), findsOneWidget);
+  });
+
   testWidgets('profile route keeps the AI assistant consent card', (
     tester,
   ) async {
@@ -107,6 +135,15 @@ Future<void> _pumpApp(
     ProviderScope(
       overrides: [
         authSessionControllerProvider.overrideWith((ref) => controller),
+        groupRepositoryProvider.overrideWithValue(
+          FakeGroupRepository(
+            currentUserId: currentUserId,
+            groups: const [twoMemberGroup],
+            debtSummariesByGroup: const {
+              twoMemberGroupId: currentUserDebtorDebtSummary,
+            },
+          ),
+        ),
       ],
       child: FinanceApp(
         enableAuth: true,
@@ -130,7 +167,7 @@ class _NavigationAuthRepository implements AuthRepositoryBase {
   Future<AuthUser> login({
     required String email,
     required String password,
-  }) async => AuthUser(id: 'user-id', email: email, isEmailVerified: true);
+  }) async => AuthUser(id: currentUserId, email: email, isEmailVerified: true);
 
   @override
   Future<AuthUser> signInWithGoogle() =>

@@ -48,11 +48,15 @@ class ApiClient {
   final Dio dio;
   final Dio _refreshDio;
   final TokenStorage _tokenStorage;
+  final StreamController<void> _unauthorizedController =
+      StreamController<void>.broadcast(sync: true);
 
   String? _accessToken;
   Future<AuthTokenBundle?>? _refreshOperation;
+  bool _unauthorizedNotified = false;
 
   bool get hasAccessToken => _accessToken != null;
+  Stream<void> get unauthorizedEvents => _unauthorizedController.stream;
 
   void _onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     final token = _accessToken;
@@ -74,6 +78,13 @@ class ApiClient {
         request.extra[_retriedKey] != true;
 
     if (!shouldRefresh) {
+      if (error.response?.statusCode == 401 &&
+          request.path != _refreshPath &&
+          request.extra['skipAuth'] != true &&
+          request.extra[_retriedKey] == true) {
+        await clearSession();
+        _notifyUnauthorized();
+      }
       handler.next(error);
       return;
     }
@@ -81,6 +92,8 @@ class ApiClient {
     try {
       final session = await refreshSession();
       if (session == null) {
+        await clearSession();
+        _notifyUnauthorized();
         handler.next(error);
         return;
       }
@@ -142,6 +155,7 @@ class ApiClient {
   Future<void> setSession(AuthTokenBundle bundle) async {
     await _tokenStorage.writeRefreshToken(bundle.refreshToken);
     _accessToken = bundle.accessToken;
+    _unauthorizedNotified = false;
   }
 
   Future<void> clearSession() async {
@@ -156,8 +170,15 @@ class ApiClient {
   Future<String?> readRefreshToken() => _tokenStorage.readRefreshToken();
 
   void close() {
+    _unauthorizedController.close();
     dio.close(force: true);
     _refreshDio.close(force: true);
+  }
+
+  void _notifyUnauthorized() {
+    if (_unauthorizedNotified || _unauthorizedController.isClosed) return;
+    _unauthorizedNotified = true;
+    _unauthorizedController.add(null);
   }
 }
 

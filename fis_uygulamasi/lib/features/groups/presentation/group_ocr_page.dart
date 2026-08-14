@@ -9,6 +9,7 @@ import '../../receipt_scanning/data/receipt_gallery_picker.dart';
 import '../../transaction_draft/data/receipt_parser_client.dart';
 import '../../transaction_draft/model/transaction_draft.dart';
 import '../../transaction_draft/model/turkish_money.dart';
+import '../data/group_api_failure.dart';
 import '../data/group_providers.dart';
 
 typedef GroupReceiptLauncher = Future<String?> Function(BuildContext context);
@@ -58,7 +59,11 @@ class _GroupOcrPageState extends ConsumerState<GroupOcrPage> {
       appBar: AppBar(title: const Text('Grup Fişi Tara')),
       body: groupAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => _GroupLoadError(
+        error: (error, _) => _GroupLoadError(
+          message: groupUserMessage(
+            error,
+            fallbackMessage: 'Grup bilgileri yüklenemedi. Tekrar deneyin.',
+          ),
           onRetry: () => ref.invalidate(groupDetailProvider(widget.groupId)),
         ),
         data: (group) => SafeArea(
@@ -390,8 +395,9 @@ class _MessageCard extends StatelessWidget {
 }
 
 class _GroupLoadError extends StatelessWidget {
-  const _GroupLoadError({required this.onRetry});
+  const _GroupLoadError({required this.message, required this.onRetry});
 
+  final String message;
   final VoidCallback onRetry;
 
   @override
@@ -404,7 +410,7 @@ class _GroupLoadError extends StatelessWidget {
           children: [
             const Icon(Icons.error_outline_rounded, size: 40),
             const SizedBox(height: 12),
-            const Text('Grup bilgileri yüklenemedi.'),
+            Text(message, key: const Key('group_ocr_error_message')),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               key: const Key('group_ocr_group_retry_button'),

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../../transaction_draft/model/turkish_money.dart';
+import '../data/group_api_failure.dart';
 import '../data/group_providers.dart';
 import '../domain/group_models.dart';
 
@@ -26,8 +27,14 @@ class GroupsPage extends ConsumerWidget {
       ),
       body: groupsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) =>
-            _GroupsErrorState(onRetry: () => ref.invalidate(groupsProvider)),
+        error: (error, _) => _GroupsErrorState(
+          message: groupUserMessage(
+            error,
+            fallbackMessage:
+                'Gruplar yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.',
+          ),
+          onRetry: () => ref.invalidate(groupsProvider),
+        ),
         data: (response) {
           if (response.groups.isEmpty) {
             return const _GroupsEmptyState();
@@ -164,8 +171,9 @@ class _GroupsEmptyState extends StatelessWidget {
 }
 
 class _GroupsErrorState extends StatelessWidget {
-  const _GroupsErrorState({required this.onRetry});
+  const _GroupsErrorState({required this.message, required this.onRetry});
 
+  final String message;
   final VoidCallback onRetry;
 
   @override
@@ -184,12 +192,14 @@ class _GroupsErrorState extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Lütfen bağlantınızı kontrol edip tekrar deneyin.',
+              Text(
+                message,
+                key: const Key('groups_error_message'),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
               OutlinedButton.icon(
+                key: const Key('groups_retry_button'),
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Tekrar dene'),
@@ -326,11 +336,19 @@ class _CreateGroupSheetState extends ConsumerState<_CreateGroupSheet> {
       );
     } on GroupApiException catch (error) {
       if (!mounted) return;
-      setState(() => _errorMessage = error.error.detail.message);
-    } catch (_) {
+      setState(
+        () => _errorMessage = groupUserMessage(
+          error,
+          fallbackMessage: 'Grup oluşturulamadı. Lütfen tekrar deneyin.',
+        ),
+      );
+    } catch (error) {
       if (!mounted) return;
       setState(
-        () => _errorMessage = 'Grup oluşturulamadı. Lütfen tekrar deneyin.',
+        () => _errorMessage = groupUserMessage(
+          error,
+          fallbackMessage: 'Grup oluşturulamadı. Lütfen tekrar deneyin.',
+        ),
       );
     } finally {
       if (mounted) {
