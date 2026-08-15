@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_config.dart';
 import '../../../../core/storage/secure_token_storage.dart';
+import '../../../../core/storage/installation_id_provider.dart';
 import '../../data/auth_repository.dart';
 import '../../domain/auth_user.dart';
 
@@ -71,6 +72,7 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   final client = ApiClient(
     baseUrl: ApiConfig.baseUrl,
     tokenStorage: ref.watch(tokenStorageProvider),
+    installationIdProvider: PersistentInstallationIdProvider(),
   );
   ref.onDispose(client.close);
   return client;

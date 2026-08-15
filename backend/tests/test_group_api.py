@@ -328,6 +328,38 @@ async def test_group_detail_requires_active_membership(group_api_context) -> Non
 
 
 @pytest.mark.asyncio
+async def test_group_members_endpoint_returns_identity_role_and_departure(
+    group_api_context,
+) -> None:
+    client, session_factory, _, owner, member, _, former = group_api_context
+    async with session_factory() as session:
+        repository = GroupRepository(session)
+        group = await repository.create(name="Üye Sözleşmesi", created_by=owner.id)
+        await repository.add_member(group_id=group.id, user_id=member.id)
+        departed = await repository.add_member(group_id=group.id, user_id=former.id)
+        departed.left_at = datetime.now(UTC)
+        await session.commit()
+        group_id = group.id
+
+    response = await client.get(f"/api/v1/groups/{group_id}/members")
+
+    assert response.status_code == 200
+    members = response.json()["members"]
+    assert len(members) == 3
+    assert {
+        (item["user_id"], item["name"], item["email"], item["role"]) for item in members
+    } == {
+        (str(owner.id), "Grup Sahibi", "owner@example.com", "owner"),
+        (str(member.id), "Grup Üyesi", "member@example.com", "member"),
+        (str(former.id), "Eski Üye", "former@example.com", "member"),
+    }
+    assert (
+        next(item for item in members if item["user_id"] == str(former.id))["left_at"]
+        is not None
+    )
+
+
+@pytest.mark.asyncio
 async def test_only_owner_can_update_group_and_clear_description(
     group_api_context,
 ) -> None:

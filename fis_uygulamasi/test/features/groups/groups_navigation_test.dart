@@ -1,10 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:app_main/features/ai_assistant/data/ai_assistant_client.dart';
 import 'package:app_main/features/ai_assistant/presentation/assistant_consent_card.dart';
 import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
+import 'package:app_main/core/network/api_client.dart';
+import 'package:app_main/core/storage/secure_token_storage.dart';
+import 'package:app_main/features/groups/data/api_group_expense_repository.dart';
 import 'package:app_main/features/groups/data/fake_group_repository.dart'
     show FakeGroupRepository;
 import 'package:app_main/features/groups/data/group_providers.dart';
@@ -12,8 +17,14 @@ import 'package:app_main/features/groups/data/group_repository.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:app_main/features/groups/presentation/group_ocr_page.dart';
 import 'package:app_main/features/groups/presentation/groups_page.dart';
+import 'package:app_main/features/groups/presentation/fast_split_page.dart';
+import 'package:app_main/features/groups/presentation/itemized_split_page.dart';
+import 'package:app_main/features/transaction_draft/data/receipt_parser_client.dart';
 import 'package:app_main/src/app/finance_app.dart';
+import 'package:app_main/src/screens/expense_screen.dart'
+    show ReceiptParseHandler, ReceiptScanLauncher;
 import 'package:finance_database/finance_database.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -55,6 +66,134 @@ void main() {
     expect(groupOcrPage.group.name, 'Ev Arkadaşları');
     expect(find.text('Ev Arkadaşları'), findsOneWidget);
   });
+
+  testWidgets(
+    'OCR kontrolü Fast Split API kaydı sonrası grup detayı ve bakiyeyi yeniler',
+    (tester) async {
+      final repository = _TrackingGroupRepository();
+      final api = _ExpenseApiHarness();
+      addTearDown(api.close);
+      final controller = AuthSessionController(_NavigationAuthRepository());
+      await controller.login('user@example.com', 'password');
+
+      await _pumpApp(
+        tester,
+        controller,
+        groupRepository: repository,
+        expenseRepository: api.repository,
+        scanReceipt: (_) async => 'KİRA TOPLAM 120,00',
+        parseReceipt: (_, {cancelToken}) async => const ReceiptParseResult(
+          draft: TransactionDraft(
+            institutionName: 'E2E Kira',
+            category: 'Konut',
+            amountInMinor: 12000,
+          ),
+          normalizedOcrText: 'KİRA TOPLAM 120,00',
+          confidenceScore: .98,
+          isParseSuccessful: true,
+        ),
+      );
+      await _openGroupOcr(tester);
+      await tester.tap(find.byKey(const Key('group_ocr_camera_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('share_with_group_button')));
+      await tester.pumpAndSettle();
+      expect(find.byType(FastSplitPage), findsOneWidget);
+      final debtCallsBeforeSubmit = repository.debtSummaryCalls;
+
+      await tester.drag(
+        find.descendant(
+          of: find.byType(FastSplitPage),
+          matching: find.byType(ListView),
+        ),
+        const Offset(0, -700),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('fast_split_submit')));
+      await tester.pumpAndSettle();
+
+      expect(api.createCalls, 1);
+      expect(api.lastRequestBody?['split'], containsPair('type', 'equal'));
+      expect(api.lastIdempotencyKey, matches(_uuidV4));
+      expect(find.byKey(const Key('group_detail_name')), findsOneWidget);
+      expect(find.text('E2E Kira'), findsOneWidget);
+      expect(repository.debtSummaryCalls, greaterThan(debtCallsBeforeSubmit));
+    },
+  );
+
+  testWidgets(
+    'OCR kontrolü Itemized API kaydı ve ek tutar sonrası grup detayını yeniler',
+    (tester) async {
+      final repository = _TrackingGroupRepository();
+      final api = _ExpenseApiHarness();
+      addTearDown(api.close);
+      final controller = AuthSessionController(_NavigationAuthRepository());
+      await controller.login('user@example.com', 'password');
+
+      await _pumpApp(
+        tester,
+        controller,
+        groupRepository: repository,
+        expenseRepository: api.repository,
+        scanReceipt: (_) async => 'MARKET SÜT 60,00 TOPLAM 70,00',
+        parseReceipt: (_, {cancelToken}) async => const ReceiptParseResult(
+          draft: TransactionDraft(
+            institutionName: 'E2E Market',
+            category: 'Market',
+            amountInMinor: 7000,
+            receiptItems: [
+              ReceiptItem(
+                name: 'Süt',
+                quantity: 1,
+                unitPriceInMinor: 6000,
+                totalAmountInMinor: 6000,
+              ),
+            ],
+          ),
+          normalizedOcrText: 'MARKET SÜT 60,00 TOPLAM 70,00',
+          confidenceScore: .98,
+          isParseSuccessful: true,
+        ),
+      );
+      await _openGroupOcr(tester);
+      await tester.tap(find.byKey(const Key('group_ocr_camera_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('share_with_group_button')));
+      await tester.pumpAndSettle();
+      expect(find.byType(ItemizedSplitPage), findsOneWidget);
+
+      final itemizedList = find.byKey(const Key('itemized_split_scroll_view'));
+      await tester.drag(itemizedList, const Offset(0, -450));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(Key('itemized_line_0_member_$currentUserId')),
+      );
+      await tester.pump();
+      await tester.drag(itemizedList, const Offset(0, -650));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('itemized_split_submit')));
+      await tester.pumpAndSettle();
+
+      expect(api.createCalls, 1);
+      final split = api.lastRequestBody?['split'] as Map;
+      expect(split['type'], 'itemized');
+      expect(
+        (split['line_items'] as List).single,
+        contains('receipt_line_item_position'),
+      );
+      expect((split['extra_amounts'] as List).single, {
+        'type': 'other',
+        'label': 'Fiş toplam farkı',
+        'amount_in_minor': 1000,
+        'shares': [
+          {'user_id': currentUserId, 'amount_in_minor': 1000},
+        ],
+      });
+      expect(api.lastIdempotencyKey, matches(_uuidV4));
+      expect(find.byKey(const Key('group_detail_name')), findsOneWidget);
+      expect(find.text('E2E Market'), findsOneWidget);
+    },
+  );
   testWidgets('OCR route state.extra olmadan grup bilgisini yükler', (
     tester,
   ) async {
@@ -200,6 +339,9 @@ Future<void> _pumpApp(
   WidgetTester tester,
   AuthSessionController controller, {
   GroupRepository? groupRepository,
+  GroupExpenseRepository? expenseRepository,
+  ReceiptScanLauncher? scanReceipt,
+  ReceiptParseHandler? parseReceipt,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -215,15 +357,160 @@ Future<void> _pumpApp(
                 },
               ),
         ),
+        if (expenseRepository != null)
+          groupExpenseRepositoryProvider.overrideWithValue(expenseRepository),
       ],
       child: FinanceApp(
         enableAuth: true,
         transactionStream: Stream.value(const <TransactionEntity>[]),
         profileAiAssistantClient: _FakeAssistantClient(),
+        scanReceipt: scanReceipt,
+        parseReceipt: parseReceipt,
       ),
     ),
   );
   await tester.pumpAndSettle();
+}
+
+Future<void> _openGroupOcr(WidgetTester tester) async {
+  await _openGroupsFromDrawer(tester);
+  await tester.tap(find.text('Ev Arkadaşları'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('add_group_expense_button')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('select_scan_receipt_button')));
+  await tester.pumpAndSettle();
+}
+
+final RegExp _uuidV4 = RegExp(
+  r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+);
+
+class _TrackingGroupRepository extends FakeGroupRepository {
+  _TrackingGroupRepository()
+    : super(
+        currentUserId: currentUserId,
+        groups: const [twoMemberGroup],
+        debtSummariesByGroup: const {
+          twoMemberGroupId: currentUserDebtorDebtSummary,
+        },
+      );
+
+  int fastCreateCalls = 0;
+  int itemizedCreateCalls = 0;
+  int debtSummaryCalls = 0;
+  String? lastIdempotencyKey;
+  ItemizedExpenseRequest? lastItemizedRequest;
+
+  @override
+  Future<GroupExpense> createFastSplit(
+    FastSplitExpenseRequest request, {
+    required String idempotencyKey,
+  }) {
+    fastCreateCalls++;
+    lastIdempotencyKey = idempotencyKey;
+    return super.createFastSplit(request, idempotencyKey: idempotencyKey);
+  }
+
+  @override
+  Future<GroupExpense> createItemizedSplit(
+    ItemizedExpenseRequest request, {
+    required String idempotencyKey,
+  }) {
+    itemizedCreateCalls++;
+    lastIdempotencyKey = idempotencyKey;
+    lastItemizedRequest = request;
+    return super.createItemizedSplit(request, idempotencyKey: idempotencyKey);
+  }
+
+  @override
+  Future<DebtSummary> getDebtSummary(String groupId) {
+    debtSummaryCalls++;
+    return super.getDebtSummary(groupId);
+  }
+}
+
+class _ExpenseApiHarness {
+  _ExpenseApiHarness() {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test'))
+      ..httpClientAdapter = _ExpenseApiAdapter(this);
+    _client = ApiClient(
+      baseUrl: 'https://example.test',
+      tokenStorage: _EmptyTokenStorage(),
+      dio: dio,
+      refreshDio: Dio(BaseOptions(baseUrl: 'https://example.test')),
+    );
+    repository = ApiGroupExpenseRepository(_client);
+  }
+
+  late final ApiClient _client;
+  late final ApiGroupExpenseRepository repository;
+  final List<Map<String, Object?>> _expenses = [];
+  int createCalls = 0;
+  String? lastIdempotencyKey;
+  Map<String, Object?>? lastRequestBody;
+
+  ResponseBody handle(RequestOptions options) {
+    if (options.method == 'POST' && options.path.endsWith('/expenses')) {
+      createCalls++;
+      lastIdempotencyKey = options.headers['Idempotency-Key'] as String?;
+      lastRequestBody = Map<String, Object?>.from(options.data as Map);
+      final split = lastRequestBody!['split'] as Map;
+      final template = split['type'] == 'itemized'
+          ? itemizedMarketExpense
+          : fastSplitTransferExpense;
+      final expense = Map<String, Object?>.from(template.toJson())
+        ..['title'] = lastRequestBody!['title']
+        ..['total_amount_in_minor'] = lastRequestBody!['total_amount_in_minor']
+        ..['currency'] = lastRequestBody!['currency'];
+      _expenses.add(expense);
+      return _jsonResponse({'expense': expense});
+    }
+    if (options.method == 'GET' && options.path.endsWith('/expenses')) {
+      return _jsonResponse({'expenses': _expenses});
+    }
+    throw StateError(
+      'Beklenmeyen API isteği: ${options.method} ${options.path}',
+    );
+  }
+
+  void close() => _client.close();
+}
+
+class _ExpenseApiAdapter implements HttpClientAdapter {
+  _ExpenseApiAdapter(this.harness);
+
+  final _ExpenseApiHarness harness;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async => harness.handle(options);
+
+  @override
+  void close({bool force = false}) {}
+}
+
+ResponseBody _jsonResponse(Map<String, Object?> body) =>
+    ResponseBody.fromString(
+      jsonEncode(body),
+      200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+
+class _EmptyTokenStorage implements TokenStorage {
+  @override
+  Future<void> deleteRefreshToken() async {}
+
+  @override
+  Future<String?> readRefreshToken() async => null;
+
+  @override
+  Future<void> writeRefreshToken(String token) async {}
 }
 
 Future<void> _openGroupsFromDrawer(WidgetTester tester) async {

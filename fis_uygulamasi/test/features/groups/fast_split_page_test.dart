@@ -233,6 +233,99 @@ void main() {
 
     expect(find.byType(ItemizedSplitPage), findsOneWidget);
   });
+
+  testWidgets('422 pay hatasını ilgili üye alanının altında gösterir', (
+    tester,
+  ) async {
+    await _pumpPage(
+      tester,
+      onSubmit: (_) async => throw const GroupApiException(
+        statusCode: 422,
+        error: GroupApiError(
+          detail: GroupApiErrorDetail(
+            code: 'validation_error',
+            message: 'Payları kontrol edin.',
+            fieldErrors: [
+              GroupApiFieldError(
+                field: 'split.shares.0.percentage_basis_points',
+                message: 'Yüzde payı geçersiz.',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await _fillCommonFields(tester);
+    await tester.tap(find.text('Yüzde'));
+    await tester.pumpAndSettle();
+    await _submit(tester);
+
+    expect(find.text('Yüzde payı geçersiz.'), findsOneWidget);
+  });
+
+  testWidgets('429 Retry-After süresince tekrar göndermeyi engeller', (
+    tester,
+  ) async {
+    await _pumpPage(
+      tester,
+      onSubmit: (_) async => throw const GroupApiException(
+        statusCode: 429,
+        error: GroupApiError(
+          detail: GroupApiErrorDetail(
+            code: 'rate_limited',
+            message: '1 saniye sonra tekrar deneyin.',
+            retryAfterSeconds: 1,
+          ),
+        ),
+      ),
+    );
+    await _fillCommonFields(tester);
+    await _submit(tester);
+
+    expect(find.text('1 saniye bekleyin'), findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton).first).onPressed,
+      isNull,
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Harcamayı Kaydet'), findsOneWidget);
+  });
+
+  for (final testCase in <({String code, String message})>[
+    (
+      code: 'idempotency_conflict',
+      message:
+          'Masraf isteği daha önce farklı bilgilerle gönderildi. Lütfen yeniden deneyin.',
+    ),
+    (
+      code: 'expense_financially_locked',
+      message:
+          'Bu masraf finansal olarak kilitli olduğu için değiştirilemiyor.',
+    ),
+  ]) {
+    testWidgets('409 ${testCase.code} kullanıcı dostu mesajını gösterir', (
+      tester,
+    ) async {
+      await _pumpPage(
+        tester,
+        onSubmit: (_) async => throw GroupApiException(
+          statusCode: 409,
+          error: GroupApiError(
+            detail: GroupApiErrorDetail(
+              code: testCase.code,
+              message: testCase.message,
+            ),
+          ),
+        ),
+      );
+      await _fillCommonFields(tester);
+      await _submit(tester);
+
+      expect(find.text(testCase.message), findsOneWidget);
+      expect(find.byType(FastSplitPage), findsOneWidget);
+      expect(find.byKey(const Key('fast_split_submit')), findsOneWidget);
+    });
+  }
 }
 
 Future<void> _pumpPage(

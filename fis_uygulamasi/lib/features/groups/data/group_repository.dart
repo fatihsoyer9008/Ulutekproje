@@ -97,6 +97,20 @@ class ItemizedExtraShareInput {
   final int amountInMinor;
 }
 
+class ItemizedExtraAmountInput {
+  const ItemizedExtraAmountInput({
+    required this.type,
+    this.label,
+    required this.amountInMinor,
+    required this.shares,
+  });
+
+  final ExpenseExtraAmountType type;
+  final String? label;
+  final int amountInMinor;
+  final List<ItemizedExtraShareInput> shares;
+}
+
 class ItemizedExpenseRequest {
   const ItemizedExpenseRequest({
     required this.groupId,
@@ -109,6 +123,7 @@ class ItemizedExpenseRequest {
     required this.currency,
     required this.lineShares,
     required this.extraShares,
+    this.extraAmounts = const <ItemizedExtraAmountInput>[],
   }) : assert(
          (receiptId == null) != (receiptDraft == null),
          'Tam olarak bir fiş kaynağı verilmelidir.',
@@ -124,6 +139,7 @@ class ItemizedExpenseRequest {
   final String currency;
   final List<ItemizedLineShareInput> lineShares;
   final List<ItemizedExtraShareInput> extraShares;
+  final List<ItemizedExtraAmountInput> extraAmounts;
 }
 
 abstract interface class GroupExpenseRepository {
@@ -161,6 +177,8 @@ abstract interface class GroupRepository
   Future<GroupsResponse> listGroups({bool includeArchived = false});
 
   Future<GroupDetail> getGroup(String groupId);
+
+  Future<List<GroupMember>> listMembers(String groupId);
 
   Future<GroupDetail> createGroup({
     required String name,

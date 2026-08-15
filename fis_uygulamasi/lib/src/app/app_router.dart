@@ -41,6 +41,7 @@ GoRouter createAppRouter({
   required Future<void> Function(TransactionEntity transaction)?
   saveTransaction,
   required ReceiptScanLauncher? scanReceipt,
+  ReceiptParseHandler? parseReceipt,
   TransactionJsonImportService? transactionImportService,
   AiAssistantMessageStream? aiAssistantMessageStream,
   AiAssistantAccessClient? profileAiAssistantClient,
@@ -193,6 +194,7 @@ GoRouter createAppRouter({
                 ? selectedGroup
                 : null,
             scanReceipt: scanReceipt,
+            parseReceipt: parseReceipt,
           );
         },
       ),
@@ -307,6 +309,22 @@ Future<void> _createOcrItemizedSplit(
                 amountInMinor: share.amountInMinor,
               ),
           ],
+          extraAmounts: value.calculation.extraAmountInMinor > 0
+              ? [
+                  ItemizedExtraAmountInput(
+                    type: ExpenseExtraAmountType.other,
+                    label: 'Fiş toplam farkı',
+                    amountInMinor: value.calculation.extraAmountInMinor,
+                    shares: [
+                      for (final share in value.calculation.extraAmountShares)
+                        ItemizedExtraShareInput(
+                          userId: share.userId,
+                          amountInMinor: share.amountInMinor,
+                        ),
+                    ],
+                  ),
+                ]
+              : const <ItemizedExtraAmountInput>[],
         ),
         idempotencyKey: idempotencyKey,
       );
@@ -325,11 +343,13 @@ class _GroupOcrRoutePage extends ConsumerWidget {
     required this.groupId,
     required this.initialGroup,
     required this.scanReceipt,
+    this.parseReceipt,
   });
 
   final String groupId;
   final GroupDetail? initialGroup;
   final ReceiptScanLauncher? scanReceipt;
+  final ReceiptParseHandler? parseReceipt;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -383,7 +403,7 @@ class _GroupOcrRoutePage extends ConsumerWidget {
     return GroupOcrPage(
       group: group,
       scanReceipt: scanReceipt,
-      parseReceipt: parser.parse,
+      parseReceipt: parseReceipt ?? parser.parse,
       onFastSplitSubmit: (draft, value, idempotencyKey) =>
           _createOcrFastSplit(ref, draft, value, idempotencyKey),
       onItemizedSplitSubmit: (draft, value, idempotencyKey) =>

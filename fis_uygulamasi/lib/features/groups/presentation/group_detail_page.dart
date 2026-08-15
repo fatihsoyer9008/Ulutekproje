@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/network/request_id.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../../transaction_draft/model/turkish_money.dart';
 import '../data/group_api_failure.dart';
@@ -241,6 +242,7 @@ class _GroupDetailContent extends ConsumerWidget {
     WidgetRef ref,
     String currentUserId,
   ) async {
+    final idempotencyKey = newUuidV4();
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => FastSplitPage(
@@ -293,11 +295,7 @@ class _GroupDetailContent extends ConsumerWidget {
 
             await ref
                 .read(groupExpenseRepositoryProvider)
-                .createExpense(
-                  request,
-                  idempotencyKey:
-                      'fast-split-${DateTime.now().microsecondsSinceEpoch}',
-                );
+                .createExpense(request, idempotencyKey: idempotencyKey);
 
             ref.invalidate(groupExpensesProvider(group.id));
             ref.invalidate(groupDebtSummaryProvider(group.id));

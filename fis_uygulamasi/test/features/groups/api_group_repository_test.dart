@@ -5,6 +5,7 @@ import 'package:app_main/core/network/api_client.dart';
 import 'package:app_main/core/storage/secure_token_storage.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
 import 'package:app_main/features/groups/data/api_group_repository.dart';
+import 'package:app_main/features/groups/data/fake_group_repository.dart';
 import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:dio/dio.dart';
@@ -27,6 +28,15 @@ void main() {
       container.read(groupRepositoryProvider).capabilities.supportsInvitations,
       isTrue,
     );
+  });
+
+  test('mock mode provider fake repository seçer', () {
+    final container = ProviderContainer(
+      overrides: [groupMockModeProvider.overrideWithValue(true)],
+    );
+    addTearDown(container.dispose);
+
+    expect(container.read(groupRepositoryProvider), isA<FakeGroupRepository>());
   });
 
   test('production repository davet oluşturma endpointine POST atar', () async {
@@ -97,7 +107,25 @@ void main() {
     'grup detay envelope response modeli domain detayına map edilir',
     () async {
       final repository = ApiGroupRepository(
-        _client((_) => _jsonResponse({'group': twoMemberGroup.toJson()})),
+        _client((options) {
+          if (options.path.endsWith('/members')) {
+            return _jsonResponse({
+              'members': [
+                for (final member in twoMemberGroup.members)
+                  {
+                    'group_id': member.groupId,
+                    'user_id': member.userId,
+                    'name': member.displayName,
+                    'email': '${member.userId}@example.com',
+                    'role': member.role.name,
+                    'joined_at': member.joinedAt,
+                    'left_at': member.leftAt,
+                  },
+              ],
+            });
+          }
+          return _jsonResponse({'group': twoMemberGroup.toJson()});
+        }),
       );
 
       final group = await repository.getGroup(twoMemberGroupId);
@@ -105,6 +133,7 @@ void main() {
       expect(group, isA<GroupDetail>());
       expect(group.members, hasLength(2));
       expect(group.members.first.userId, currentUserId);
+      expect(group.members.first.email, '$currentUserId@example.com');
     },
   );
 
@@ -128,11 +157,50 @@ void main() {
             .having(
               (error) => error.error.detail.message,
               'message',
-              'Bu grup için yetkiniz yok.',
+              'Bu işlem için grup yetkiniz bulunmamaktadır.',
             ),
       ),
     );
   });
+
+  for (final testCase in <({String code, String expectedMessage})>[
+    (
+      code: 'idempotency_conflict',
+      expectedMessage:
+          'Masraf isteği daha önce farklı bilgilerle gönderildi. Lütfen yeniden deneyin.',
+    ),
+    (
+      code: 'expense_financially_locked',
+      expectedMessage:
+          'Bu masraf finansal olarak kilitli olduğu için değiştirilemiyor.',
+    ),
+  ]) {
+    test(
+      '409 ${testCase.code} standart kullanıcı mesajına map edilir',
+      () async {
+        final repository = ApiGroupRepository(
+          _client(
+            (_) => _jsonResponse({
+              'detail': {'code': testCase.code, 'message': 'Backend iç mesajı'},
+            }, statusCode: 409),
+          ),
+        );
+
+        await expectLater(
+          repository.listGroups(),
+          throwsA(
+            isA<GroupApiException>()
+                .having((error) => error.statusCode, 'statusCode', 409)
+                .having(
+                  (error) => error.error.detail.message,
+                  'message',
+                  testCase.expectedMessage,
+                ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 ApiClient _client(ResponseBody Function(RequestOptions) handler) {

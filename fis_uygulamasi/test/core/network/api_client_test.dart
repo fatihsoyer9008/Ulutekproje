@@ -2,11 +2,44 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:app_main/core/network/api_client.dart';
+import 'package:app_main/core/storage/installation_id_provider.dart';
 import 'package:app_main/core/storage/secure_token_storage.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'auth ve installation headerlarını her korumalı istekte taşır',
+    () async {
+      late RequestOptions captured;
+      final adapter = _HandlerAdapter((options) async {
+        captured = options;
+        return _jsonResponse({'ok': true});
+      });
+      final dio = Dio(BaseOptions(baseUrl: 'https://example.com'))
+        ..httpClientAdapter = adapter;
+      final client = ApiClient(
+        baseUrl: 'https://example.com',
+        tokenStorage: _MemoryTokenStorage(),
+        installationIdProvider: const _InstallationIdProvider(),
+        dio: dio,
+      );
+      addTearDown(client.close);
+      await client.setSession(
+        const AuthTokenBundle(
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          user: <String, dynamic>{},
+        ),
+      );
+
+      await client.dio.get<Map<String, dynamic>>('/protected');
+
+      expect(captured.headers['Authorization'], 'Bearer access-token');
+      expect(captured.headers['X-Installation-Id'], 'installation-123456789');
+    },
+  );
+
   test('eş zamanlı 401 cevapları yalnızca bir refresh isteği üretir', () async {
     final storage = _MemoryTokenStorage()..token = 'r' * 32;
     var refreshCount = 0;
@@ -128,4 +161,11 @@ class _MemoryTokenStorage implements TokenStorage {
 
   @override
   Future<void> writeRefreshToken(String token) async => this.token = token;
+}
+
+class _InstallationIdProvider implements InstallationIdProvider {
+  const _InstallationIdProvider();
+
+  @override
+  Future<String> getInstallationId() async => 'installation-123456789';
 }

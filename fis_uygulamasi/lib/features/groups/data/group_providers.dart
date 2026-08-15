@@ -5,7 +5,6 @@ import '../domain/group_models.dart';
 import 'api_group_repository.dart';
 import 'demo_group_seed.dart';
 import 'fake_group_repository.dart';
-import 'group_repository.dart';
 
 final currentGroupUserIdProvider = Provider<String?>(
   (ref) => ref.watch(
@@ -42,8 +41,15 @@ final apiGroupRepositoryProvider = Provider<ApiGroupRepository>(
   (ref) => ApiGroupRepository(ref.watch(apiClientProvider)),
 );
 
+/// Can be enabled for offline demos with `--dart-define=GROUP_MOCK_MODE=true`.
+final groupMockModeProvider = Provider<bool>(
+  (ref) => const bool.fromEnvironment('GROUP_MOCK_MODE'),
+);
+
 final groupRepositoryProvider = Provider<GroupRepository>(
-  (ref) => ref.watch(apiGroupRepositoryProvider),
+  (ref) => ref.watch(groupMockModeProvider)
+      ? ref.watch(fakeGroupRepositoryProvider)
+      : ref.watch(apiGroupRepositoryProvider),
 );
 
 final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(

@@ -103,6 +103,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
             widget.transactionStreamFactory ?? () => widget.transactionStream,
         saveTransaction: widget.saveTransaction,
         scanReceipt: widget.scanReceipt,
+        parseReceipt: widget.parseReceipt,
         transactionImportService: widget.transactionImportService,
         aiAssistantMessageStream: widget.aiAssistantMessageStream,
         profileAiAssistantClient: widget.profileAiAssistantClient,

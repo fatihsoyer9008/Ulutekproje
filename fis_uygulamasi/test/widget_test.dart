@@ -151,14 +151,16 @@ void main() {
     await tester.tap(find.byKey(const Key('app_menu_button')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('drawer_profile_tile')));
-    await tester.pumpAndSettle();
+    // Profile can contain an ongoing progress animation; only wait for the
+    // route transition instead of requiring every animation to settle.
+    await tester.pump(const Duration(milliseconds: 500));
     final logoutButton = find.byKey(const Key('logout_button'));
     await tester.scrollUntilVisible(
       logoutButton,
       200,
       scrollable: find.byType(Scrollable).last,
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(logoutButton);
     await tester.pumpAndSettle();
 

@@ -425,6 +425,58 @@ void main() {
       },
     );
   }
+
+  testWidgets('422 satır ve ek tutar hatalarını ilgili kartlarda gösterir', (
+    tester,
+  ) async {
+    var submitCalled = false;
+    await _pumpPage(
+      tester,
+      onSubmit: (_) async {
+        submitCalled = true;
+        throw const GroupApiException(
+          statusCode: 422,
+          error: GroupApiError(
+            detail: GroupApiErrorDetail(
+              code: 'validation_error',
+              message: 'Kalemleri kontrol edin.',
+              fieldErrors: [
+                GroupApiFieldError(
+                  field: 'split.line_items.0.shares.0.amount_in_minor',
+                  message: 'Ürün payı toplamla eşleşmiyor.',
+                ),
+                GroupApiFieldError(
+                  field: 'split.extra_amounts.0.shares',
+                  message: 'Ek tutar payları eksik.',
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    await _assignAllItems(tester);
+    await _scrollTo(tester, find.byKey(const Key('itemized_split_submit')));
+    await tester.tap(find.byKey(const Key('itemized_split_submit')));
+    await tester.pump();
+
+    expect(submitCalled, isTrue);
+    await tester.drag(
+      find.byKey(const Key('itemized_split_scroll_view')),
+      const Offset(0, 900),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('itemized_line_error_0')), findsOneWidget);
+    await tester.drag(
+      find.byKey(const Key('itemized_split_scroll_view')),
+      const Offset(0, -900),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('itemized_extra_amount_error')),
+      findsOneWidget,
+    );
+  });
 }
 
 Future<void> _pumpPage(

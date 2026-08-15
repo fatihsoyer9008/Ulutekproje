@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../storage/installation_id_provider.dart';
 import '../storage/secure_token_storage.dart';
 
 class ApiClient {
@@ -11,8 +12,13 @@ class ApiClient {
     required TokenStorage tokenStorage,
     Dio? dio,
     Dio? refreshDio,
-    // ignore: prefer_initializing_formals
-  }) : _tokenStorage = tokenStorage,
+    InstallationIdProvider? installationIdProvider,
+  }) : // Public constructor names intentionally differ from private fields.
+       // ignore: prefer_initializing_formals
+       _tokenStorage = tokenStorage,
+       // Public constructor name intentionally differs from the private field.
+       // ignore: prefer_initializing_formals
+       _installationIdProvider = installationIdProvider,
        dio =
            dio ??
            Dio(
@@ -48,6 +54,7 @@ class ApiClient {
   final Dio dio;
   final Dio _refreshDio;
   final TokenStorage _tokenStorage;
+  final InstallationIdProvider? _installationIdProvider;
   final StreamController<void> _unauthorizedController =
       StreamController<void>.broadcast(sync: true);
 
@@ -58,10 +65,30 @@ class ApiClient {
   bool get hasAccessToken => _accessToken != null;
   Stream<void> get unauthorizedEvents => _unauthorizedController.stream;
 
-  void _onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+  Future<void> _onRequest(
+    RequestOptions options,
+    RequestInterceptorHandler handler,
+  ) async {
     final token = _accessToken;
     if (token != null && options.extra['skipAuth'] != true) {
       options.headers['Authorization'] = 'Bearer $token';
+    }
+    final installationIdProvider = _installationIdProvider;
+    if (installationIdProvider != null &&
+        options.extra['skipInstallationId'] != true) {
+      try {
+        options.headers['X-Installation-Id'] = await installationIdProvider
+            .getInstallationId();
+      } on Exception catch (error) {
+        handler.reject(
+          DioException(
+            requestOptions: options,
+            error: error,
+            message: 'Kurulum kimliği okunamadı.',
+          ),
+        );
+        return;
+      }
     }
     handler.next(options);
   }
