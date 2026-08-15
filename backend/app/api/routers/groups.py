@@ -35,6 +35,7 @@ from app.group_schemas import (
     GroupMemberCreateRequest,
     GroupMemberEnvelope,
     GroupMemberRoleUpdateRequest,
+    GroupMembersResponse,
     GroupResponse,
     GroupsResponse,
     GroupUpdateRequest,
@@ -229,7 +230,7 @@ async def create_group_expense(
     actor_user_id = actor_membership.user_id
     request_hash = _group_expense_request_hash(payload)
     key_hash = privacy_hash(
-        "group-expense-create:" f"{group_id}:{actor_user_id}:{idempotency_key}"
+        f"group-expense-create:{group_id}:{actor_user_id}:{idempotency_key}"
     )
 
     idempotency_repository = GroupExpenseIdempotencyRepository(db)
@@ -448,7 +449,7 @@ def _raise_expense_idempotency_conflict() -> NoReturn:
         detail={
             "code": "idempotency_conflict",
             "message": (
-                "Idempotency-Key daha önce farklı bir masraf isteği için " "kullanıldı."
+                "Idempotency-Key daha önce farklı bir masraf isteği için kullanıldı."
             ),
         },
     ) from None
@@ -518,6 +519,22 @@ async def get_group(
     except GroupServiceError as error:
         _raise_group_error(error)
     return GroupResponse(group=group)
+
+
+@router.get("/{group_id}/members", response_model=GroupMembersResponse)
+async def list_group_members(
+    group_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupMembersResponse:
+    try:
+        members = await GroupService(db).list_members(
+            group_id=_parse_group_id(group_id),
+            actor_user_id=user.id,
+        )
+    except GroupServiceError as error:
+        _raise_group_error(error)
+    return GroupMembersResponse(members=members)
 
 
 @router.patch("/{group_id}", response_model=GroupResponse)

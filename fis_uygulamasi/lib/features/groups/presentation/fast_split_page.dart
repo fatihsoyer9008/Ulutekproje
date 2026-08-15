@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -59,6 +61,11 @@ class _FastSplitPageState extends State<FastSplitPage> {
   String? _payerUserId;
   SplitType _splitType = SplitType.equal;
   bool _submitting = false;
+  String? _titleServerError;
+  String? _totalServerError;
+  final Map<String, String> _shareServerErrors = {};
+  int _retryAfterSeconds = 0;
+  Timer? _retryTimer;
 
   List<GroupMember> get _activeMembers => widget.group.members
       .where((member) => member.leftAt == null)
@@ -94,6 +101,7 @@ class _FastSplitPageState extends State<FastSplitPage> {
     ]) {
       controller.dispose();
     }
+    _retryTimer?.cancel();
     super.dispose();
   }
 
@@ -115,10 +123,12 @@ class _FastSplitPageState extends State<FastSplitPage> {
               TextFormField(
                 key: const Key('fast_split_title'),
                 controller: _titleController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Harcama adı',
                   border: OutlineInputBorder(),
+                  errorText: _titleServerError,
                 ),
+                onChanged: (_) => setState(() => _titleServerError = null),
                 validator: (value) => value == null || value.trim().isEmpty
                     ? 'Harcama adı girin.'
                     : null,
@@ -133,12 +143,13 @@ class _FastSplitPageState extends State<FastSplitPage> {
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                 ],
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Toplam tutar',
                   prefixText: '₺ ',
                   border: OutlineInputBorder(),
+                  errorText: _totalServerError,
                 ),
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) => setState(() => _totalServerError = null),
                 validator: (value) {
                   final amount = parseTurkishLiraToMinor(value);
                   return amount == null || amount <= 0
@@ -196,14 +207,20 @@ class _FastSplitPageState extends State<FastSplitPage> {
               const SizedBox(height: 24),
               FilledButton.icon(
                 key: const Key('fast_split_submit'),
-                onPressed: _submitting ? null : _submit,
+                onPressed: _submitting || _retryAfterSeconds > 0
+                    ? null
+                    : _submit,
                 icon: _submitting
                     ? const SizedBox.square(
                         dimension: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.check_rounded),
-                label: const Text('Harcamayı Kaydet'),
+                label: Text(
+                  _retryAfterSeconds > 0
+                      ? '$_retryAfterSeconds saniye bekleyin'
+                      : 'Harcamayı Kaydet',
+                ),
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
@@ -253,8 +270,10 @@ class _FastSplitPageState extends State<FastSplitPage> {
                 decoration: InputDecoration(
                   suffixText: _splitType == SplitType.percentage ? '%' : '₺',
                   border: InputBorder.none,
+                  errorText: _shareServerErrors[member.userId],
                 ),
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) =>
+                    setState(() => _shareServerErrors.remove(member.userId)),
               ),
             ),
           const SizedBox(width: 12),
@@ -381,6 +400,12 @@ class _FastSplitPageState extends State<FastSplitPage> {
           Navigator.of(context).pop();
         }
       }
+    } on GroupApiException catch (error) {
+      if (mounted) {
+        _applyFieldErrors(error.error.detail.fieldErrors);
+        _applyRateLimit(error.error.detail.retryAfterSeconds);
+        _showError(error.error.detail.message);
+      }
     } catch (error) {
       if (mounted) {
         _showError(
@@ -393,6 +418,40 @@ class _FastSplitPageState extends State<FastSplitPage> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  void _applyFieldErrors(List<GroupApiFieldError>? errors) {
+    if (errors == null || errors.isEmpty) return;
+    setState(() {
+      for (final error in errors) {
+        final field = error.field;
+        if (field == 'title') {
+          _titleServerError = error.message;
+        } else if (field == 'total_amount_in_minor') {
+          _totalServerError = error.message;
+        } else if (field.contains('shares.')) {
+          final match = RegExp(r'shares\.(\d+)').firstMatch(field);
+          final index = int.tryParse(match?.group(1) ?? '');
+          if (index != null && index < _orderedSelectedIds.length) {
+            _shareServerErrors[_orderedSelectedIds[index]] = error.message;
+          }
+        }
+      }
+    });
+  }
+
+  void _applyRateLimit(int? seconds) {
+    if (seconds == null || seconds <= 0) return;
+    _retryTimer?.cancel();
+    setState(() => _retryAfterSeconds = seconds);
+    _retryTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || _retryAfterSeconds <= 1) {
+        timer.cancel();
+        if (mounted) setState(() => _retryAfterSeconds = 0);
+        return;
+      }
+      setState(() => _retryAfterSeconds--);
+    });
   }
 
   Future<void> _openItemizedSplit() async {

@@ -144,6 +144,20 @@ class GroupMemberResponse(BaseModel):
     left_at: datetime | None
 
 
+class GroupMemberListItemResponse(BaseModel):
+    group_id: uuid.UUID
+    user_id: uuid.UUID
+    name: str
+    email: str | None
+    role: GroupRole
+    joined_at: datetime
+    left_at: datetime | None
+
+
+class GroupMembersResponse(BaseModel):
+    members: list[GroupMemberListItemResponse]
+
+
 class GroupMemberCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -284,7 +298,9 @@ class ItemizedSplitRequest(BaseModel):
 
     type: Literal["itemized"]
     line_items: list[ItemizedLineItemRequest] = Field(min_length=1, max_length=100)
-    extra_amounts: list[ExpenseExtraAmountRequest] = Field(default_factory=list, max_length=20)
+    extra_amounts: list[ExpenseExtraAmountRequest] = Field(
+        default_factory=list, max_length=20
+    )
 
 
 class ItemizedExpenseCreateRequest(BaseModel):

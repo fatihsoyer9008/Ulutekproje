@@ -183,13 +183,15 @@ class GroupMember {
     required this.role,
     required this.joinedAt,
     required this.leftAt,
+    this.email,
   });
 
   factory GroupMember.fromJson(Map<String, Object?> json) {
     return GroupMember(
       groupId: json['group_id']! as String,
       userId: json['user_id']! as String,
-      displayName: json['display_name']! as String,
+      displayName: (json['display_name'] ?? json['name'])! as String,
+      email: json['email'] as String?,
       role: _groupRoleFromJson(json['role']! as String),
       joinedAt: json['joined_at']! as String,
       leftAt: json['left_at'] as String?,
@@ -202,6 +204,7 @@ class GroupMember {
   final GroupRole role;
   final String joinedAt;
   final String? leftAt;
+  final String? email;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'group_id': groupId,
@@ -210,6 +213,7 @@ class GroupMember {
     'role': role.name,
     'joined_at': joinedAt,
     'left_at': leftAt,
+    if (email != null) 'email': email,
   };
 }
 
@@ -741,6 +745,7 @@ class GroupApiErrorDetail {
     this.fieldErrors,
     this.unassignedReceiptLineItemIds,
     this.unassignedReceiptLineItemPositions,
+    this.retryAfterSeconds,
   });
 
   factory GroupApiErrorDetail.fromJson(Map<String, Object?> json) {
@@ -764,6 +769,7 @@ class GroupApiErrorDetail {
       unassignedReceiptLineItemPositions: unassignedPositionsJson
           ?.map((item) => item! as int)
           .toList(growable: false),
+      retryAfterSeconds: json['retry_after_seconds'] as int?,
     );
   }
 
@@ -772,6 +778,7 @@ class GroupApiErrorDetail {
   final List<GroupApiFieldError>? fieldErrors;
   final List<String>? unassignedReceiptLineItemIds;
   final List<int>? unassignedReceiptLineItemPositions;
+  final int? retryAfterSeconds;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'code': code,
@@ -785,6 +792,7 @@ class GroupApiErrorDetail {
     if (unassignedReceiptLineItemPositions != null)
       'unassigned_receipt_line_item_positions':
           unassignedReceiptLineItemPositions,
+    if (retryAfterSeconds != null) 'retry_after_seconds': retryAfterSeconds,
   };
 }
 

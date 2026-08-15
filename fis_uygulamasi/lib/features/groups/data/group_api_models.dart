@@ -49,6 +49,23 @@ final class GroupMemberEnvelopeApiResponse {
   GroupMember toDomain() => member.toDomain();
 }
 
+final class GroupMembersApiResponse {
+  const GroupMembersApiResponse(this.members);
+
+  factory GroupMembersApiResponse.fromJson(Map<String, Object?> json) =>
+      GroupMembersApiResponse(
+        _objectList(
+          json['members'],
+          'members',
+        ).map(GroupMemberApiModel.fromJson).toList(growable: false),
+      );
+
+  final List<GroupMemberApiModel> members;
+
+  List<GroupMember> toDomain() =>
+      members.map((member) => member.toDomain()).toList(growable: false);
+}
+
 final class GroupExpensesApiResponse {
   const GroupExpensesApiResponse(this.expenses);
 
@@ -159,7 +176,7 @@ final class GroupMemberApiModel {
 
   factory GroupMemberApiModel.fromJson(Map<String, Object?> json) {
     _requiredString(json, 'user_id');
-    _requiredString(json, 'display_name');
+    if (json['display_name'] == null) _requiredString(json, 'name');
     return GroupMemberApiModel._(json);
   }
 

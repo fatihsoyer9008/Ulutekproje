@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:receipt_ai_scanner/receipt_ai_scanner.dart';
 
+import '../../../core/network/request_id.dart';
 import '../../receipt_scanning/data/receipt_gallery_picker.dart';
 import '../../transaction_draft/data/receipt_parser_client.dart';
 import '../../transaction_draft/model/transaction_draft.dart';
@@ -204,9 +205,7 @@ class _GroupOcrPageState extends ConsumerState<GroupOcrPage> {
         _result = result;
         _rawOcrText = rawText;
         _submissionDate = submissionDate;
-        _submissionKey =
-            'group-ocr-${widget.group.id}-$flowId-'
-            '${submissionDate.microsecondsSinceEpoch}';
+        _submissionKey = newUuidV4();
       });
     } on ReceiptParserException catch (error) {
       if (flowId != _flowId) return;

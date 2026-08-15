@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.group_schemas import (
     GroupDetailResponse,
+    GroupMemberListItemResponse,
     GroupMemberResponse,
     GroupSummaryResponse,
 )
@@ -68,6 +69,32 @@ class GroupService:
             actor_user_id=actor_user_id,
         )
         return _group_detail(group, actor_user_id)
+
+    async def list_members(
+        self,
+        *,
+        group_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+    ) -> list[GroupMemberListItemResponse]:
+        group = await self._get_authorized_group(
+            group_id=group_id,
+            actor_user_id=actor_user_id,
+        )
+        return [
+            GroupMemberListItemResponse(
+                group_id=member.group_id,
+                user_id=member.user_id,
+                name=_display_name(member),
+                email=member.user.email if member.user is not None else None,
+                role=member.role,
+                joined_at=_as_utc(member.joined_at),
+                left_at=_as_utc(member.left_at),
+            )
+            for member in sorted(
+                group.members,
+                key=lambda item: (_as_utc(item.joined_at), str(item.user_id)),
+            )
+        ]
 
     async def update(
         self,

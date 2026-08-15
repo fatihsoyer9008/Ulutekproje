@@ -93,6 +93,14 @@ class FakeGroupRepository implements GroupRepository {
   }
 
   @override
+  Future<List<GroupMember>> listMembers(String groupId) async {
+    await _beforeRequest();
+    final group = _requireGroup(groupId);
+    _requireCurrentUserMembership(group);
+    return List<GroupMember>.unmodifiable(group.members);
+  }
+
+  @override
   Future<GroupDetail> createGroup({
     required String name,
     String? description,

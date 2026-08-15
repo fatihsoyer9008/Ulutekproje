@@ -35,11 +35,14 @@ void main() {
           orderedMemberIds: [currentUserId, secondUserId],
           percentageBasisPoints: {currentUserId: 3333, secondUserId: 6667},
         ),
-        idempotencyKey: 'percentage-request-1',
+        idempotencyKey: '90000000-0000-4000-8000-000000000001',
       );
 
       expect(captured.path, '/api/v1/groups/$twoMemberGroupId/expenses');
-      expect(captured.headers['Idempotency-Key'], 'percentage-request-1');
+      expect(
+        captured.headers['Idempotency-Key'],
+        '90000000-0000-4000-8000-000000000001',
+      );
       final split = (captured.data as Map<String, Object?>)['split']! as Map;
       expect(split['type'], 'percentage');
       expect((split['shares'] as List).first, {
@@ -79,7 +82,7 @@ void main() {
           ItemizedExtraShareInput(userId: currentUserId, amountInMinor: 6500),
         ],
       ),
-      idempotencyKey: 'itemized-request-1',
+      idempotencyKey: '90000000-0000-4000-8000-000000000002',
     );
 
     final split = (captured.data as Map<String, Object?>)['split']! as Map;
@@ -137,10 +140,13 @@ void main() {
         ],
         extraShares: [],
       ),
-      idempotencyKey: 'ocr-itemized-request-1',
+      idempotencyKey: '90000000-0000-4000-8000-000000000003',
     );
 
-    expect(captured.headers['Idempotency-Key'], 'ocr-itemized-request-1');
+    expect(
+      captured.headers['Idempotency-Key'],
+      '90000000-0000-4000-8000-000000000003',
+    );
 
     final body = captured.data as Map<String, Object?>;
     expect(body['receipt_id'], isNull);
@@ -206,13 +212,103 @@ void main() {
           memberIds: [currentUserId, secondUserId],
         ),
       ),
-      idempotencyKey: 'generic-equal-1',
+      idempotencyKey: '90000000-0000-4000-8000-000000000004',
     );
 
-    expect(captured.headers['Idempotency-Key'], 'generic-equal-1');
+    expect(
+      captured.headers['Idempotency-Key'],
+      '90000000-0000-4000-8000-000000000004',
+    );
     final body = captured.data as Map<String, Object?>;
     expect(body['title'], 'Akşam yemeği');
     expect((body['split'] as Map)['type'], 'equal');
+  });
+
+  test(
+    'typed extra amounts and replay header preserve the API contract',
+    () async {
+      late RequestOptions captured;
+      final repository = ApiGroupExpenseRepository(
+        _client((options) {
+          captured = options;
+          return _jsonResponse(
+            {'expense': itemizedMarketExpense.toJson()},
+            headers: {
+              'Idempotency-Replayed': ['true'],
+            },
+          );
+        }),
+      );
+
+      await repository.createItemizedSplit(
+        const ItemizedExpenseRequest(
+          groupId: twoMemberGroupId,
+          receiptId: '20000000-0000-4000-8000-000000000001',
+          title: 'Market',
+          payerUserId: currentUserId,
+          expenseDate: '2026-08-12T12:00:00Z',
+          totalAmountInMinor: 7000,
+          currency: 'TRY',
+          lineShares: [
+            ItemizedLineShareInput(
+              receiptLineItemId: '30000000-0000-4000-8000-000000000001',
+              userId: currentUserId,
+              amountInMinor: 6000,
+              quantityShareMilli: 1000,
+            ),
+          ],
+          extraShares: [],
+          extraAmounts: [
+            ItemizedExtraAmountInput(
+              type: ExpenseExtraAmountType.tax,
+              label: 'KDV',
+              amountInMinor: 1000,
+              shares: [
+                ItemizedExtraShareInput(
+                  userId: currentUserId,
+                  amountInMinor: 1000,
+                ),
+              ],
+            ),
+          ],
+        ),
+        idempotencyKey: '90000000-0000-4000-8000-000000000005',
+      );
+
+      final split = (captured.data as Map<String, Object?>)['split'] as Map;
+      expect((split['extra_amounts'] as List).single, {
+        'type': 'tax',
+        'label': 'KDV',
+        'amount_in_minor': 1000,
+        'shares': [
+          {'user_id': currentUserId, 'amount_in_minor': 1000},
+        ],
+      });
+      expect(repository.lastCreateWasReplay, isTrue);
+    },
+  );
+
+  test('non UUIDv4 idempotency key is rejected before network', () async {
+    final repository = ApiGroupExpenseRepository(
+      _client((_) => throw StateError('network must not be called')),
+    );
+
+    await expectLater(
+      repository.createFastSplit(
+        const FastSplitExpenseRequest(
+          groupId: twoMemberGroupId,
+          title: 'Market',
+          payerUserId: currentUserId,
+          expenseDate: '2026-08-12T12:00:00Z',
+          totalAmountInMinor: 100,
+          currency: 'TRY',
+          splitType: SplitType.equal,
+          orderedMemberIds: [currentUserId],
+        ),
+        idempotencyKey: 'not-a-uuid',
+      ),
+      throwsArgumentError,
+    );
   });
 }
 
@@ -227,14 +323,17 @@ ApiClient _client(ResponseBody Function(RequestOptions) handler) {
   );
 }
 
-ResponseBody _jsonResponse(Map<String, Object?> body) =>
-    ResponseBody.fromString(
-      jsonEncode(body),
-      200,
-      headers: {
-        Headers.contentTypeHeader: [Headers.jsonContentType],
-      },
-    );
+ResponseBody _jsonResponse(
+  Map<String, Object?> body, {
+  Map<String, List<String>> headers = const {},
+}) => ResponseBody.fromString(
+  jsonEncode(body),
+  200,
+  headers: {
+    Headers.contentTypeHeader: [Headers.jsonContentType],
+    ...headers,
+  },
+);
 
 class _Adapter implements HttpClientAdapter {
   _Adapter(this.handler);

@@ -10,6 +10,9 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
   ApiGroupExpenseRepository(this._apiClient);
 
   final ApiClient _apiClient;
+  bool _lastCreateWasReplay = false;
+
+  bool get lastCreateWasReplay => _lastCreateWasReplay;
 
   @override
   Future<GroupExpense> createFastSplit(
@@ -82,6 +85,17 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
       (total, share) => total + share.amountInMinor,
     );
     final receiptDraft = request.receiptDraft;
+    final extraAmounts = request.extraAmounts.isNotEmpty
+        ? request.extraAmounts
+        : <ItemizedExtraAmountInput>[
+            if (extraAmountInMinor > 0)
+              ItemizedExtraAmountInput(
+                type: ExpenseExtraAmountType.other,
+                label: 'Fiş toplam farkı',
+                amountInMinor: extraAmountInMinor,
+                shares: request.extraShares,
+              ),
+          ];
 
     return _create(
       groupId: request.groupId,
@@ -134,13 +148,18 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
               },
           ],
           'extra_amounts': [
-            if (extraAmountInMinor > 0)
+            for (final extra in extraAmounts)
               <String, Object?>{
-                'type': 'other',
-                'label': 'Fiş toplam farkı',
-                'amount_in_minor': extraAmountInMinor,
+                'type': switch (extra.type) {
+                  ExpenseExtraAmountType.tax => 'tax',
+                  ExpenseExtraAmountType.tip => 'tip',
+                  ExpenseExtraAmountType.serviceFee => 'service_fee',
+                  ExpenseExtraAmountType.other => 'other',
+                },
+                'label': extra.label,
+                'amount_in_minor': extra.amountInMinor,
                 'shares': [
-                  for (final share in request.extraShares)
+                  for (final share in extra.shares)
                     <String, Object?>{
                       'user_id': share.userId,
                       'amount_in_minor': share.amountInMinor,
@@ -158,12 +177,23 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
     required String idempotencyKey,
     required Map<String, Object?> body,
   }) async {
+    if (!_uuidV4.hasMatch(idempotencyKey)) {
+      throw ArgumentError.value(
+        idempotencyKey,
+        'idempotencyKey',
+        'Masraf oluşturma anahtarı UUIDv4 formatında olmalıdır.',
+      );
+    }
+    _lastCreateWasReplay = false;
     try {
       final response = await _apiClient.dio.post<Map<String, dynamic>>(
         '/api/v1/groups/$groupId/expenses',
         data: body,
         options: Options(headers: {'Idempotency-Key': idempotencyKey}),
       );
+      _lastCreateWasReplay =
+          response.headers.value('Idempotency-Replayed')?.toLowerCase() ==
+          'true';
       final responseBody = Map<String, Object?>.from(response.data ?? const {});
       return GroupExpenseEnvelopeApiResponse.fromJson(responseBody).toDomain();
     } on DioException catch (error) {
@@ -211,3 +241,7 @@ class ApiGroupExpenseRepository implements GroupExpenseRepository {
     }
   }
 }
+
+final RegExp _uuidV4 = RegExp(
+  r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+);

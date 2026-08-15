@@ -29,8 +29,19 @@ class ApiGroupRepository implements GroupRepository {
 
   @override
   Future<GroupDetail> getGroup(String groupId) async {
-    final body = await _get('/api/v1/groups/$groupId');
-    return GroupEnvelopeApiResponse.fromJson(body).toDomain();
+    final detailBody = await _get('/api/v1/groups/$groupId');
+    final detail = GroupEnvelopeApiResponse.fromJson(detailBody).toDomain();
+    final members = await listMembers(groupId);
+    return detail.copyWith(
+      memberCount: members.where((member) => member.leftAt == null).length,
+      members: members,
+    );
+  }
+
+  @override
+  Future<List<GroupMember>> listMembers(String groupId) async {
+    final body = await _get('/api/v1/groups/$groupId/members');
+    return GroupMembersApiResponse.fromJson(body).toDomain();
   }
 
   @override

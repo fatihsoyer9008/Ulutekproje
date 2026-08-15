@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -78,6 +80,11 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
   late ItemizedSplitState _splitState;
   String? _payerUserId;
   bool _submitting = false;
+  String? _titleServerError;
+  final Map<int, String> _lineServerErrors = {};
+  String? _extraServerError;
+  int _retryAfterSeconds = 0;
+  Timer? _retryTimer;
 
   @override
   void initState() {
@@ -102,6 +109,7 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
   @override
   void dispose() {
     _titleController.dispose();
+    _retryTimer?.cancel();
     super.dispose();
   }
 
@@ -131,10 +139,12 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
               TextFormField(
                 key: const Key('itemized_split_title'),
                 controller: _titleController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Harcama adı',
                   border: OutlineInputBorder(),
+                  errorText: _titleServerError,
                 ),
+                onChanged: (_) => setState(() => _titleServerError = null),
                 validator: (value) => value == null || value.trim().isEmpty
                     ? 'Harcama adı girin.'
                     : null,
@@ -195,11 +205,13 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
                         )] ??
                         const {},
                     onToggleMember: (userId) => setState(() {
+                      _lineServerErrors.remove(index);
                       _splitState = _splitState.toggleLineItemMember(
                         receiptLineItemId: _lineSelectionKey(index),
                         userId: userId,
                       );
                     }),
+                    errorMessage: _lineServerErrors[index],
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -209,8 +221,10 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
                     activeMembers: _activeMembers,
                     selectedMemberIds: _splitState.selectedExtraMemberIds,
                     onToggleMember: (userId) => setState(() {
+                      _extraServerError = null;
                       _splitState = _splitState.toggleExtraMember(userId);
                     }),
+                    errorMessage: _extraServerError,
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -253,6 +267,7 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
                 key: const Key('itemized_split_submit'),
                 onPressed:
                     !_submitting &&
+                        _retryAfterSeconds == 0 &&
                         widget.receipt.canSubmit &&
                         calculation.isBalanced &&
                         _payerUserId != null
@@ -264,7 +279,11 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.check_rounded),
-                label: const Text('Harcamayı Kaydet'),
+                label: Text(
+                  _retryAfterSeconds > 0
+                      ? '$_retryAfterSeconds saniye bekleyin'
+                      : 'Harcamayı Kaydet',
+                ),
               ),
             ],
           ),
@@ -307,6 +326,8 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
     } on GroupApiException catch (error) {
       if (!mounted) return;
 
+      _applyFieldErrors(error.error.detail.fieldErrors);
+      _applyRateLimit(error.error.detail.retryAfterSeconds);
       if (error.code == 'unassigned_line_items') {
         final detail = error.error.detail;
         // Draft receipts are recreated with fresh server-side line-item ids on
@@ -353,6 +374,40 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
     }
   }
 
+  void _applyFieldErrors(List<GroupApiFieldError>? errors) {
+    if (errors == null || errors.isEmpty) return;
+    setState(() {
+      for (final error in errors) {
+        final field = error.field;
+        if (field == 'title') {
+          _titleServerError = error.message;
+          continue;
+        }
+        final lineMatch = RegExp(r'line_items\.(\d+)').firstMatch(field);
+        final lineIndex = int.tryParse(lineMatch?.group(1) ?? '');
+        if (lineIndex != null && lineIndex < widget.receipt.lineItems.length) {
+          _lineServerErrors[lineIndex] = error.message;
+        } else if (field.contains('extra_amounts')) {
+          _extraServerError = error.message;
+        }
+      }
+    });
+  }
+
+  void _applyRateLimit(int? seconds) {
+    if (seconds == null || seconds <= 0) return;
+    _retryTimer?.cancel();
+    setState(() => _retryAfterSeconds = seconds);
+    _retryTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || _retryAfterSeconds <= 1) {
+        timer.cancel();
+        if (mounted) setState(() => _retryAfterSeconds = 0);
+        return;
+      }
+      setState(() => _retryAfterSeconds--);
+    });
+  }
+
   void _showError(String message) => ScaffoldMessenger.of(
     context,
   ).showSnackBar(SnackBar(content: Text(message)));
@@ -394,6 +449,7 @@ class _LineItemCard extends StatelessWidget {
     required this.activeMembers,
     required this.selectedMemberIds,
     required this.onToggleMember,
+    this.errorMessage,
   });
 
   final int index;
@@ -401,6 +457,7 @@ class _LineItemCard extends StatelessWidget {
   final List<GroupMember> activeMembers;
   final Set<String> selectedMemberIds;
   final ValueChanged<String> onToggleMember;
+  final String? errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -434,6 +491,14 @@ class _LineItemCard extends StatelessWidget {
                 Text('Satır toplamı: $lineTotal'),
               ],
             ),
+            if (errorMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                errorMessage!,
+                key: Key('itemized_line_error_$index'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
               'Bu ürünü kimler aldı?',
@@ -480,12 +545,14 @@ class _ExtraAmountCard extends StatelessWidget {
     required this.activeMembers,
     required this.selectedMemberIds,
     required this.onToggleMember,
+    this.errorMessage,
   });
 
   final int amountInMinor;
   final List<GroupMember> activeMembers;
   final Set<String> selectedMemberIds;
   final ValueChanged<String> onToggleMember;
+  final String? errorMessage;
 
   @override
   Widget build(BuildContext context) => AppCard(
@@ -533,6 +600,14 @@ class _ExtraAmountCard extends StatelessWidget {
                 ),
             ],
           ),
+          if (errorMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              errorMessage!,
+              key: const Key('itemized_extra_amount_error'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
         ],
       ),
     ),
