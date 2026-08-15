@@ -379,7 +379,7 @@ class _ItemizedSplitPageState extends State<ItemizedSplitPage> {
     setState(() {
       for (final error in errors) {
         final field = error.field;
-        if (field.contains('title')) {
+        if (field == 'title') {
           _titleServerError = error.message;
           continue;
         }

@@ -425,9 +425,9 @@ class _FastSplitPageState extends State<FastSplitPage> {
     setState(() {
       for (final error in errors) {
         final field = error.field;
-        if (field.contains('title')) {
+        if (field == 'title') {
           _titleServerError = error.message;
-        } else if (field.contains('total_amount_in_minor')) {
+        } else if (field == 'total_amount_in_minor') {
           _totalServerError = error.message;
         } else if (field.contains('shares.')) {
           final match = RegExp(r'shares\.(\d+)').firstMatch(field);

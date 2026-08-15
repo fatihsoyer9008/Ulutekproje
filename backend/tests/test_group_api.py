@@ -360,6 +360,31 @@ async def test_group_members_endpoint_returns_identity_role_and_departure(
 
 
 @pytest.mark.asyncio
+async def test_group_members_endpoint_forbids_non_members(
+    group_api_context,
+) -> None:
+    client, session_factory, current_user, owner, member, outsider, former = (
+        group_api_context
+    )
+    async with session_factory() as session:
+        repository = GroupRepository(session)
+        group = await repository.create(name="Üye Yetki Testi", created_by=owner.id)
+        await repository.add_member(group_id=group.id, user_id=member.id)
+        departed = await repository.add_member(group_id=group.id, user_id=former.id)
+        departed.left_at = datetime.now(UTC)
+        await session.commit()
+        group_id = group.id
+
+    current_user["value"] = outsider
+    forbidden = await client.get(f"/api/v1/groups/{group_id}/members")
+    _assert_error(forbidden, status_code=403, code="group_forbidden")
+
+    current_user["value"] = former
+    departed_response = await client.get(f"/api/v1/groups/{group_id}/members")
+    _assert_error(departed_response, status_code=403, code="group_forbidden")
+
+
+@pytest.mark.asyncio
 async def test_only_owner_can_update_group_and_clear_description(
     group_api_context,
 ) -> None:
