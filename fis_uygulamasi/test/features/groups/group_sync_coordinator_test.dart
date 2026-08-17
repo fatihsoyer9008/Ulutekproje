@@ -197,6 +197,23 @@ void main() {
     expect(state.status, GroupSyncStatus.success);
   });
 
+  test(
+    'pulledCount yalnız repository tarafından uygulanan kayıtları sayar',
+    () async {
+      final server = FakeGroupSyncServer()
+        ..seedRemoteOperation(_operationJson(9));
+      final repository = _MemoryGroupSyncRepository([], appliedChangeCount: 0);
+      final scope = container(repository: repository, server: server);
+
+      await scope
+          .read(groupSyncCoordinatorProvider.notifier)
+          .syncPendingAndPull();
+
+      expect(repository.appliedChanges, hasLength(1));
+      expect(scope.read(groupSyncCoordinatorProvider).pulledCount, 0);
+    },
+  );
+
   test('eş zamanlı sync çağrıları aynı push işlemini paylaşır', () async {
     final task = _task(1);
     final release = Completer<void>();
@@ -231,10 +248,13 @@ class _BlockingFakeGroupSyncServer extends FakeGroupSyncServer {
 }
 
 class _MemoryGroupSyncRepository implements GroupSyncTaskRepository {
-  _MemoryGroupSyncRepository(List<OfflineTask> pending)
-    : _pending = <Id, OfflineTask>{for (final task in pending) task.id: task};
+  _MemoryGroupSyncRepository(
+    List<OfflineTask> pending, {
+    this.appliedChangeCount,
+  }) : _pending = <Id, OfflineTask>{for (final task in pending) task.id: task};
 
   final Map<Id, OfflineTask> _pending;
+  final int? appliedChangeCount;
   final Map<Id, OfflineTask> _retryable = <Id, OfflineTask>{};
   final List<Id> syncedIds = <Id>[];
   final List<GroupPullChange> appliedChanges = <GroupPullChange>[];
@@ -298,7 +318,7 @@ class _MemoryGroupSyncRepository implements GroupSyncTaskRepository {
   @override
   Future<int> applyPulledChanges(List<GroupPullChange> changes) async {
     appliedChanges.addAll(changes);
-    return changes.length;
+    return appliedChangeCount ?? changes.length;
   }
 }
 

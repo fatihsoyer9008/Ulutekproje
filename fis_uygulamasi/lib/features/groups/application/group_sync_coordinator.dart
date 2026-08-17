@@ -56,6 +56,10 @@ class IsarGroupSyncTaskRepository implements GroupSyncTaskRepository {
     var applied = 0;
     for (final change in changes) {
       final operation = GroupOfflineOperation.fromJson(change.operation);
+      // TODO(task-6.4): ExpenseShare, Settlement ve GroupExpense delete pull
+      // operasyonlarını ilgili yerel persistence modelleri hazır olduğunda
+      // burada uygula. Şimdilik yalnız güvenle kalıcılaştırılabilen masraf
+      // snapshot'ları applied sayısına dahil edilir.
       if (operation is! GroupExpenseOfflineOperation ||
           operation.type == GroupOfflineOperationType.groupExpenseDelete) {
         continue;
@@ -241,8 +245,8 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
         throw StateError('Fake group pull cursor ilerlemiyor.');
       }
       final batch = await pullGateway.pull(cursor: _pullCursor);
-      await repository.applyPulledChanges(batch.changes);
-      pulled += batch.changes.length;
+      final appliedCount = await repository.applyPulledChanges(batch.changes);
+      pulled += appliedCount;
       if (batch.nextCursor != null) _pullCursor = batch.nextCursor;
       hasMore = batch.hasMore;
       state = GroupSyncState(
