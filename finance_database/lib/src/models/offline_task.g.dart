@@ -203,11 +203,25 @@ const _OfflineTasktypeEnumValueMap = {
   r'createTransaction': r'createTransaction',
   r'updateTransaction': r'updateTransaction',
   r'deleteTransaction': r'deleteTransaction',
+  r'groupExpenseCreate': r'groupExpenseCreate',
+  r'groupExpenseUpdate': r'groupExpenseUpdate',
+  r'groupExpenseDelete': r'groupExpenseDelete',
+  r'expenseShareCreate': r'expenseShareCreate',
+  r'expenseShareUpdate': r'expenseShareUpdate',
+  r'expenseShareDelete': r'expenseShareDelete',
+  r'settlementCreate': r'settlementCreate',
 };
 const _OfflineTasktypeValueEnumMap = {
   r'createTransaction': OfflineTaskType.createTransaction,
   r'updateTransaction': OfflineTaskType.updateTransaction,
   r'deleteTransaction': OfflineTaskType.deleteTransaction,
+  r'groupExpenseCreate': OfflineTaskType.groupExpenseCreate,
+  r'groupExpenseUpdate': OfflineTaskType.groupExpenseUpdate,
+  r'groupExpenseDelete': OfflineTaskType.groupExpenseDelete,
+  r'expenseShareCreate': OfflineTaskType.expenseShareCreate,
+  r'expenseShareUpdate': OfflineTaskType.expenseShareUpdate,
+  r'expenseShareDelete': OfflineTaskType.expenseShareDelete,
+  r'settlementCreate': OfflineTaskType.settlementCreate,
 };
 
 Id _offlineTaskGetId(OfflineTask object) {
