@@ -99,7 +99,7 @@ final groupPullGatewayProvider = Provider<GroupPullGateway>(
       ref.watch(groupMockModeForSyncProvider) ||
           ref.watch(authSessionControllerProvider).user == null
       ? FakeGroupPullGateway(ref.watch(fakeGroupSyncServerProvider))
-      : const NoopGroupPullGateway(),
+      : DioGroupPullGateway(ref.watch(apiClientProvider).dio),
 );
 
 final groupMockModeForSyncProvider = Provider<bool>(

@@ -107,6 +107,81 @@ void main() {
     expect(third.nextCursor, '5');
   });
 
+  test('Dio pull gateway cursor ve değişiklik sayfasını ayrıştırır', () async {
+    late RequestOptions captured;
+    final gateway = DioGroupPullGateway(
+      _dio((options) {
+        captured = options;
+        return _response(<String, Object?>{
+          'changes': <Object?>[
+            <String, Object?>{
+              'cursor': '8',
+              'operation': <String, Object?>{
+                'operation_type': 'groupExpenseDelete',
+                'group_id': '92000000-0000-4000-8000-000000000001',
+                'client_record_id': '93000000-0000-4000-8000-000000000008',
+                'owner_key': 'user:91000000-0000-4000-8000-000000000001',
+                'sync_state': 'synced',
+                'payload': <String, Object?>{
+                  'group_id': '92000000-0000-4000-8000-000000000001',
+                  'expense_id': '94000000-0000-4000-8000-000000000008',
+                },
+              },
+              'server_updated_at': '2026-08-17T12:30:00+03:00',
+            },
+          ],
+          'next_cursor': '8',
+          'has_more': true,
+        });
+      }),
+    );
+
+    final batch = await gateway.pull(cursor: '7');
+
+    expect(captured.path, '/api/v1/sync/groups/pull');
+    expect(captured.queryParameters, <String, Object?>{'cursor': '7'});
+    expect(batch.changes, hasLength(1));
+    expect(batch.changes.single.cursor, '8');
+    expect(
+      batch.changes.single.serverUpdatedAt,
+      DateTime.utc(2026, 8, 17, 9, 30),
+    );
+    expect(batch.nextCursor, '8');
+    expect(batch.hasMore, isTrue);
+  });
+
+  test('Dio pull gateway bozuk yanıtı kalıcı hata sayar', () async {
+    final gateway = DioGroupPullGateway(
+      _dio((_) => _response(<String, Object?>{'changes': <Object?>[]})),
+    );
+
+    await expectLater(
+      gateway.pull(),
+      throwsA(isA<GroupSyncPermanentException>()),
+    );
+  });
+
+  test('Dio pull gateway sunucu kesintisini geçici hata sayar', () async {
+    final gateway = DioGroupPullGateway(
+      _dio(
+        (_) => _response(<String, Object?>{
+          'detail': <String, Object?>{'message': 'Bakım sürüyor'},
+        }, statusCode: 503),
+      ),
+    );
+
+    await expectLater(
+      gateway.pull(),
+      throwsA(
+        isA<GroupSyncTemporaryException>().having(
+          (error) => error.message,
+          'message',
+          'Bakım sürüyor',
+        ),
+      ),
+    );
+  });
+
   test('kişisel task ve bozuk grup payloadı reddedilir', () async {
     final server = FakeGroupSyncServer();
     final personal = _task(1)..type = OfflineTaskType.createTransaction;

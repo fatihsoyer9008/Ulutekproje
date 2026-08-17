@@ -20,6 +20,7 @@ from app.models.group_expense import (
     ExpenseSplitType,
     GroupExpense,
 )
+from app.models.group_sync_change import GroupSyncChange
 from app.models.group_sync_operation import GroupSyncOperation
 from app.models.settlement import Settlement
 from app.models.sync_claim_request import SyncClaimRequest
@@ -41,7 +42,7 @@ class _FakeDebtSummaryCache:
 async def test_group_sync_push_creates_expense_and_replays_idempotently(
     sync_context,
 ) -> None:
-    client, session_factory, _, first_user, second_user = sync_context
+    client, session_factory, current_user, first_user, second_user = sync_context
     async with session_factory() as session:
         group = Group(name="Sync Group", currency="TRY", created_by=first_user.id)
         session.add(group)
@@ -111,6 +112,27 @@ async def test_group_sync_push_creates_expense_and_replays_idempotently(
         first_user.id: 4000,
         second_user.id: 8000,
     }
+
+    current_user["value"] = second_user
+    pulled = await client.get("/api/v1/sync/groups/pull")
+
+    assert pulled.status_code == 200
+    assert pulled.json()["has_more"] is False
+    assert pulled.json()["next_cursor"] == "1"
+    assert len(pulled.json()["changes"]) == 1
+    operation = pulled.json()["changes"][0]["operation"]
+    assert operation["operation_type"] == "groupExpenseCreate"
+    assert operation["client_record_id"] == str(record_id)
+    assert operation["owner_key"] == f"user:{second_user.id}"
+    assert operation["sync_state"] == "synced"
+    assert operation["payload"]["id"] == str(stored_expense.id)
+    assert operation["payload"]["title"] == "Offline market"
+
+    invalid_cursor = await client.get(
+        "/api/v1/sync/groups/pull", params={"cursor": "not-a-cursor"}
+    )
+    assert invalid_cursor.status_code == 400
+    assert invalid_cursor.json()["detail"]["code"] == "invalid_cursor"
 
 
 @pytest.mark.asyncio
@@ -347,7 +369,7 @@ async def test_group_sync_expense_share_reports_financial_lock_conflict(
 async def test_group_sync_pushes_expense_update_and_delete_idempotently(
     sync_context,
 ) -> None:
-    client, session_factory, _, first_user, second_user = sync_context
+    client, session_factory, current_user, first_user, second_user = sync_context
     async with session_factory() as session:
         group = Group(
             name="Expense mutation sync",
@@ -479,11 +501,46 @@ async def test_group_sync_pushes_expense_update_and_delete_idempotently(
             )
         ).all()
         receipts = (await session.scalars(select(GroupSyncOperation))).all()
+        changes = (await session.scalars(select(GroupSyncChange))).all()
     assert {share.user_id: share.amount_in_minor for share in shares} == {
         first_user.id: 400,
         second_user.id: 800,
     }
     assert len(receipts) == 2
+    assert len(changes) == 2
+
+    current_user["value"] = second_user
+    first_page = await client.get(
+        "/api/v1/sync/groups/pull", params={"limit": 1}
+    )
+    second_page = await client.get(
+        "/api/v1/sync/groups/pull",
+        params={"limit": 1, "cursor": first_page.json()["next_cursor"]},
+    )
+    exhausted = await client.get(
+        "/api/v1/sync/groups/pull",
+        params={"cursor": second_page.json()["next_cursor"]},
+    )
+
+    assert first_page.json()["has_more"] is True
+    assert first_page.json()["changes"][0]["operation"]["operation_type"] == (
+        "groupExpenseUpdate"
+    )
+    assert first_page.json()["changes"][0]["operation"]["payload"]["title"] == (
+        "Güncel başlık"
+    )
+    assert second_page.json()["has_more"] is False
+    tombstone = second_page.json()["changes"][0]["operation"]
+    assert tombstone["operation_type"] == "groupExpenseDelete"
+    assert tombstone["payload"] == {
+        "group_id": str(group.id),
+        "expense_id": str(expense.id),
+    }
+    assert exhausted.json() == {
+        "changes": [],
+        "next_cursor": second_page.json()["next_cursor"],
+        "has_more": False,
+    }
 
 
 @pytest.mark.asyncio

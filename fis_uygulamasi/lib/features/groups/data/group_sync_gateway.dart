@@ -207,6 +207,102 @@ class NoopGroupPullGateway implements GroupPullGateway {
       GroupPullBatch(changes: const [], nextCursor: cursor, hasMore: false);
 }
 
+/// Production cursor feed used after pending group operations are pushed.
+class DioGroupPullGateway implements GroupPullGateway {
+  const DioGroupPullGateway(this._dio);
+
+  final Dio _dio;
+
+  @override
+  Future<GroupPullBatch> pull({String? cursor}) async {
+    late final Response<Object?> response;
+    try {
+      response = await _dio.get<Object?>(
+        '/api/v1/sync/groups/pull',
+        queryParameters: <String, Object?>{'cursor': ?cursor},
+      );
+    } on DioException catch (error) {
+      final status = error.response?.statusCode;
+      final message = _errorMessage(error.response?.data);
+      if (status != null && status >= 400 && status < 500) {
+        throw GroupSyncPermanentException(
+          message ??
+              'Group pull isteği sunucu tarafından reddedildi ($status).',
+        );
+      }
+      throw GroupSyncTemporaryException(
+        message ?? 'Group pull endpointine geçici olarak ulaşılamıyor.',
+      );
+    }
+
+    return _parseBatch(response.data);
+  }
+
+  static GroupPullBatch _parseBatch(Object? data) {
+    if (data is! Map) {
+      throw const GroupSyncPermanentException('Group pull yanıtı geçersiz.');
+    }
+    final rawChanges = data['changes'];
+    final rawNextCursor = data['next_cursor'];
+    final rawHasMore = data['has_more'];
+    if (rawChanges is! List ||
+        (rawNextCursor != null && rawNextCursor is! String) ||
+        rawHasMore is! bool) {
+      throw const GroupSyncPermanentException(
+        'Group pull sayfa bilgisi geçersiz.',
+      );
+    }
+
+    final changes = <GroupPullChange>[];
+    for (final rawChange in rawChanges) {
+      if (rawChange is! Map) {
+        throw const GroupSyncPermanentException(
+          'Group pull değişikliği geçersiz.',
+        );
+      }
+      final changeCursor = rawChange['cursor'];
+      final rawOperation = rawChange['operation'];
+      final rawServerUpdatedAt = rawChange['server_updated_at'];
+      final serverUpdatedAt = rawServerUpdatedAt is String
+          ? DateTime.tryParse(rawServerUpdatedAt)?.toUtc()
+          : null;
+      if (changeCursor is! String ||
+          rawOperation is! Map ||
+          serverUpdatedAt == null) {
+        throw const GroupSyncPermanentException(
+          'Group pull değişiklik alanları geçersiz.',
+        );
+      }
+      changes.add(
+        GroupPullChange(
+          cursor: changeCursor,
+          operation: Map<String, Object?>.from(rawOperation),
+          serverUpdatedAt: serverUpdatedAt,
+        ),
+      );
+    }
+    return GroupPullBatch(
+      changes: List<GroupPullChange>.unmodifiable(changes),
+      nextCursor: rawNextCursor as String?,
+      hasMore: rawHasMore,
+    );
+  }
+
+  static String? _errorMessage(Object? data) {
+    if (data is! Map) return null;
+    final detail = data['detail'];
+    if (detail is String && detail.isNotEmpty) return detail;
+    if (detail is Map && detail['message'] is String) {
+      return detail['message']! as String;
+    }
+    final error = data['error'];
+    if (error is Map && error['message'] is String) {
+      return error['message']! as String;
+    }
+    return null;
+  }
+}
+
 class GroupSyncTemporaryException implements Exception {
   const GroupSyncTemporaryException(this.message);
 

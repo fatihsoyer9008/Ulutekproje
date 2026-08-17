@@ -13,6 +13,7 @@ from app.models.group_expense import (
     GroupExpense,
 )
 from app.models.group_invitation import GroupInvitation
+from app.models.group_sync_change import GroupSyncChange
 from app.models.group_sync_operation import GroupSyncOperation
 from app.models.oauth_account import OAuthAccount, OAuthProvider
 from app.models.one_time_token import OneTimeToken, OneTimeTokenPurpose
@@ -37,6 +38,7 @@ __all__ = [
     "GroupExpense",
     "GroupInvitation",
     "GroupSyncOperation",
+    "GroupSyncChange",
     "GroupMember",
     "GroupRole",
     "OAuthAccount",
