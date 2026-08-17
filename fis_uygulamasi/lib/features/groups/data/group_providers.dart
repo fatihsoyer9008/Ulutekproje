@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/database/database_providers.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
+import '../application/offline_first_group_expense_writer.dart';
 import '../domain/group_models.dart';
 import 'api_group_repository.dart';
 import 'demo_group_seed.dart';
@@ -55,6 +57,13 @@ final groupRepositoryProvider = Provider<GroupRepository>(
 final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(
   (ref) => ref.watch(groupRepositoryProvider),
 );
+
+final offlineFirstGroupExpenseWriterProvider =
+    Provider<OfflineFirstGroupExpenseWriter>(
+      (ref) => OfflineFirstGroupExpenseWriter(
+        ref.watch(groupExpenseOfflineRepositoryProvider),
+      ),
+    );
 
 final debtSummaryRepositoryProvider = Provider<DebtSummaryRepository>(
   (ref) => ref.watch(groupRepositoryProvider),

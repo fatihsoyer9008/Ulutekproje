@@ -23,6 +23,7 @@ void main() {
         OfflineTaskSchema,
         CategoryEntitySchema,
         SavingsGoalEntitySchema,
+        GroupExpenseEntitySchema,
       ],
       directory: tempDirectory.path,
       name: 'database_providers_test',
@@ -50,6 +51,10 @@ void main() {
     expect(
       container.read(offlineTaskRepositoryProvider),
       isA<OfflineTaskRepository>(),
+    );
+    expect(
+      container.read(groupExpenseOfflineRepositoryProvider),
+      isA<GroupExpenseOfflineRepository>(),
     );
     expect(
       container.read(categoryRepositoryProvider),
