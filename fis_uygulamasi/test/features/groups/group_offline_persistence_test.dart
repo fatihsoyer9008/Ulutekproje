@@ -79,4 +79,20 @@ void main() {
     expect(expenses.single.syncState, SyncState.localOnly);
     expect(await isar.offlineTasks.count(), 0);
   });
+
+  test('delete operasyonu açıkça reddedilir ve kayıt oluşturmaz', () async {
+    expect(
+      () => writer.save(groupExpenseDeleteOperation),
+      throwsA(
+        isA<UnsupportedError>().having(
+          (error) => error.message,
+          'message',
+          contains('Task 6.4'),
+        ),
+      ),
+    );
+
+    expect(await isar.groupExpenseEntitys.count(), 0);
+    expect(await isar.offlineTasks.count(), 0);
+  });
 }

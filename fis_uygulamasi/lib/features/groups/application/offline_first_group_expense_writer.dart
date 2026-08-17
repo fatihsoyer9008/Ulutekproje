@@ -15,6 +15,13 @@ class OfflineFirstGroupExpenseWriter {
   final GroupExpenseOfflineRepository _repository;
 
   Future<Id> save(GroupExpenseOfflineOperation operation) {
+    if (operation.type == GroupOfflineOperationType.groupExpenseDelete) {
+      throw UnsupportedError(
+        'GroupExpense delete yerel tombstone akışı Task 6.4 kapsamında '
+        'ayrı bir metotla ele alınmalıdır.',
+      );
+    }
+
     final entity = operation.toGroupExpenseEntity();
 
     if (operation.ownerKey.startsWith('guest:')) {
