@@ -186,42 +186,77 @@ void main() {
     },
   );
 
-  test('Dio gateway ExpenseShare create update delete operasyonlarını gönderir', (
-  ) async {
-    final captured = <RequestOptions>[];
-    final gateway = DioGroupPushGateway(
-      _dio((options) {
-        captured.add(options);
-        return _response(<String, Object?>{
-          'operation_id': (options.data as Map)['client_record_id'],
-          'status': 'accepted',
-        });
-      }),
-    );
+  test(
+    'Dio gateway ExpenseShare create update delete operasyonlarını gönderir',
+    () async {
+      final captured = <RequestOptions>[];
+      final gateway = DioGroupPushGateway(
+        _dio((options) {
+          captured.add(options);
+          return _response(<String, Object?>{
+            'operation_id': (options.data as Map)['client_record_id'],
+            'status': 'accepted',
+          });
+        }),
+      );
 
-    for (final type in <OfflineTaskType>[
-      OfflineTaskType.expenseShareCreate,
-      OfflineTaskType.expenseShareUpdate,
-      OfflineTaskType.expenseShareDelete,
-    ]) {
-      final task = _shareTask(type);
-      expect((await gateway.push(task)).status, GroupPushStatus.accepted);
-    }
+      for (final type in <OfflineTaskType>[
+        OfflineTaskType.expenseShareCreate,
+        OfflineTaskType.expenseShareUpdate,
+        OfflineTaskType.expenseShareDelete,
+      ]) {
+        final task = _shareTask(type);
+        expect((await gateway.push(task)).status, GroupPushStatus.accepted);
+      }
 
-    expect(captured, hasLength(3));
-    expect(
-      captured.map((request) => (request.data as Map)['operation_type']),
-      <String>[
-        'expenseShareCreate',
-        'expenseShareUpdate',
-        'expenseShareDelete',
-      ],
-    );
-    expect(
-      captured.map((request) => request.headers['Idempotency-Key']).toSet(),
-      hasLength(3),
-    );
-  });
+      expect(captured, hasLength(3));
+      expect(
+        captured.map((request) => (request.data as Map)['operation_type']),
+        <String>[
+          'expenseShareCreate',
+          'expenseShareUpdate',
+          'expenseShareDelete',
+        ],
+      );
+      expect(
+        captured.map((request) => request.headers['Idempotency-Key']).toSet(),
+        hasLength(3),
+      );
+    },
+  );
+
+  test(
+    'Dio gateway GroupExpense update ve delete operasyonlarını gönderir',
+    () async {
+      final captured = <RequestOptions>[];
+      final gateway = DioGroupPushGateway(
+        _dio((options) {
+          captured.add(options);
+          return _response(<String, Object?>{
+            'operation_id': (options.data as Map)['client_record_id'],
+            'status': 'accepted',
+          });
+        }),
+      );
+
+      for (final type in <OfflineTaskType>[
+        OfflineTaskType.groupExpenseUpdate,
+        OfflineTaskType.groupExpenseDelete,
+      ]) {
+        final task = _expenseMutationTask(type);
+        expect((await gateway.push(task)).status, GroupPushStatus.accepted);
+      }
+
+      expect(
+        captured.map((request) => (request.data as Map)['operation_type']),
+        <String>['groupExpenseUpdate', 'groupExpenseDelete'],
+      );
+      expect(
+        captured.map((request) => request.headers['Idempotency-Key']).toSet(),
+        hasLength(2),
+      );
+    },
+  );
 
   test('replayed response aynı clientRecordId için duplicate olur', () async {
     final gateway = DioGroupPushGateway(
@@ -349,6 +384,47 @@ OfflineTask _shareTask(OfflineTaskType type) {
           'amount_in_minor': 4500,
           'status': 'open',
           'settled_at': null,
+        },
+      },
+    })
+    ..createdAt = DateTime.utc(2026, 8, 17)
+    ..updatedAt = DateTime.utc(2026, 8, 17);
+}
+
+OfflineTask _expenseMutationTask(OfflineTaskType type) {
+  final suffix = switch (type) {
+    OfflineTaskType.groupExpenseUpdate => '1',
+    OfflineTaskType.groupExpenseDelete => '2',
+    _ => throw ArgumentError.value(type),
+  };
+  final id = '97000000-0000-4000-8000-${suffix.padLeft(12, '0')}';
+  const expenseId = '94000000-0000-4000-8000-000000000001';
+  const groupId = '92000000-0000-4000-8000-000000000001';
+  return OfflineTask()
+    ..clientTaskId = id
+    ..type = type
+    ..status = OfflineTaskStatus.pending
+    ..payloadJson = jsonEncode(<String, Object?>{
+      'operation_type': type.name,
+      'group_id': groupId,
+      'client_record_id': id,
+      'owner_key': 'user:91000000-0000-4000-8000-000000000001',
+      'sync_state': type == OfflineTaskType.groupExpenseDelete
+          ? SyncState.pendingDelete.name
+          : SyncState.pending.name,
+      'payload': <String, Object?>{
+        'group_id': groupId,
+        if (type == OfflineTaskType.groupExpenseDelete)
+          'expense_id': expenseId
+        else ...<String, Object?>{
+          'id': expenseId,
+          'payer_user_id': '91000000-0000-4000-8000-000000000001',
+          'title': 'Güncellenen masraf',
+          'expense_date': '2026-08-17T12:00:00Z',
+          'total_amount_in_minor': 4500,
+          'currency': 'TRY',
+          'split_type': 'fixed_amount',
+          'shares': <Object?>[],
         },
       },
     })

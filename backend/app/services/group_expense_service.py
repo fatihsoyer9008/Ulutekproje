@@ -16,8 +16,15 @@ from app.models.group_expense import (
     ExpenseSplitType,
     GroupExpense,
 )
+from app.models.settlement import Settlement
 from app.models.user import User
 from app.repositories.group_expenses import GroupExpenseRepository
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +141,20 @@ class GroupExpenseService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repository = GroupExpenseRepository(session)
+
+    async def is_financially_locked(self, expense: GroupExpense) -> bool:
+        settlement_timestamps = (
+            await self.session.scalars(
+                select(Settlement.created_at).where(
+                    Settlement.group_id == expense.group_id,
+                )
+            )
+        ).all()
+        expense_created_at = _as_utc(expense.created_at)
+        return any(
+            _as_utc(settlement_created_at) >= expense_created_at
+            for settlement_created_at in settlement_timestamps
+        )
 
     async def create_fast_split(
         self,
@@ -476,15 +497,15 @@ class GroupExpenseService:
             ):
                 raise ItemizedExpenseValidationError("invalid_request")
 
-            amounts_by_line_item[
-                assignment.receipt_line_item_id
-            ] += assignment.amount_in_minor
+            amounts_by_line_item[assignment.receipt_line_item_id] += (
+                assignment.amount_in_minor
+            )
             amounts_by_user[assignment.user_id] += assignment.amount_in_minor
 
             if assignment.quantity_share_milli is not None:
-                quantities_by_line_item[
-                    assignment.receipt_line_item_id
-                ] += assignment.quantity_share_milli
+                quantities_by_line_item[assignment.receipt_line_item_id] += (
+                    assignment.quantity_share_milli
+                )
 
         extra_amount_values: list[
             tuple[

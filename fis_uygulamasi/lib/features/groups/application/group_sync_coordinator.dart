@@ -58,12 +58,20 @@ class IsarGroupSyncTaskRepository implements GroupSyncTaskRepository {
     var applied = 0;
     for (final change in changes) {
       final operation = GroupOfflineOperation.fromJson(change.operation);
-      // TODO(task-6.4): ExpenseShare, Settlement ve GroupExpense delete pull
-      // operasyonlarını ilgili yerel persistence modelleri hazır olduğunda
-      // burada uygula. Şimdilik yalnız güvenle kalıcılaştırılabilen masraf
-      // snapshot'ları applied sayısına dahil edilir.
-      if (operation is! GroupExpenseOfflineOperation ||
-          operation.type == GroupOfflineOperationType.groupExpenseDelete) {
+      // ExpenseShare ve Settlement için ayrı yerel persistence modelleri henüz
+      // bulunmadığından yalnız GroupExpense snapshot/tombstone uygulanır.
+      if (operation is! GroupExpenseOfflineOperation) {
+        continue;
+      }
+      if (operation.type == GroupOfflineOperationType.groupExpenseDelete) {
+        if (await repository.applyPulledTombstone(
+          expenseId: operation.expenseId,
+          groupId: operation.groupId,
+          ownerKey: operation.ownerKey,
+          deletedAt: change.serverUpdatedAt,
+        )) {
+          applied += 1;
+        }
         continue;
       }
       final entity = operation.toGroupExpenseEntity()

@@ -132,11 +132,13 @@ async def _expense_response(
 ) -> GroupExpenseEnvelope:
     service = GroupExpenseService(db)
     display_names = await service.get_expense_share_display_names(expense)
+    is_financially_locked = await service.is_financially_locked(expense)
 
     return GroupExpenseEnvelope(
         expense=GroupExpenseResponse.from_model(
             expense,
             display_names=display_names,
+            is_financially_locked=is_financially_locked,
         )
     )
 

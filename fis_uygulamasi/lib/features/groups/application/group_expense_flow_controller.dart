@@ -164,8 +164,10 @@ final groupExpenseFlowControllerProvider =
       GroupExpenseFlowController,
       GroupExpenseFlowState
     >((ref) {
+      final groupRepository = ref.watch(groupRepositoryProvider);
       final repository = ref.watch(groupExpenseRepositoryProvider);
-      if (repository is FakeGroupRepository) {
+      if (repository is FakeGroupRepository ||
+          groupRepository is FakeGroupRepository) {
         return GroupExpenseFlowController(repository);
       }
       return GroupExpenseFlowController(
@@ -277,22 +279,28 @@ class GroupExpenseFlowController extends StateNotifier<GroupExpenseFlowState> {
 
   /// Hesaplama ItemizedSplitCalculator tarafından yapılır; controller tekrar hesaplamaz.
   void setItemizedSplit({
-    required String receiptId,
+    required String? receiptId,
     required ItemizedSplitCalculation calculation,
   }) {
     _requireStarted();
-    if (receiptId.trim().isEmpty) {
+    if (receiptId != null && receiptId.trim().isEmpty) {
       throw ArgumentError.value(receiptId, 'receiptId', 'Boş olamaz.');
+    }
+    if (receiptId == null && !state.draft!.hasMeaningfulItems) {
+      throw StateError(
+        'Yerel Itemized Split için kullanılabilir fiş kalemleri bulunmalıdır.',
+      );
     }
 
     state = state.copyWith(
       status: GroupExpenseFlowStatus.editing,
       splitType: SplitType.itemized,
-      receiptId: receiptId.trim(),
+      receiptId: receiptId?.trim(),
       itemizedLineShares: [
         for (final share in calculation.lineItemShares)
           ItemizedLineShareInput(
             receiptLineItemId: share.receiptLineItemId,
+            receiptLineItemPosition: share.receiptLineItemPosition,
             userId: share.userId,
             amountInMinor: share.amountInMinor,
             quantityShareMilli: share.quantityShareMilli,
@@ -371,8 +379,7 @@ class GroupExpenseFlowController extends StateNotifier<GroupExpenseFlowState> {
     final draft = _requireDraft(snapshot);
     final receiptId = snapshot.receiptId;
     if (snapshot.splitType != SplitType.itemized ||
-        receiptId == null ||
-        receiptId.isEmpty) {
+        (receiptId == null && !draft.hasMeaningfulItems)) {
       throw StateError('Kalem bazlı bölüştürme hazırlanmalıdır.');
     }
 
@@ -385,6 +392,7 @@ class GroupExpenseFlowController extends StateNotifier<GroupExpenseFlowState> {
       final request = ItemizedExpenseRequest(
         groupId: draft.groupId,
         receiptId: receiptId,
+        receiptDraft: receiptId == null ? _itemizedReceiptDraft(draft) : null,
         title: _requireTitle(draft),
         payerUserId: _requirePayer(snapshot),
         expenseDate: _requireDate(draft),
@@ -572,6 +580,25 @@ class GroupExpenseFlowController extends StateNotifier<GroupExpenseFlowState> {
       'total_amount_in_minor': request.totalAmountInMinor,
       'currency': request.currency,
       'receipt_id': request.receiptId,
+      if (request.receiptDraft != null)
+        'receipt_draft': {
+          'merchant_name': request.receiptDraft!.merchantName,
+          'category': request.receiptDraft!.category,
+          'raw_ocr_text': request.receiptDraft!.rawOcrText,
+          'line_items': [
+            for (final item in request.receiptDraft!.lineItems)
+              {
+                'position': item.position,
+                'name': item.name,
+                'category': item.category,
+                'quantity_milli': item.quantityMilli,
+                'unit_price_in_minor': item.unitPriceInMinor,
+                'total_amount_in_minor': item.totalAmountInMinor,
+                'tax_rate_basis_points': item.taxRateBasisPoints,
+                'tax_amount_in_minor': item.taxAmountInMinor,
+              },
+          ],
+        },
       'payer_user_id': request.payerUserId,
       'split': {
         'type': 'itemized',
@@ -614,6 +641,33 @@ class GroupExpenseFlowController extends StateNotifier<GroupExpenseFlowState> {
               ],
       },
     };
+  }
+
+  ItemizedReceiptDraftInput _itemizedReceiptDraft(GroupExpenseDraft draft) {
+    final items = draft.meaningfulItems;
+    if (items.isEmpty) {
+      throw StateError('Itemized receipt draft için ürün kalemi bulunamadı.');
+    }
+    return ItemizedReceiptDraftInput(
+      merchantName: draft.merchantName.trim().isEmpty
+          ? null
+          : draft.merchantName.trim(),
+      category: draft.category.trim().isEmpty ? null : draft.category.trim(),
+      rawOcrText: draft.rawOcrText,
+      lineItems: [
+        for (var index = 0; index < items.length; index += 1)
+          ItemizedReceiptDraftLineInput(
+            position: index,
+            name: items[index].name,
+            category: items[index].category,
+            quantityMilli: items[index].quantityMilli,
+            unitPriceInMinor: items[index].unitPriceInMinor,
+            totalAmountInMinor: items[index].totalAmountInMinor!,
+            taxRateBasisPoints: items[index].taxRateBasisPoints,
+            taxAmountInMinor: items[index].taxAmountInMinor,
+          ),
+      ],
+    );
   }
 
   /// UI başarı veya iptal sonucunu gördükten sonra bu metodu çağırır.

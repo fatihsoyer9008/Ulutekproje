@@ -20,10 +20,21 @@ class OfflineFirstGroupExpenseWriter {
 
   Future<Id> save(GroupExpenseOfflineOperation operation) async {
     if (operation.type == GroupOfflineOperationType.groupExpenseDelete) {
-      throw UnsupportedError(
-        'GroupExpense delete yerel tombstone akışı Task 6.4 kapsamında '
-        'ayrı bir metotla ele alınmalıdır.',
+      if (!operation.ownerKey.startsWith('user:') ||
+          operation.syncState != SyncState.pendingDelete) {
+        throw StateError(
+          'Grup masrafı silme işlemi kullanıcı kapsamında pendingDelete '
+          'durumunda olmalıdır.',
+        );
+      }
+      final taskId = await _repository.markPendingDeleteWithOfflineTask(
+        expenseId: operation.expenseId,
+        groupId: operation.groupId,
+        ownerKey: operation.ownerKey,
+        task: operation.toOfflineTask(),
       );
+      _triggerSynchronization?.call();
+      return taskId;
     }
 
     final entity = operation.toGroupExpenseEntity();
