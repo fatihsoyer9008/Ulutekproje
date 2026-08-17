@@ -62,7 +62,10 @@ class GroupExpenseOfflineRepository {
       .findAll();
 
   /// Yalnız grup operasyonlarını oluşturulma sırasıyla döndürür.
-  Future<List<OfflineTask>> getPendingSyncTasks({int limit = 50}) async {
+  Future<List<OfflineTask>> getPendingSyncTasks({
+    required String ownerKey,
+    int limit = 50,
+  }) async {
     if (limit <= 0) return const [];
     final tasks = await _isar.offlineTasks
         .filter()
@@ -70,9 +73,37 @@ class GroupExpenseOfflineRepository {
         .sortByCreatedAt()
         .findAll();
     return tasks
-        .where((task) => task.type.isGroupOperation)
+        .where((task) {
+          if (!task.type.isGroupOperation) return false;
+          try {
+            return _decodePayload(task.payloadJson)['owner_key'] == ownerKey;
+          } on StateError {
+            return false;
+          }
+        })
         .take(limit)
         .toList(growable: false);
+  }
+
+  /// Expense dışındaki immutable grup operasyonlarını (örn. settlement)
+  /// owner scope'u doğrulandıktan sonra kalıcı kuyruğa ekler.
+  Future<Id> enqueueGroupTask(OfflineTask task, {required String ownerKey}) {
+    final payload = _decodePayload(task.payloadJson);
+    if (!ownerKey.startsWith('user:') || payload['owner_key'] != ownerKey) {
+      throw StateError(
+        'Grup sync görevi aktif kullanıcı kapsamıyla eşleşmiyor.',
+      );
+    }
+    if (!task.type.isGroupOperation ||
+        task.status != OfflineTaskStatus.pending ||
+        payload['client_record_id'] != task.clientTaskId) {
+      throw StateError('Geçersiz grup sync görevi.');
+    }
+    final now = DateTime.now().toUtc();
+    task
+      ..createdAt = now
+      ..updatedAt = now;
+    return _isar.writeTxn(() => _isar.offlineTasks.put(task));
   }
 
   /// Failed/conflict grup görevlerini audit alanlarına dokunmadan pending

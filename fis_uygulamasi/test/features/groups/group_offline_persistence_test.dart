@@ -2,10 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:app_main/features/groups/application/offline_first_group_expense_writer.dart';
+import 'package:app_main/features/groups/application/group_expense_flow_controller.dart';
+import 'package:app_main/features/groups/application/fast_split_calculator.dart';
+import 'package:app_main/features/groups/application/itemized_split_calculator.dart';
+import 'package:app_main/features/groups/data/fake_group_repository.dart';
 import 'package:app_main/features/groups/application/group_sync_coordinator.dart';
 import 'package:app_main/features/groups/data/group_offline_operation_mapper.dart';
 import 'package:app_main/features/groups/data/group_sync_gateway.dart';
 import 'package:app_main/features/groups/domain/group_offline_operation.dart';
+import 'package:app_main/features/groups/domain/group_expense_draft.dart';
+import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:isar/isar.dart';
@@ -115,10 +121,129 @@ void main() {
   );
 
   test(
+    'Settlement immutable pending operasyon olarak kuyruğa yazılır',
+    () async {
+      await writer.saveSettlement(settlementCreateOperation);
+
+      final task = (await isar.offlineTasks.where().findAll()).single;
+      expect(task.type, OfflineTaskType.settlementCreate);
+      expect(task.status, OfflineTaskStatus.pending);
+      expect(task.clientTaskId, settlementCreateOperation.clientRecordId);
+      expect(
+        (jsonDecode(task.payloadJson) as Map)['payload']['amount_in_minor'],
+        sampleSettlement.amountInMinor,
+      );
+    },
+  );
+
+  test(
+    'offline Fast Split ve ExpenseShare DTO kayıpsız kuyruğa yazılır',
+    () async {
+      final controller = GroupExpenseFlowController(
+        FakeGroupRepository(groups: const <GroupDetail>[twoMemberGroup]),
+        offlineWriter: writer,
+        ownerKey: groupOperationOwnerKey,
+      );
+      controller.start(
+        group: twoMemberGroup,
+        activeUserId: currentUserId,
+        draft: _draft(),
+      );
+      controller.setFastSplit(
+        FastSplitCalculator.percentage(
+          totalAmountInMinor: 12000,
+          percentageBasisPoints: const <String, int>{
+            currentUserId: 3333,
+            secondUserId: 6667,
+          },
+          memberIds: const <String>[currentUserId, secondUserId],
+        ),
+        percentageBasisPoints: const <String, int>{
+          currentUserId: 3333,
+          secondUserId: 6667,
+        },
+      );
+
+      await controller.submitFastSplit(
+        idempotencyKey: '86000000-0000-4000-8000-000000000001',
+      );
+
+      final task = (await isar.offlineTasks.where().findAll()).single;
+      final envelope = jsonDecode(task.payloadJson)! as Map<String, dynamic>;
+      final syncPayload = envelope['sync_payload']! as Map<String, dynamic>;
+      final split = syncPayload['split']! as Map<String, dynamic>;
+      expect(task.status, OfflineTaskStatus.pending);
+      expect(task.clientTaskId, envelope['client_record_id']);
+      expect(split['type'], 'percentage');
+      expect((split['shares'] as List).last['percentage_basis_points'], 6667);
+      expect(syncPayload['total_amount_in_minor'], 12000);
+      expect(syncPayload['currency'], 'TRY');
+    },
+  );
+
+  test(
+    'offline Itemized Split satır ve ek payları kayıpsız kuyruğa yazılır',
+    () async {
+      final controller = GroupExpenseFlowController(
+        FakeGroupRepository(groups: const <GroupDetail>[twoMemberGroup]),
+        offlineWriter: writer,
+        ownerKey: groupOperationOwnerKey,
+      );
+      controller.start(
+        group: twoMemberGroup,
+        activeUserId: currentUserId,
+        draft: _draft(),
+      );
+      controller.setItemizedSplit(
+        receiptId: '20000000-0000-4000-8000-000000000001',
+        calculation: const ItemizedSplitCalculation(
+          receiptTotalInMinor: 12000,
+          lineItemsTotalInMinor: 10000,
+          lineItemShares: <ItemizedLineItemShare>[
+            ItemizedLineItemShare(
+              receiptLineItemId: '30000000-0000-4000-8000-000000000001',
+              receiptLineItemPosition: null,
+              userId: currentUserId,
+              amountInMinor: 4000,
+              quantityShareMilli: 400,
+            ),
+            ItemizedLineItemShare(
+              receiptLineItemId: '30000000-0000-4000-8000-000000000001',
+              receiptLineItemPosition: null,
+              userId: secondUserId,
+              amountInMinor: 6000,
+              quantityShareMilli: 600,
+            ),
+          ],
+          extraAmountShares: <ExtraAmountShare>[
+            ExtraAmountShare(userId: currentUserId, amountInMinor: 2000),
+          ],
+          unassignedReceiptLineItemIds: <String>{},
+          hasUnknownLineTotals: false,
+          hasUnsyncedLineItems: false,
+        ),
+      );
+
+      await controller.submitItemizedSplit(
+        idempotencyKey: '86000000-0000-4000-8000-000000000002',
+      );
+
+      final task = (await isar.offlineTasks.where().findAll()).single;
+      final envelope = jsonDecode(task.payloadJson)! as Map<String, dynamic>;
+      final split = (envelope['sync_payload'] as Map)['split'] as Map;
+      final line = (split['line_items'] as List).single as Map;
+      expect(line['shares'], hasLength(2));
+      expect((line['shares'] as List).last['quantity_share_milli'], 600);
+      expect((split['extra_amounts'] as List).single['amount_in_minor'], 2000);
+    },
+  );
+
+  test(
     'pull değişikliği Isar içine synced snapshot olarak uygulanır',
     () async {
       final syncRepository = IsarGroupSyncTaskRepository(
         GroupExpenseOfflineRepository(isar),
+        groupOperationOwnerKey,
       );
       final change = GroupPullChange(
         cursor: '1',
@@ -135,3 +260,15 @@ void main() {
     },
   );
 }
+
+GroupExpenseDraft _draft() => GroupExpenseDraft(
+  groupId: twoMemberGroupId,
+  payerUserId: currentUserId,
+  merchantName: 'Market',
+  category: 'Market',
+  totalAmountInMinor: 12000,
+  expenseDate: DateTime.utc(2026, 8, 17),
+  currency: 'TRY',
+  rawOcrText: null,
+  items: const <GroupExpenseDraftItem>[],
+);

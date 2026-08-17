@@ -8,7 +8,9 @@ import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../../transaction_draft/model/turkish_money.dart';
 import '../data/group_api_failure.dart';
 import '../data/group_providers.dart';
+import '../data/fake_group_repository.dart';
 import '../domain/group_models.dart';
+import '../domain/group_offline_operation.dart';
 import 'debt_summary_page.dart';
 import 'fast_split_page.dart';
 
@@ -331,7 +333,7 @@ class _GroupDetailContent extends ConsumerWidget {
           onMarkPaid: (transfer) async {
             final now = DateTime.now().toUtc();
             final nowText = now.toIso8601String();
-            final settlementId = 'settlement-${now.microsecondsSinceEpoch}';
+            final settlementId = newUuidV4();
 
             final settlement = Settlement(
               id: settlementId,
@@ -345,12 +347,23 @@ class _GroupDetailContent extends ConsumerWidget {
               createdAt: nowText,
             );
 
-            await ref
-                .read(groupRepositoryProvider)
-                .createSettlement(
-                  settlement,
-                  idempotencyKey: 'settlement-$settlementId',
-                );
+            final repository = ref.read(groupRepositoryProvider);
+            if (repository is FakeGroupRepository) {
+              await repository.createSettlement(
+                settlement,
+                idempotencyKey: settlementId,
+              );
+            } else {
+              await ref
+                  .read(offlineFirstGroupExpenseWriterProvider)
+                  .saveSettlement(
+                    SettlementOfflineOperation.create(
+                      settlement: settlement,
+                      clientRecordId: settlementId,
+                      ownerKey: 'user:$currentUserId',
+                    ),
+                  );
+            }
 
             ref.invalidate(groupDebtSummaryProvider(group.id));
             ref.invalidate(groupSettlementsProvider(group.id));
