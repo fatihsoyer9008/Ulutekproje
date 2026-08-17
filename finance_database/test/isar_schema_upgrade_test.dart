@@ -46,6 +46,7 @@ void main() {
         OfflineTaskSchema,
         CategoryEntitySchema,
         SavingsGoalEntitySchema,
+        GroupExpenseEntitySchema,
       ],
       directory: directory.path,
       name: databaseName,
@@ -61,6 +62,7 @@ void main() {
     expect(await upgradedDatabase.offlineTasks.count(), 0);
     expect(await upgradedDatabase.categoryEntitys.count(), 0);
     expect(await upgradedDatabase.savingsGoalEntitys.count(), 0);
+    expect(await upgradedDatabase.groupExpenseEntitys.count(), 0);
     expect(await upgradedDatabase.receiptEntitys.count(), 1);
     expect(await upgradedDatabase.receiptLineItemEntitys.count(), 1);
     final receipt = await upgradedDatabase.receiptEntitys.where().findFirst();

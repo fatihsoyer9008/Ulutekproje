@@ -27,6 +27,11 @@ final offlineTaskRepositoryProvider = Provider<OfflineTaskRepository>(
   (ref) => OfflineTaskRepository(ref.watch(isarProvider)),
 );
 
+final groupExpenseOfflineRepositoryProvider =
+    Provider<GroupExpenseOfflineRepository>(
+      (ref) => GroupExpenseOfflineRepository(ref.watch(isarProvider)),
+    );
+
 final pendingOfflineTasksProvider = StreamProvider<List<OfflineTask>>(
   (ref) => ref.watch(offlineTaskRepositoryProvider).watchPending(),
 );

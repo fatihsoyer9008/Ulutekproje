@@ -2,7 +2,33 @@ import 'package:isar/isar.dart';
 
 part 'offline_task.g.dart';
 
-enum OfflineTaskType { createTransaction, updateTransaction, deleteTransaction }
+enum OfflineTaskType {
+  createTransaction,
+  updateTransaction,
+  deleteTransaction,
+  groupExpenseCreate,
+  groupExpenseUpdate,
+  groupExpenseDelete,
+  expenseShareCreate,
+  expenseShareUpdate,
+  expenseShareDelete,
+  settlementCreate,
+}
+
+extension OfflineTaskTypeX on OfflineTaskType {
+  bool get isGroupOperation => switch (this) {
+    OfflineTaskType.groupExpenseCreate ||
+    OfflineTaskType.groupExpenseUpdate ||
+    OfflineTaskType.groupExpenseDelete ||
+    OfflineTaskType.expenseShareCreate ||
+    OfflineTaskType.expenseShareUpdate ||
+    OfflineTaskType.expenseShareDelete ||
+    OfflineTaskType.settlementCreate => true,
+    OfflineTaskType.createTransaction ||
+    OfflineTaskType.updateTransaction ||
+    OfflineTaskType.deleteTransaction => false,
+  };
+}
 
 enum OfflineTaskStatus { pending, processing, failed, conflict, synced }
 
