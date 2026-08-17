@@ -82,11 +82,23 @@ def _validate_production_settings() -> None:
     weak_values = {
         "development-only-change-this-secret-before-production",
         "development-only-rate-limit-hmac-secret",
+        "development-only-n8n-webhook-hmac-secret",
     }
     if settings.jwt_secret.get_secret_value() in weak_values:
         raise RuntimeError("JWT_SECRET must be replaced in production")
     if settings.security_hmac_secret.get_secret_value() in weak_values:
         raise RuntimeError("SECURITY_HMAC_SECRET must be replaced in production")
+
+    n8n_webhook_hmac_secret = (
+        settings.n8n_webhook_hmac_secret.get_secret_value().strip()
+    )
+    if (
+        not n8n_webhook_hmac_secret
+        or n8n_webhook_hmac_secret in weak_values
+    ):
+        raise RuntimeError(
+            "N8N_WEBHOOK_HMAC_SECRET must be configured securely in production"
+        )
     if settings.email_delivery_mode != "smtp":
         raise RuntimeError("SMTP email delivery must be configured in production")
     smtp_password = (

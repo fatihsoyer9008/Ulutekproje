@@ -26,10 +26,16 @@ class Settings(BaseSettings):
     jwt_audience: str = "ulutekproje-mobile"
     access_token_minutes: int = 15
     refresh_token_days: int = 30
+
     security_hmac_secret: SecretStr = SecretStr(
         "development-only-rate-limit-hmac-secret"
     )
+    n8n_webhook_hmac_secret: SecretStr = SecretStr(
+        "development-only-n8n-webhook-hmac-secret"
+    )
 
+    email_delivery_mode: str = "disabled"
+    email_delivery_mode: str = "disabled"
     email_delivery_mode: str = "disabled"
     email_from: str = "noreply@example.invalid"
     smtp_host: str = "smtp.gmail.com"
