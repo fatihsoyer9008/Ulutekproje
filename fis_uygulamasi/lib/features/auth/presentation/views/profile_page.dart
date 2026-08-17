@@ -9,6 +9,7 @@ import '../../../ai_assistant/presentation/assistant_consent_card.dart';
 import '../../../../application/service/transaction_export_file_service.dart';
 import '../../../../core/database/database_providers.dart';
 import '../../../backup/data/transaction_json_import_service.dart';
+import '../../../groups/application/group_sync_coordinator.dart';
 import '../../../sync/application/sync_coordinator.dart';
 import '../../../sync/presentation/widgets/profile_sync_status_card.dart';
 import '../controllers/auth_session_controller.dart';
@@ -79,14 +80,24 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             queueSummary: queueSummary,
             onSyncPending: isGuest
                 ? null
-                : () => ref
-                      .read(syncCoordinatorProvider.notifier)
-                      .syncPendingTasks(),
+                : () => Future.wait<void>(<Future<void>>[
+                    ref
+                        .read(syncCoordinatorProvider.notifier)
+                        .syncPendingTasks(),
+                    ref
+                        .read(groupSyncCoordinatorProvider.notifier)
+                        .syncPendingAndPull(),
+                  ]),
             onRetry: isGuest
                 ? null
-                : () => ref
-                      .read(syncCoordinatorProvider.notifier)
-                      .retryFailedAndConflicted(),
+                : () => Future.wait<void>(<Future<void>>[
+                    ref
+                        .read(syncCoordinatorProvider.notifier)
+                        .retryFailedAndConflicted(),
+                    ref
+                        .read(groupSyncCoordinatorProvider.notifier)
+                        .retryFailedAndConflicted(),
+                  ]),
           ),
           if (!isGuest && widget.aiAssistantClient != null) ...[
             const SizedBox(height: 20),

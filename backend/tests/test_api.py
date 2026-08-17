@@ -217,6 +217,43 @@ def test_production_assistant_requires_dedicated_gemini_key(
         _validate_production_settings()
 
 
+
+@pytest.mark.parametrize(
+    "n8n_webhook_hmac_secret",
+    [
+        SecretStr(""),
+        SecretStr("development-only-n8n-webhook-hmac-secret"),
+    ],
+)
+def test_production_rejects_missing_or_weak_n8n_webhook_hmac_secret(
+    monkeypatch: pytest.MonkeyPatch,
+    n8n_webhook_hmac_secret: SecretStr,
+) -> None:
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "receipt_image_upload_enabled", False)
+    monkeypatch.setattr(settings, "use_dummy_parser", True)
+    monkeypatch.setattr(settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(settings, "trust_proxy_headers", True)
+    monkeypatch.setattr(settings, "trusted_client_ip_header", "do-connecting-ip")
+    monkeypatch.setattr(settings, "trusted_proxy_cidrs", "10.0.0.0/8")
+    monkeypatch.setattr(settings, "jwt_secret", SecretStr("secure-jwt-secret"))
+    monkeypatch.setattr(
+        settings,
+        "security_hmac_secret",
+        SecretStr("secure-rate-limit-hmac-secret"),
+    )
+    monkeypatch.setattr(
+        settings,
+        "n8n_webhook_hmac_secret",
+        n8n_webhook_hmac_secret,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="N8N_WEBHOOK_HMAC_SECRET must be configured securely",
+    ):
+        _validate_production_settings()
+
 def test_receipt_ignores_forwarded_for_when_proxy_trust_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
