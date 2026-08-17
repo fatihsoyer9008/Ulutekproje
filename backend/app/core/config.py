@@ -35,8 +35,7 @@ class Settings(BaseSettings):
     )
 
     email_delivery_mode: str = "disabled"
-    email_delivery_mode: str = "disabled"
-    email_delivery_mode: str = "disabled"
+   
     email_from: str = "noreply@example.invalid"
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = Field(default=587, ge=1, le=65535)
