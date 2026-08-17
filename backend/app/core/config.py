@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     trust_proxy_headers: bool = False
     trusted_client_ip_header: str = ""
     trusted_proxy_cidrs: str = ""
+    cors_allowed_origins: str = ""
     receipt_image_upload_enabled: bool = False
     receipt_image_max_bytes: int = Field(
         default=10 * 1024 * 1024,
@@ -145,6 +146,25 @@ class Settings(BaseSettings):
             ip_network(cidr, strict=False)
             for cidr in self.trusted_proxy_cidrs.split(",")
             if cidr
+        )
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def validate_cors_allowed_origins(cls, value: str) -> str:
+        origins = [item.strip() for item in value.split(",") if item.strip()]
+        if "*" in origins:
+            raise ValueError(
+                "CORS_ALLOWED_ORIGINS must not contain a wildcard; "
+                "list explicit origins instead"
+            )
+        return ",".join(origins)
+
+    @property
+    def cors_origins(self) -> tuple[str, ...]:
+        return tuple(
+            origin.strip()
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
         )
 
     @field_validator("email_delivery_mode")
