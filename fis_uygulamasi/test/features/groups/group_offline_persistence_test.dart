@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:app_main/features/groups/application/offline_first_group_expense_writer.dart';
+import 'package:app_main/features/groups/application/group_sync_coordinator.dart';
 import 'package:app_main/features/groups/data/group_offline_operation_mapper.dart';
+import 'package:app_main/features/groups/data/group_sync_gateway.dart';
 import 'package:app_main/features/groups/domain/group_offline_operation.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -95,4 +97,41 @@ void main() {
     expect(await isar.groupExpenseEntitys.count(), 0);
     expect(await isar.offlineTasks.count(), 0);
   });
+
+  test(
+    'pending kayıt başarıyla yazıldıktan sonra grup sync tetiklenir',
+    () async {
+      var syncCalls = 0;
+      final triggeringWriter = OfflineFirstGroupExpenseWriter(
+        GroupExpenseOfflineRepository(isar),
+        triggerSynchronization: () => syncCalls += 1,
+      );
+
+      await triggeringWriter.save(groupExpenseCreateOperation);
+
+      expect(syncCalls, 1);
+      expect(await isar.offlineTasks.count(), 1);
+    },
+  );
+
+  test(
+    'pull değişikliği Isar içine synced snapshot olarak uygulanır',
+    () async {
+      final syncRepository = IsarGroupSyncTaskRepository(
+        GroupExpenseOfflineRepository(isar),
+      );
+      final change = GroupPullChange(
+        cursor: '1',
+        operation: groupExpenseCreateOperation.toJson(),
+        serverUpdatedAt: DateTime.utc(2026, 8, 17),
+      );
+
+      final applied = await syncRepository.applyPulledChanges([change]);
+
+      final stored = await isar.groupExpenseEntitys.where().findFirst();
+      expect(applied, 1);
+      expect(stored?.syncState, SyncState.synced);
+      expect(stored?.expenseId, fastSplitTransferExpense.id);
+    },
+  );
 }

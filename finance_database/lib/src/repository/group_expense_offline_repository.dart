@@ -61,6 +61,114 @@ class GroupExpenseOfflineRepository {
       .sortByExpenseDateDesc()
       .findAll();
 
+  /// Yalnız grup operasyonlarını oluşturulma sırasıyla döndürür.
+  Future<List<OfflineTask>> getPendingSyncTasks({int limit = 50}) async {
+    if (limit <= 0) return const [];
+    final tasks = await _isar.offlineTasks
+        .filter()
+        .statusEqualTo(OfflineTaskStatus.pending)
+        .sortByCreatedAt()
+        .findAll();
+    return tasks
+        .where((task) => task.type.isGroupOperation)
+        .take(limit)
+        .toList(growable: false);
+  }
+
+  /// Failed/conflict grup görevlerini audit alanlarına dokunmadan pending
+  /// durumuna getirir. İlgili yerel masraf da tekrar sync edilebilir olur.
+  Future<Set<Id>> requeueFailedAndConflictedSyncTasks() {
+    return _isar.writeTxn(() async {
+      final tasks = await _isar.offlineTasks.where().findAll();
+      final retryable = tasks
+          .where(
+            (task) =>
+                task.type.isGroupOperation &&
+                (task.status == OfflineTaskStatus.failed ||
+                    task.status == OfflineTaskStatus.conflict),
+          )
+          .toList();
+      if (retryable.isEmpty) return const <Id>{};
+
+      final now = DateTime.now().toUtc();
+      for (final task in retryable) {
+        task
+          ..status = OfflineTaskStatus.pending
+          ..updatedAt = now;
+        await _updateExpenseSyncState(task, _pendingSyncState(task));
+      }
+      await _isar.offlineTasks.putAll(retryable);
+      return retryable.map((task) => task.id).toSet();
+    });
+  }
+
+  /// Task ve bağlı GroupExpense kaydını aynı transaction içinde synced yapar.
+  /// retryCount/lastError/lastAttemptAt audit geçmişi bilinçli olarak korunur.
+  Future<void> markSyncTaskAsSynced(Id taskId) =>
+      _updateSyncTask(taskId, (task, now) async {
+        task
+          ..status = OfflineTaskStatus.synced
+          ..lastAttemptAt = now
+          ..updatedAt = now;
+        await _updateExpenseSyncState(task, SyncState.synced);
+      });
+
+  /// Geçici hatayı kaydeder ve görev pending kaldığı için sonraki backoff
+  /// denemesine izin verir.
+  Future<void> recordSyncTaskError(Id taskId, String error) =>
+      _updateSyncTask(taskId, (task, now) async {
+        task
+          ..status = OfflineTaskStatus.pending
+          ..retryCount += 1
+          ..lastError = error
+          ..lastAttemptAt = now
+          ..updatedAt = now;
+        await _updateExpenseSyncState(task, _pendingSyncState(task));
+      });
+
+  Future<void> markSyncTaskFailed(Id taskId, String error) =>
+      _updateSyncTask(taskId, (task, now) async {
+        task
+          ..status = OfflineTaskStatus.failed
+          ..lastError = error
+          ..lastAttemptAt = now
+          ..updatedAt = now;
+        await _updateExpenseSyncState(task, SyncState.failed);
+      });
+
+  Future<void> markSyncTaskConflict(Id taskId, String error) =>
+      _updateSyncTask(taskId, (task, now) async {
+        task
+          ..status = OfflineTaskStatus.conflict
+          ..lastError = error
+          ..lastAttemptAt = now
+          ..updatedAt = now;
+        await _updateExpenseSyncState(task, SyncState.failed);
+      });
+
+  /// Pull ile gelen server snapshot'ını yalnız yerelde bekleyen değişiklik yoksa
+  /// uygular. Pending/failed kayıtların sessizce ezilmesini engeller.
+  Future<bool> saveSyncedFromPull(GroupExpenseEntity expense) {
+    if (expense.syncState != SyncState.synced) {
+      throw StateError('Pull snapshotı synced durumda olmalıdır.');
+    }
+    if (!expense.ownerKey.startsWith('user:')) {
+      throw StateError('Pull snapshotı kayıtlı kullanıcıya ait olmalıdır.');
+    }
+
+    return _isar.writeTxn(() async {
+      final existing = await _isar.groupExpenseEntitys.getByExpenseId(
+        expense.expenseId,
+      );
+      if (existing != null && existing.syncState != SyncState.synced) {
+        return false;
+      }
+      if (existing != null) expense.id = existing.id;
+      await _isar.groupExpenseEntitys.put(expense);
+      return true;
+    });
+  }
+
   Future<Id> _putExpense(GroupExpenseEntity expense) async {
     final existing = await _isar.groupExpenseEntitys.getByExpenseId(
       expense.expenseId,
@@ -70,6 +178,57 @@ class GroupExpenseOfflineRepository {
     }
     return _isar.groupExpenseEntitys.put(expense);
   }
+
+  Future<void> _updateSyncTask(
+    Id taskId,
+    Future<void> Function(OfflineTask task, DateTime now) mutate,
+  ) {
+    return _isar.writeTxn(() async {
+      final task = await _isar.offlineTasks.get(taskId);
+      if (task == null) return;
+      if (!task.type.isGroupOperation) {
+        throw StateError('Kişisel task grup sync repository ile yönetilemez.');
+      }
+      final now = DateTime.now().toUtc();
+      await mutate(task, now);
+      await _isar.offlineTasks.put(task);
+    });
+  }
+
+  Future<void> _updateExpenseSyncState(
+    OfflineTask task,
+    SyncState state,
+  ) async {
+    final expenseId = await _expenseIdForTask(task);
+    if (expenseId == null) return;
+    final expense = await _isar.groupExpenseEntitys.getByExpenseId(expenseId);
+    if (expense == null) return;
+    expense.syncState = state;
+    await _isar.groupExpenseEntitys.put(expense);
+  }
+
+  Future<String?> _expenseIdForTask(OfflineTask task) async {
+    if (task.type == OfflineTaskType.groupExpenseCreate ||
+        task.type == OfflineTaskType.groupExpenseUpdate ||
+        task.type == OfflineTaskType.groupExpenseDelete) {
+      final byClientId = await _isar.groupExpenseEntitys.getByClientRecordId(
+        task.clientTaskId,
+      );
+      if (byClientId != null) return byClientId.expenseId;
+    }
+
+    final payload = _decodePayload(task.payloadJson);
+    final nested = payload['payload'];
+    if (nested is Map && nested['expense_id'] is String) {
+      return nested['expense_id']! as String;
+    }
+    return null;
+  }
+
+  SyncState _pendingSyncState(OfflineTask task) =>
+      task.type == OfflineTaskType.groupExpenseDelete
+      ? SyncState.pendingDelete
+      : SyncState.pending;
 
   void _validatePendingPair(GroupExpenseEntity expense, OfflineTask task) {
     if (!expense.ownerKey.startsWith('user:')) {
