@@ -12,6 +12,7 @@ import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
 import '../../features/ai_assistant/data/ai_assistant_client.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/backup/data/transaction_json_import_service.dart';
+import '../../features/groups/application/group_sync_coordinator.dart';
 import '../../features/groups/data/group_providers.dart';
 import '../../features/groups/domain/group_models.dart';
 import '../../features/notifications/notification_navigation_controller.dart';
@@ -86,6 +87,11 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
             previous?.status != AuthStatus.authenticated) {
           unawaited(
             ref.read(syncCoordinatorProvider.notifier).syncPendingTasks(),
+          );
+          unawaited(
+            ref
+                .read(groupSyncCoordinatorProvider.notifier)
+                .syncPendingAndPull(),
           );
         }
         if (widget.enableAuth && previous?.status != next.status) {

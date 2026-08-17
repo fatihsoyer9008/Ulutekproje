@@ -31,11 +31,11 @@ class IsarSyncTaskRepository implements SyncTaskRepository {
 
   @override
   Future<List<OfflineTask>> getPendingTasks({int limit = 50}) =>
-      repository.getPendingTasks(limit: limit);
+      repository.getPendingPersonalTasks(limit: limit);
 
   @override
   Future<Set<Id>> requeueFailedAndConflicted() =>
-      repository.requeueFailedAndConflicted();
+      repository.requeueFailedAndConflictedPersonalTasks();
 
   @override
   Future<void> markAsSynced(Id id) => repository.markAsSynced(id);

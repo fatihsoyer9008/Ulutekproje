@@ -52,6 +52,21 @@ class OfflineTaskRepository {
   Future<List<OfflineTask>> getPendingTasks({int limit = 50}) =>
       getPending(limit: limit);
 
+  /// Kişisel transaction coordinator'ının grup görevlerini yanlış endpoint'e
+  /// göndermesini engeller.
+  Future<List<OfflineTask>> getPendingPersonalTasks({int limit = 50}) async {
+    if (limit <= 0) return const [];
+    final tasks = await _isar.offlineTasks
+        .filter()
+        .statusEqualTo(OfflineTaskStatus.pending)
+        .sortByCreatedAt()
+        .findAll();
+    return tasks
+        .where((task) => !task.type.isGroupOperation)
+        .take(limit)
+        .toList(growable: false);
+  }
+
   Stream<List<OfflineTask>> watchPending() => _isar.offlineTasks
       .filter()
       .statusEqualTo(OfflineTaskStatus.pending)
@@ -94,6 +109,32 @@ class OfflineTaskRepository {
             (task) =>
                 task.status == OfflineTaskStatus.failed ||
                 task.status == OfflineTaskStatus.conflict,
+          )
+          .toList();
+      if (retryable.isEmpty) return const <Id>{};
+
+      final now = DateTime.now();
+      for (final task in retryable) {
+        task
+          ..status = OfflineTaskStatus.pending
+          ..updatedAt = now;
+      }
+      await _isar.offlineTasks.putAll(retryable);
+      return retryable.map((task) => task.id).toSet();
+    });
+  }
+
+  /// Manuel retry sırasında yalnız kişisel transaction görevlerini yeniden
+  /// kuyruğa alır; grup görevleri kendi coordinator'ı tarafından yönetilir.
+  Future<Set<Id>> requeueFailedAndConflictedPersonalTasks() async {
+    return _isar.writeTxn(() async {
+      final tasks = await _isar.offlineTasks.where().findAll();
+      final retryable = tasks
+          .where(
+            (task) =>
+                !task.type.isGroupOperation &&
+                (task.status == OfflineTaskStatus.failed ||
+                    task.status == OfflineTaskStatus.conflict),
           )
           .toList();
       if (retryable.isEmpty) return const <Id>{};

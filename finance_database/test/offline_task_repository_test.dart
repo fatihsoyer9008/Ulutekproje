@@ -88,6 +88,48 @@ void main() {
   });
 
   test(
+    'kişisel pending sorgusu grup operasyonlarını dışarıda bırakır',
+    () async {
+      final personal = task('task-personal');
+      final group = task('task-group')
+        ..type = OfflineTaskType.groupExpenseCreate;
+      await repository.add(personal);
+      await repository.add(group);
+
+      final result = await repository.getPendingPersonalTasks();
+
+      expect(result.map((item) => item.clientTaskId), <String>[
+        'task-personal',
+      ]);
+    },
+  );
+
+  test(
+    'kişisel manuel retry grup failed taskını yeniden kuyruğa almaz',
+    () async {
+      final personalId = await repository.add(task('failed-personal'));
+      final groupId = await repository.add(
+        task('failed-group')..type = OfflineTaskType.groupExpenseCreate,
+      );
+      await repository.markPermanentlyFailed(personalId, 'personal error');
+      await repository.markPermanentlyFailed(groupId, 'group error');
+
+      final requeued = await repository
+          .requeueFailedAndConflictedPersonalTasks();
+
+      expect(requeued, <Id>{personalId});
+      expect(
+        (await repository.getById(personalId))?.status,
+        OfflineTaskStatus.pending,
+      );
+      expect(
+        (await repository.getById(groupId))?.status,
+        OfflineTaskStatus.failed,
+      );
+    },
+  );
+
+  test(
     'queue summary pending failed ve conflict durumlarını kalıcı okur',
     () async {
       final pendingId = await repository.add(task('task-pending-summary'));

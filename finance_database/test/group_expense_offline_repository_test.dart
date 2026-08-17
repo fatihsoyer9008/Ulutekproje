@@ -83,6 +83,143 @@ void main() {
     expect(isar.groupExpenseEntitys.count(), completion(0));
     expect(isar.offlineTasks.count(), completion(0));
   });
+
+  test('pending sync sorgusu yalnız grup tasklarını döndürür', () async {
+    final groupTask = _task();
+    final personalTask = _task()
+      ..clientTaskId = '83000000-0000-4000-8000-000000000099'
+      ..type = OfflineTaskType.createTransaction;
+    final now = DateTime.utc(2026, 8, 17);
+    for (final task in <OfflineTask>[groupTask, personalTask]) {
+      task
+        ..createdAt = now
+        ..updatedAt = now;
+    }
+    await isar.writeTxn(
+      () => isar.offlineTasks.putAll([groupTask, personalTask]),
+    );
+
+    final result = await repository.getPendingSyncTasks();
+
+    expect(result.map((task) => task.id), <int>[groupTask.id]);
+  });
+
+  test('geçici hata retry audit alanlarını ve pending masrafı korur', () async {
+    final expense = _expense();
+    final task = _task();
+    await repository.savePendingWithOfflineTask(expense, task);
+
+    await repository.recordSyncTaskError(task.id, 'network unavailable');
+
+    final storedTask = (await isar.offlineTasks.get(task.id))!;
+    final storedExpense = (await repository.getByExpenseId(expense.expenseId))!;
+    expect(storedTask.status, OfflineTaskStatus.pending);
+    expect(storedTask.retryCount, 1);
+    expect(storedTask.lastError, 'network unavailable');
+    expect(storedTask.lastAttemptAt, isNotNull);
+    expect(storedExpense.syncState, SyncState.pending);
+  });
+
+  test(
+    'başarı task ve masrafı atomik synced yapıp audit alanlarını korur',
+    () async {
+      final expense = _expense();
+      final task = _task()
+        ..retryCount = 2
+        ..lastError = 'previous timeout'
+        ..lastAttemptAt = DateTime.utc(2026, 8, 16);
+      await repository.savePendingWithOfflineTask(expense, task);
+
+      await repository.markSyncTaskAsSynced(task.id);
+
+      final storedTask = (await isar.offlineTasks.get(task.id))!;
+      final storedExpense = (await repository.getByExpenseId(
+        expense.expenseId,
+      ))!;
+      expect(storedTask.status, OfflineTaskStatus.synced);
+      expect(storedTask.retryCount, 2);
+      expect(storedTask.lastError, 'previous timeout');
+      expect(storedTask.lastAttemptAt, isNotNull);
+      expect(storedExpense.syncState, SyncState.synced);
+    },
+  );
+
+  for (final status in <OfflineTaskStatus>[
+    OfflineTaskStatus.failed,
+    OfflineTaskStatus.conflict,
+  ]) {
+    test('$status geçişi task auditini ve masraf durumunu günceller', () async {
+      final expense = _expense();
+      final task = _task();
+      await repository.savePendingWithOfflineTask(expense, task);
+
+      if (status == OfflineTaskStatus.failed) {
+        await repository.markSyncTaskFailed(task.id, 'permanent failure');
+      } else {
+        await repository.markSyncTaskConflict(task.id, 'server conflict');
+      }
+
+      final storedTask = (await isar.offlineTasks.get(task.id))!;
+      final storedExpense = (await repository.getByExpenseId(
+        expense.expenseId,
+      ))!;
+      expect(storedTask.status, status);
+      expect(storedTask.lastError, isNotEmpty);
+      expect(storedTask.lastAttemptAt, isNotNull);
+      expect(storedExpense.syncState, SyncState.failed);
+    });
+  }
+
+  for (final status in <OfflineTaskStatus>[
+    OfflineTaskStatus.failed,
+    OfflineTaskStatus.conflict,
+  ]) {
+    test('$status manuel retry audit alanlarını değiştirmez', () async {
+      final expense = _expense()..syncState = SyncState.failed;
+      final task = _task()
+        ..status = status
+        ..retryCount = 4
+        ..lastError = 'audit error'
+        ..lastAttemptAt = DateTime.utc(2026, 8, 16);
+      final now = DateTime.utc(2026, 8, 17);
+      task
+        ..createdAt = now
+        ..updatedAt = now;
+      await isar.writeTxn(() async {
+        await isar.groupExpenseEntitys.put(expense);
+        await isar.offlineTasks.put(task);
+      });
+
+      final ids = await repository.requeueFailedAndConflictedSyncTasks();
+
+      final storedTask = (await isar.offlineTasks.get(task.id))!;
+      final storedExpense = (await repository.getByExpenseId(
+        expense.expenseId,
+      ))!;
+      expect(ids, <Id>{task.id});
+      expect(storedTask.status, OfflineTaskStatus.pending);
+      expect(storedTask.retryCount, 4);
+      expect(storedTask.lastError, 'audit error');
+      expect(storedTask.lastAttemptAt?.toUtc(), DateTime.utc(2026, 8, 16));
+      expect(storedExpense.syncState, SyncState.pending);
+    });
+  }
+
+  test('pull snapshotı pending yerel masrafı ezmez', () async {
+    final pending = _expense();
+    await repository.savePendingWithOfflineTask(pending, _task());
+    final remote = _expense()
+      ..title = 'Remote title'
+      ..syncState = SyncState.synced;
+
+    final applied = await repository.saveSyncedFromPull(remote);
+
+    expect(applied, isFalse);
+    expect(
+      (await repository.getByExpenseId(pending.expenseId))?.title,
+      'Market',
+    );
+  });
 }
 
 const _expenseId = '81000000-0000-4000-8000-000000000001';

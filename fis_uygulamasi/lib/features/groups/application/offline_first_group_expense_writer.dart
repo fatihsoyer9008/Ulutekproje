@@ -10,11 +10,15 @@ import '../domain/group_offline_operation.dart';
 /// olur. Guest kapsamı yalnız yerelde tutulur ve hiçbir zaman grup sync
 /// kuyruğuna eklenmez.
 class OfflineFirstGroupExpenseWriter {
-  const OfflineFirstGroupExpenseWriter(this._repository);
+  const OfflineFirstGroupExpenseWriter(
+    this._repository, {
+    this._triggerSynchronization,
+  });
 
   final GroupExpenseOfflineRepository _repository;
+  final void Function()? _triggerSynchronization;
 
-  Future<Id> save(GroupExpenseOfflineOperation operation) {
+  Future<Id> save(GroupExpenseOfflineOperation operation) async {
     if (operation.type == GroupOfflineOperationType.groupExpenseDelete) {
       throw UnsupportedError(
         'GroupExpense delete yerel tombstone akışı Task 6.4 kapsamında '
@@ -35,9 +39,11 @@ class OfflineFirstGroupExpenseWriter {
       );
     }
 
-    return _repository.savePendingWithOfflineTask(
+    final id = await _repository.savePendingWithOfflineTask(
       entity,
       operation.toOfflineTask(),
     );
+    _triggerSynchronization?.call();
+    return id;
   }
 }
