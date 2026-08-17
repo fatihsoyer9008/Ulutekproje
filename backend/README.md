@@ -79,33 +79,6 @@ Gemini kotası tüketmeden mock istemciyle test edilir:
 Telefonun aynı Wi-Fi ağından sunucuya erişmesi gerekiyorsa Uvicorn'u
 `--host 0.0.0.0` ile başlatın ve Flutter tarafında bilgisayarın yerel IP adresini kullanın.
 
-## DigitalOcean App Platform ile yayınlama ve Swagger testi
-
-Proje kökündeki `.do/app.yaml`, DigitalOcean App Platform ayarlarını içerir.
-DigitalOcean panelinde GitHub reposunu bağlayın ve App Spec olarak bu dosyayı
-kullanın. `GEMINI_API_KEY` değerini yalnızca DigitalOcean panelindeki ortam
-değişkenlerine **Encrypt** seçeneğiyle girin; GitHub'a eklemeyin.
-
-İlk Flutter/Postman testi için `USE_DUMMY_PARSER=true` bırakılabilir. Gerçek
-Gemini ayrıştırması için DigitalOcean ortam değişkenlerinde
-`USE_DUMMY_PARSER=false` yapın ve geçerli bir `GEMINI_API_KEY` tanımlayın.
-
-Deploy tamamlandıktan sonra aşağıdaki adresleri kullanın:
-
-```text
-https://<digitalocean-servis-adresi>/health
-https://<digitalocean-servis-adresi>/docs
-```
-
-Swagger'da `POST /api/v1/parse-receipt` endpoint'ini açıp şu gövdeyle
-**Try it out** ve **Execute** seçeneklerini kullanın:
-
-```json
-{
-  "ocr_text": "MİGROS\nTOPLAM 220,50 TL"
-}
-```
-
 ## Testler
 
 ```powershell
@@ -193,6 +166,7 @@ Apple revoke endpoint'inde iptal edilir.
 Aynı e-postaya sahip mevcut bir hesap provider e-postasına güvenilerek sessizce
 birleştirilmez. Böyle bir durumda kullanıcı önce mevcut hesabıyla giriş yapmalı
 ve ilerideki açık account-linking akışını kullanmalıdır.
+
 # Debt simplification domain service
 
 The Task 3.2 algorithm is a standalone domain service and uses integer minor
