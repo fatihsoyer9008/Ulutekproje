@@ -49,7 +49,7 @@ karşılıklarına elle aktarın. Yedek dosyayı da commit etmeyin.
 | `JWT_SECRET` | En az 32 bayt, rastgele ve ekip ortamına özel olmalı. Production değeri paylaşılmamalı. |
 | `SECURITY_HMAC_SECRET` | JWT secret'tan farklı, rastgele bir değer olmalı. |
 | `RATE_LIMIT_ENABLED` | Normal geliştirme ve production için `true` bırakılmalı. |
-| `TRUST_PROXY_HEADERS` | Yerelde `false`; DigitalOcean proxy ayarları tamamlanınca production'da `true`. |
+| `TRUST_PROXY_HEADERS` | Yerelde `false`; Hetzner reverse proxy ayarları tamamlandığında production'da `true`. |
 
 Güvenli secret üretme örneği:
 
@@ -240,7 +240,7 @@ flutter run `
 `GOOGLE_SERVER_CLIENT_ID` alanına API URL'si yazılmaz. Bu alan yalnızca
 `...apps.googleusercontent.com` biçimindeki Web Client ID'dir.
 
-### Production/DigitalOcean backend
+### Production/Hetzner backend
 
 ```powershell
 flutter run `
