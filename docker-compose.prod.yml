@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-receipt_app}
+      POSTGRES_USER: ${POSTGRES_USER:-receipt_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-postgres-password}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-receipt_app} -d ${POSTGRES_DB:-receipt_app}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "no"
+      - --requirepass
+      - ${REDIS_PASSWORD:-local-redis-password}
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - -a
+        - ${REDIS_PASSWORD:-local-redis-password}
+        - ping
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-receipt_app}:${POSTGRES_PASSWORD:-local-postgres-password}@postgres:5432/${POSTGRES_DB:-receipt_app}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-local-redis-password}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-local-development-jwt-secret-change-me}
+      SECURITY_HMAC_SECRET: ${SECURITY_HMAC_SECRET:-local-development-hmac-secret-change-me}
+      APP_DEEP_LINK_BASE_URL: fiskon://auth
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-proxy-headers
+volumes:
+  postgres_data:

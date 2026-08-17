@@ -23,14 +23,29 @@ devam etmesini sağlarken, host'un public arayüzünden bu portlara erişimi
 tamamen keser — uygulama davranışında hiçbir değişiklik olmaz, sadece dışa
 kapanır.
 
-`api` servisinin repodaki `8000:8000` mapping'i **bilinçli olarak
-değiştirilmedi** — yerel geliştirme ortamında fiziksel cihaz/aynı-ağ testi
-için (`docs/TEAM_ENV_AND_BUILD_GUIDE.md` §7) API'nin `0.0.0.0`'da
-yayınlanması gerekiyor. Sunucuda ise bu satır **elle** (sadece sunucudaki
-çalışma kopyasında, commit'lenmeden) `127.0.0.1:8000:8000` olarak
-yamalanıyor — tıpkı `env_file` syntax farkı gibi, üçüncü "sadece sunucuya
-özel" patch. Sunucuda yeni bir `git pull` sonrası bu satırı tekrar
-`127.0.0.1:8000:8000` yapmayı unutmayın.
+`api` servisinin `docker-compose.yml`'deki `8000:8000` mapping'i **bilinçli
+olarak değiştirilmedi** — yerel geliştirme ortamında fiziksel cihaz/aynı-ağ
+testi için (`docs/TEAM_ENV_AND_BUILD_GUIDE.md` §7) API'nin `0.0.0.0`'da
+yayınlanması gerekiyor.
+
+**Production için artık ayrı, versiyonlanmış bir dosya var:
+`docker-compose.prod.yml`.** Daha önce bu fark sunucudaki çalışma kopyasına
+elle (commit'lenmeden) yamanıyordu — bu, bir `git pull`/fresh deploy'da
+sessizce kaybolup 8000'i tekrar açabilecek kırılgan bir kurulumdu (code
+review'da bulundu). Artık böyle değil: `docker-compose.prod.yml`
+postgres/redis/api için `127.0.0.1` binding'lerini ve sunucudaki eski
+`docker-compose` (1.29.2) sürümüyle uyumlu `env_file` syntax'ını içeriyor,
+Git'e commit'li. Sunucuda `docker-compose.yml` yerine **sadece**
+`docker-compose.prod.yml` kullanılmalı (aşağıdaki "Deploy adımları"na
+bakın) — iki dosyayı `-f` ile birleştirmeyin: bu sunucudaki eski
+`docker-compose`'da `ports` listesini replace değil **append** ediyor,
+`0.0.0.0:8000` ve `127.0.0.1:8000` ikisi birden kalıp çakışmaya yol açıyor
+(bunu `docker-compose config` ile test ederek doğruladım).
+
+`backend/tests/test_deployment_config.py` artık `docker-compose.prod.yml`'i
+de `--no-proxy-headers` kontrolüne dahil ediyor ve port binding'lerinin
+`127.0.0.1` olduğunu ayrı bir testle doğruluyor — bu dosya gelecekte
+yanlışlıkla `0.0.0.0`'a dönerse CI kırılır.
 
 ## API portu 8000 — KAPATILDI (2026-08-17)
 
@@ -47,9 +62,9 @@ seviyesinde (`TRUST_PROXY_HEADERS` / `TRUSTED_CLIENT_IP_HEADER` /
 `TRUSTED_PROXY_CIDRS`, bkz. `app/api/dependencies.py:request_ip`) CIDR
 tabanlı olarak yapıyor.
 
-**Ekip yeni HTTPS URL'ine geçtikten sonra tamamlanan adımlar:**
-1. ✅ Sunucuda `git pull` + `docker-compose build api` (main'deki CORS/N8N
-   secret desteğini içeren kod deploy edildi).
+**Tamamlanan adımlar (2026-08-17):**
+1. ✅ Sunucuda `git pull` + API image rebuild (main'deki CORS/N8N secret
+   desteğini içeren kod deploy edildi).
 2. ✅ `.env`'de kullanılmayan Apple OAuth placeholder'ları (`APPLE_CLIENT_ID`,
    `APPLE_TEAM_ID`, `APPLE_KEY_ID`) boşaltıldı — yarım dolu bırakılsaydı
    `_validate_production_settings` "Apple OAuth requires..." hatasıyla
@@ -59,46 +74,46 @@ tabanlı olarak yapıyor.
    inspect ulutekproje_default` ile doğrulanan bridge gateway IP'si — hem
    Caddy hem doğrudan `:8000`'e gelen bağlantılar container'a bu IP'den
    ulaşıyordu, bu yüzden 8000 kapanana kadar bu ayar açılmamıştı).
-4. ✅ `docker-compose.yml`'de sunucuya özel `api` portu `127.0.0.1:8000:8000`
-   yapıldı, container yeniden oluşturuldu.
+4. ✅ API portu `docker-compose.prod.yml` içinde deklaratif olarak
+   `127.0.0.1:8000:8000` — sunucuda bu dosyayla yeniden deploy edildi.
 5. ✅ `ufw delete allow 8000/tcp` (ve v6) çalıştırıldı. UFW'de artık sadece
    22/80/443 var.
 6. ✅ Dışarıdan doğrulandı: 8000 kapalı/timeout, 22 ve 443 açık, HTTPS
    sağlıklı (`/health` 200).
-
-**Henüz yapılmadı — ayrı görev:** `N8N_WEBHOOK_HMAC_SECRET` backend ekibinin
-n8n entegrasyonu bitmediği için `.env`'e eklenmedi. Bu yüzden `APP_ENV`
-hâlâ `development`'ta bırakıldı — `_validate_production_settings` bu
-secret olmadan `production` modunda uygulamayı başlatmaz
-(`app/main.py:92-101`). Backend ekibi secret'ı üretip Fatih'e/sunucuya
-ilettiğinde: `.env`'e `N8N_WEBHOOK_HMAC_SECRET` eklenip `APP_ENV=production`
-yapılmalı, container yeniden oluşturulup loglar (`docker logs
-ulutekproje_api_1`) çökme olup olmadığı için izlenmeli.
+7. ✅ `N8N_WEBHOOK_HMAC_SECRET` `openssl rand -hex 32` ile üretilip `.env`'e
+   eklendi — backend ekibinin n8n entegrasyonunu bitirmesini beklemeye
+   gerek yoktu, secret'ın kendisi entegrasyon kodundan bağımsız üretilebilir
+   (code review'da bulundu).
+8. ✅ `APP_ENV=production` yapıldı, container yeniden oluşturuldu, loglar
+   izlendi — çökme yok, `Application startup complete`. `/health` artık
+   `"environment":"production"` dönüyor.
+9. ✅ Production'a geçmenin asıl faydası doğrulandı: `POST /api/v1/groups/{id}/members`
+   (local/mock member-add route, `app/api/routers/groups.py:466`) artık
+   `404 group_not_found` ile gizli — daha önce development modunda açıktı
+   (code review'da bulundu).
 
 `/docs` ve `/redoc` endpoint'lerinin production'da kapatılması ayrı bir
 güvenlik iyileştirmesi olarak değerlendirilebilir (bu dokümanın kapsamı
 dışında, ayrı görev önerilir).
 
-## Sunucuda çalıştırılacak UFW komutları
+## Sunucudaki güncel UFW durumu (referans)
 
-Bunları Hetzner sunucusuna SSH ile bağlanıp **siz** çalıştırmalısınız —
-buradan uzaktan uygulanmadı. SSH kuralını eklemeden `ufw enable`
-çalıştırmayın, yoksa bağlantınız kopar ve sunucuya erişiminizi
-kaybedebilirsiniz.
+Aşağıdaki kurallar sunucuda **zaten uygulanmış durumda** — bu bölüm bir
+"yapılacaklar" listesi değil, mevcut durumun kaydı. Sunucu sıfırdan
+kurulursa aynı sırayla uygulanmalı (SSH kuralı `ufw enable`'dan **önce**
+eklenmeli, yoksa bağlantı kopar ve sunucuya erişim kaybedilir). **8000 için
+bir `ufw allow` kuralı YOK ve eklenmemeli** — API artık yalnızca Caddy
+üzerinden (443) erişilebilir.
 
 ```bash
-# Mevcut kuralları görüntüle (değişiklik öncesi referans için)
-sudo ufw status verbose
-
-# Gerekli portları aç (sıralama önemli: SSH önce)
 sudo ufw allow 22/tcp comment 'SSH'
 sudo ufw allow 80/tcp comment 'HTTP'
 sudo ufw allow 443/tcp comment 'HTTPS'
-sudo ufw allow 8000/tcp comment 'API - gecici, reverse proxy kurulunca kaldirilacak'
 
-# Postgres/Redis icin herhangi bir "allow" kurali EKLEMEYIN.
-# Zaten docker-compose 127.0.0.1'e bind ettigi icin disaridan ulasilamazlar;
-# ufw'nin varsayilan deny-incoming kurali bunu ayrica garanti eder.
+# Postgres/Redis/API icin herhangi bir "allow" kurali EKLEMEYIN.
+# Ucu docker-compose.prod.yml'de 127.0.0.1'e bind edildigi icin zaten
+# disaridan ulasilamazlar; ufw'nin varsayilan deny-incoming kurali bunu
+# ayrica garanti eder.
 
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
@@ -106,18 +121,23 @@ sudo ufw enable
 sudo ufw status verbose
 ```
 
-## Deploy adımları
+## Deploy adımları (production)
 
 ```bash
 cd /path/to/Ulutekproje
 git pull
-docker compose up -d --build
-docker compose ps
+docker-compose -f docker-compose.prod.yml up -d --build
+docker-compose -f docker-compose.prod.yml ps
 ```
 
-`docker compose ps` çıktısında `postgres` ve `redis` satırlarında port
-kolonunun `127.0.0.1:5432->5432/tcp` ve `127.0.0.1:6379->6379/tcp` şeklinde
-göründüğünü doğrulayın (önceden `0.0.0.0:...` idi).
+**`docker-compose.yml` ile `docker-compose.prod.yml`'i `-f` ile birlikte
+vermeyin** — yukarıda açıklandığı gibi eski `docker-compose` sürümü
+`ports` listesini birleştirir, çakışmaya yol açar. Sadece
+`docker-compose.prod.yml` kullanın.
+
+`docker-compose ps` çıktısında `postgres`, `redis` ve `api` satırlarının
+üçünde de port kolonunun `127.0.0.1:...->...` şeklinde göründüğünü
+doğrulayın (`0.0.0.0:...` değil).
 
 ## Dış ağdan erişim testi
 
@@ -126,10 +146,6 @@ Deploy sonrası **sunucu dışındaki** bir makineden (kendi bilgisayarınızdan
 
 ```bash
 # Kapali olmasi gerekenler (baglanti reddedilmeli / timeout olmali)
-nc -vz -w 3 116.202.14.23 5432
-nc -vz -w 3 116.202.14.23 6379
-
-# Kapali olmasi gerekenler (2026-08-17 itibariyle 8000 de bu listede)
 nc -vz -w 3 116.202.14.23 5432
 nc -vz -w 3 116.202.14.23 6379
 nc -vz -w 3 116.202.14.23 8000
@@ -163,9 +179,10 @@ Sunucudaki `.env` içeriği (değerler gösterilmeden) kontrol edildi:
 | CORS middleware/allowlist | ✅ kod deploy edildi (`CORS_ALLOWED_ORIGINS`, `app/main.py` + `app/core/config.py`), wildcard (`*`) yapısal olarak reddediliyor. `.env`'de henüz değer yok (boş = CORS middleware hiç eklenmiyor — mobil app için sorun değil, tarayıcı client'ı olursa doldurulmalı) |
 | `TRUST_PROXY_HEADERS=true` | ✅ **8000 kapandıktan sonra açıldı.** `TRUSTED_CLIENT_IP_HEADER=X-Forwarded-For`, `TRUSTED_PROXY_CIDRS=172.18.0.1/32` (Docker bridge gateway IP, `docker network inspect ulutekproje_default` ile doğrulandı) |
 | Apple OAuth placeholder'ları | ✅ temizlendi — `APPLE_CLIENT_ID`/`APPLE_TEAM_ID`/`APPLE_KEY_ID` boşaltıldı (gerçek Apple Sign-In kullanılmıyor); yarım dolu bırakılsaydı production doğrulaması hata verirdi |
-| `N8N_WEBHOOK_HMAC_SECRET` | ❌ **eklenmedi** — backend ekibi n8n entegrasyonunu henüz bitirmedi, secret manuel eklenecek |
-| `APP_ENV=production` | ❌ **kasıtlı olarak development bırakıldı**, yalnızca `N8N_WEBHOOK_HMAC_SECRET` eksik olduğu için — `app/main.py:92-101` bu secret olmadan `RuntimeError` fırlatıp uygulamayı başlatmaz. Diğer tüm production ön koşulları (proxy trust, Apple, email, secret gücü) sağlanmış durumda. |
+| `N8N_WEBHOOK_HMAC_SECRET` | ✅ `openssl rand -hex 32` ile üretilip eklendi. Backend ekibinin n8n entegrasyonunu bitirmesi beklenmedi — secret üretimi entegrasyon kodundan bağımsız |
+| `APP_ENV=production` | ✅ **aktif.** `_validate_production_settings` (`app/main.py:35-133`) tüm kontrollerden hatasız geçti, container sağlıklı, `/health` → `"environment":"production"` |
 
-**Son kalan adım:** Backend ekibi `N8N_WEBHOOK_HMAC_SECRET` üretip iletince
-`.env`'e eklenip `APP_ENV=production` yapılacak, container yeniden
-oluşturulup loglar izlenerek doğrulanacak.
+Epic 7 (Task 7.1/7.2/7.3) tamamlandı. Kalan tek bağımlılık: ekibin geri
+kalanının yeni HTTPS URL'ine geçmesi (bkz. Task 7.2 checklist'i, ayrı
+takip ediliyor) — bu, port kapatma/production geçişini etkilemiyor, zaten
+tamamlandı.
