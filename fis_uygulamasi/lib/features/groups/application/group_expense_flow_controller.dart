@@ -1,9 +1,13 @@
+// ignore_for_file: prefer_initializing_formals
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/group_providers.dart';
-import '../data/group_repository.dart';
+import '../data/fake_group_repository.dart';
 import '../domain/group_expense_draft.dart';
 import '../domain/group_models.dart';
+import '../domain/group_offline_operation.dart';
+import 'offline_first_group_expense_writer.dart';
 import 'fast_split_calculator.dart';
 import 'itemized_split_calculator.dart';
 
@@ -160,16 +164,31 @@ final groupExpenseFlowControllerProvider =
       GroupExpenseFlowController,
       GroupExpenseFlowState
     >((ref) {
+      final repository = ref.watch(groupExpenseRepositoryProvider);
+      if (repository is FakeGroupRepository) {
+        return GroupExpenseFlowController(repository);
+      }
       return GroupExpenseFlowController(
-        ref.watch(groupExpenseRepositoryProvider),
+        repository,
+        offlineWriter: ref.watch(offlineFirstGroupExpenseWriterProvider),
+        ownerKey: ref.watch(currentGroupUserIdProvider) == null
+            ? null
+            : 'user:${ref.watch(currentGroupUserIdProvider)}',
       );
     });
 
 class GroupExpenseFlowController extends StateNotifier<GroupExpenseFlowState> {
-  GroupExpenseFlowController(this._repository)
-    : super(const GroupExpenseFlowState.idle());
+  GroupExpenseFlowController(
+    this._repository, {
+    OfflineFirstGroupExpenseWriter? offlineWriter,
+    String? ownerKey,
+  }) : _offlineWriter = offlineWriter,
+       _ownerKey = ownerKey,
+       super(const GroupExpenseFlowState.idle());
 
   final GroupExpenseRepository _repository;
+  final OfflineFirstGroupExpenseWriter? _offlineWriter;
+  final String? _ownerKey;
 
   void start({
     required GroupDetail group,
@@ -312,21 +331,24 @@ class GroupExpenseFlowController extends StateNotifier<GroupExpenseFlowState> {
     );
 
     try {
-      final expense = await _repository.createFastSplit(
-        FastSplitExpenseRequest(
-          groupId: draft.groupId,
-          title: _requireTitle(draft),
-          payerUserId: _requirePayer(snapshot),
-          expenseDate: _requireDate(draft),
-          totalAmountInMinor: _requireAmount(draft),
-          currency: draft.currency,
-          splitType: splitType,
-          orderedMemberIds: orderedMemberIds,
-          percentageBasisPoints: snapshot.percentageBasisPoints,
-          fixedAmountsInMinor: snapshot.fixedAmountsInMinor,
-        ),
-        idempotencyKey: idempotencyKey,
+      final request = FastSplitExpenseRequest(
+        groupId: draft.groupId,
+        title: _requireTitle(draft),
+        payerUserId: _requirePayer(snapshot),
+        expenseDate: _requireDate(draft),
+        totalAmountInMinor: _requireAmount(draft),
+        currency: draft.currency,
+        splitType: splitType,
+        orderedMemberIds: orderedMemberIds,
+        percentageBasisPoints: snapshot.percentageBasisPoints,
+        fixedAmountsInMinor: snapshot.fixedAmountsInMinor,
       );
+      final expense = _offlineWriter != null && _ownerKey != null
+          ? await _queueFastSplit(request, idempotencyKey)
+          : await _repository.createFastSplit(
+              request,
+              idempotencyKey: idempotencyKey,
+            );
 
       state = snapshot.copyWith(
         status: GroupExpenseFlowStatus.success,
@@ -360,20 +382,23 @@ class GroupExpenseFlowController extends StateNotifier<GroupExpenseFlowState> {
     );
 
     try {
-      final expense = await _repository.createItemizedSplit(
-        ItemizedExpenseRequest(
-          groupId: draft.groupId,
-          receiptId: receiptId,
-          title: _requireTitle(draft),
-          payerUserId: _requirePayer(snapshot),
-          expenseDate: _requireDate(draft),
-          totalAmountInMinor: _requireAmount(draft),
-          currency: draft.currency,
-          lineShares: snapshot.itemizedLineShares,
-          extraShares: snapshot.extraAmountShares,
-        ),
-        idempotencyKey: idempotencyKey,
+      final request = ItemizedExpenseRequest(
+        groupId: draft.groupId,
+        receiptId: receiptId,
+        title: _requireTitle(draft),
+        payerUserId: _requirePayer(snapshot),
+        expenseDate: _requireDate(draft),
+        totalAmountInMinor: _requireAmount(draft),
+        currency: draft.currency,
+        lineShares: snapshot.itemizedLineShares,
+        extraShares: snapshot.extraAmountShares,
       );
+      final expense = _offlineWriter != null && _ownerKey != null
+          ? await _queueItemizedSplit(request, idempotencyKey)
+          : await _repository.createItemizedSplit(
+              request,
+              idempotencyKey: idempotencyKey,
+            );
 
       state = snapshot.copyWith(
         status: GroupExpenseFlowStatus.success,
@@ -394,6 +419,201 @@ class GroupExpenseFlowController extends StateNotifier<GroupExpenseFlowState> {
       status: GroupExpenseFlowStatus.cancelled,
       error: null,
     );
+  }
+
+  Future<GroupExpense> _queueFastSplit(
+    FastSplitExpenseRequest request,
+    String clientRecordId,
+  ) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final shares = <ExpenseShare>[
+      for (final userId in request.orderedMemberIds)
+        ExpenseShare(
+          expenseId: clientRecordId,
+          userId: userId,
+          displayName: _memberName(userId),
+          amountInMinor: state.fastSplitSharesInMinor[userId] ?? 0,
+          status: ShareStatus.open,
+          settledAt: null,
+        ),
+    ];
+    final expense = GroupExpense(
+      id: clientRecordId,
+      groupId: request.groupId,
+      receiptId: null,
+      payerUserId: request.payerUserId,
+      createdBy: state.activeUserId,
+      title: request.title,
+      note: null,
+      expenseDate: request.expenseDate,
+      totalAmountInMinor: request.totalAmountInMinor,
+      currency: request.currency,
+      splitType: request.splitType,
+      isFinanciallyLocked: false,
+      shares: shares,
+      lineItemAssignments: const [],
+      extraAmounts: const [],
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    );
+    await _offlineWriter!.save(
+      GroupExpenseOfflineOperation.create(
+        expense: expense,
+        clientRecordId: clientRecordId,
+        ownerKey: _ownerKey!,
+        syncPayload: _fastSyncPayload(request),
+      ),
+    );
+    return expense;
+  }
+
+  Future<GroupExpense> _queueItemizedSplit(
+    ItemizedExpenseRequest request,
+    String clientRecordId,
+  ) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final expense = GroupExpense(
+      id: clientRecordId,
+      groupId: request.groupId,
+      receiptId: request.receiptId,
+      payerUserId: request.payerUserId,
+      createdBy: state.activeUserId,
+      title: request.title,
+      note: null,
+      expenseDate: request.expenseDate,
+      totalAmountInMinor: request.totalAmountInMinor,
+      currency: request.currency,
+      splitType: SplitType.itemized,
+      isFinanciallyLocked: false,
+      shares: const [],
+      lineItemAssignments: [
+        for (final share in request.lineShares)
+          if (share.receiptLineItemId != null)
+            ReceiptLineItemAssignment(
+              expenseId: clientRecordId,
+              receiptLineItemId: share.receiptLineItemId!,
+              userId: share.userId,
+              amountInMinor: share.amountInMinor,
+              quantityShareMilli: share.quantityShareMilli,
+            ),
+      ],
+      extraAmounts: const [],
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    );
+    await _offlineWriter!.save(
+      GroupExpenseOfflineOperation.create(
+        expense: expense,
+        clientRecordId: clientRecordId,
+        ownerKey: _ownerKey!,
+        syncPayload: _itemizedSyncPayload(request),
+      ),
+    );
+    return expense;
+  }
+
+  String _memberName(String userId) =>
+      state.group!.members
+          .where((member) => member.userId == userId)
+          .map((member) => member.displayName)
+          .firstOrNull ??
+      userId;
+
+  Map<String, Object?> _fastSyncPayload(
+    FastSplitExpenseRequest request,
+  ) => <String, Object?>{
+    'title': request.title,
+    'note': null,
+    'expense_date': request.expenseDate,
+    'total_amount_in_minor': request.totalAmountInMinor,
+    'currency': request.currency,
+    'receipt_id': null,
+    'payer_user_id': request.payerUserId,
+    'split': switch (request.splitType) {
+      SplitType.equal => {
+        'type': 'equal',
+        'member_ids': request.orderedMemberIds,
+      },
+      SplitType.percentage => {
+        'type': 'percentage',
+        'shares': [
+          for (final id in request.orderedMemberIds)
+            {
+              'user_id': id,
+              'percentage_basis_points': request.percentageBasisPoints[id],
+            },
+        ],
+      },
+      SplitType.fixedAmount => {
+        'type': 'fixed_amount',
+        'shares': [
+          for (final id in request.orderedMemberIds)
+            {'user_id': id, 'amount_in_minor': request.fixedAmountsInMinor[id]},
+        ],
+      },
+      SplitType.itemized => throw StateError('Fast split itemized olamaz.'),
+    },
+  };
+
+  Map<String, Object?> _itemizedSyncPayload(ItemizedExpenseRequest request) {
+    final sharesByLine = <String, List<ItemizedLineShareInput>>{};
+    for (final share in request.lineShares) {
+      final key =
+          share.receiptLineItemId ??
+          'position:${share.receiptLineItemPosition}';
+      (sharesByLine[key] ??= <ItemizedLineShareInput>[]).add(share);
+    }
+    return <String, Object?>{
+      'title': request.title,
+      'note': null,
+      'expense_date': request.expenseDate,
+      'total_amount_in_minor': request.totalAmountInMinor,
+      'currency': request.currency,
+      'receipt_id': request.receiptId,
+      'payer_user_id': request.payerUserId,
+      'split': {
+        'type': 'itemized',
+        'line_items': [
+          for (final entry in sharesByLine.entries)
+            {
+              if (entry.value.first.receiptLineItemId != null)
+                'receipt_line_item_id': entry.value.first.receiptLineItemId,
+              if (entry.value.first.receiptLineItemPosition != null)
+                'receipt_line_item_position':
+                    entry.value.first.receiptLineItemPosition,
+              'shares': [
+                for (final share in entry.value)
+                  {
+                    'user_id': share.userId,
+                    'amount_in_minor': share.amountInMinor,
+                    'quantity_share_milli': share.quantityShareMilli,
+                  },
+              ],
+            },
+        ],
+        'extra_amounts': request.extraShares.isEmpty
+            ? <Object?>[]
+            : [
+                {
+                  'type': 'other',
+                  'label': 'Fiş toplam farkı',
+                  'amount_in_minor': request.extraShares.fold<int>(
+                    0,
+                    (sum, item) => sum + item.amountInMinor,
+                  ),
+                  'shares': [
+                    for (final share in request.extraShares)
+                      {
+                        'user_id': share.userId,
+                        'amount_in_minor': share.amountInMinor,
+                      },
+                  ],
+                },
+              ],
+      },
+    };
   }
 
   /// UI başarı veya iptal sonucunu gördükten sonra bu metodu çağırır.

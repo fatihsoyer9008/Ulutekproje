@@ -99,9 +99,37 @@ void main() {
       () => isar.offlineTasks.putAll([groupTask, personalTask]),
     );
 
-    final result = await repository.getPendingSyncTasks();
+    final result = await repository.getPendingSyncTasks(
+      ownerKey: 'user:test-user',
+    );
 
     expect(result.map((task) => task.id), <int>[groupTask.id]);
+  });
+
+  test('pending grup görevleri ownerKey değişiminde izole edilir', () async {
+    final userA = _task(
+      ownerKey: 'user:a',
+      clientRecordId: '83000000-0000-4000-8000-000000000011',
+    );
+    final userB = _task(
+      ownerKey: 'user:b',
+      clientRecordId: '83000000-0000-4000-8000-000000000012',
+    );
+    final now = DateTime.utc(2026, 8, 17);
+    for (final task in <OfflineTask>[userA, userB]) {
+      task
+        ..createdAt = now
+        ..updatedAt = now;
+    }
+    await isar.writeTxn(
+      () => isar.offlineTasks.putAll(<OfflineTask>[userA, userB]),
+    );
+
+    final visibleToB = await repository.getPendingSyncTasks(ownerKey: 'user:b');
+
+    expect(visibleToB.map((task) => task.clientTaskId), <String>[
+      userB.clientTaskId,
+    ]);
   });
 
   test('geçici hata retry audit alanlarını ve pending masrafı korur', () async {
@@ -243,13 +271,16 @@ GroupExpenseEntity _expense({String ownerKey = 'user:test-user'}) =>
       ..createdAt = DateTime.utc(2026, 8, 17)
       ..updatedAt = DateTime.utc(2026, 8, 17);
 
-OfflineTask _task({String ownerKey = 'user:test-user'}) => OfflineTask()
-  ..clientTaskId = _clientRecordId
+OfflineTask _task({
+  String ownerKey = 'user:test-user',
+  String clientRecordId = _clientRecordId,
+}) => OfflineTask()
+  ..clientTaskId = clientRecordId
   ..type = OfflineTaskType.groupExpenseCreate
   ..payloadJson = jsonEncode(<String, Object?>{
     'operation_type': OfflineTaskType.groupExpenseCreate.name,
     'group_id': _groupId,
-    'client_record_id': _clientRecordId,
+    'client_record_id': clientRecordId,
     'owner_key': ownerKey,
     'sync_state': SyncState.pending.name,
     'payload': const <String, Object?>{'id': _expenseId},

@@ -46,4 +46,19 @@ class OfflineFirstGroupExpenseWriter {
     _triggerSynchronization?.call();
     return id;
   }
+
+  Future<Id> saveSettlement(SettlementOfflineOperation operation) async {
+    if (!operation.ownerKey.startsWith('user:')) {
+      throw StateError('Settlement için aktif kullanıcı oturumu gerekli.');
+    }
+    if (operation.syncState != SyncState.pending) {
+      throw StateError('Yeni settlement pending durumda olmalıdır.');
+    }
+    final id = await _repository.enqueueGroupTask(
+      operation.toOfflineTask(),
+      ownerKey: operation.ownerKey,
+    );
+    _triggerSynchronization?.call();
+    return id;
+  }
 }
