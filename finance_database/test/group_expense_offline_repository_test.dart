@@ -249,6 +249,87 @@ void main() {
     );
   });
 
+  test('aktif grup masrafları tombstone olmadan canlı yayınlanır', () async {
+    final active = _expense()..syncState = SyncState.synced;
+    final deleted = _expense()
+      ..expenseId = '81000000-0000-4000-8000-000000000002'
+      ..clientRecordId = '83000000-0000-4000-8000-000000000002'
+      ..syncState = SyncState.synced
+      ..deletedAt = DateTime.utc(2026, 8, 18);
+    await repository.saveSyncedFromPull(active);
+    await repository.saveSyncedFromPull(deleted);
+
+    final visible = await repository
+        .watchActiveByGroup(groupId: _groupId, ownerKey: 'user:test-user')
+        .first;
+
+    expect(visible.map((expense) => expense.expenseId), <String>[_expenseId]);
+  });
+
+  test(
+    'pull create server ID değerini clientRecordId ile uzlaştırır',
+    () async {
+      final local = _expense()..syncState = SyncState.synced;
+      await repository.saveSyncedFromPull(local);
+      final server = _expense()
+        ..expenseId = '81000000-0000-4000-8000-000000000099'
+        ..title = 'Sunucu kaydı'
+        ..syncState = SyncState.synced
+        ..updatedAt = DateTime.utc(2026, 8, 18);
+
+      expect(await repository.saveSyncedFromPull(server), isTrue);
+
+      final stored = await isar.groupExpenseEntitys.where().findAll();
+      expect(stored, hasLength(1));
+      expect(stored.single.expenseId, server.expenseId);
+      expect(stored.single.clientRecordId, _clientRecordId);
+      expect(stored.single.title, 'Sunucu kaydı');
+      expect(await repository.getByExpenseId(_expenseId), isNull);
+    },
+  );
+
+  test(
+    'REST refresh ve pull tarafından oluşan iki synced satırı birleştirir',
+    () async {
+      final local = _expense()..syncState = SyncState.synced;
+      await repository.saveSyncedFromPull(local);
+      const serverId = '81000000-0000-4000-8000-000000000099';
+      final refreshed = _expense()
+        ..expenseId = serverId
+        ..clientRecordId = serverId
+        ..syncState = SyncState.synced
+        ..updatedAt = DateTime.utc(2026, 8, 18);
+      await repository.saveSyncedFromPull(refreshed);
+      expect(await isar.groupExpenseEntitys.count(), 2);
+
+      final pulled = _expense()
+        ..expenseId = serverId
+        ..syncState = SyncState.synced
+        ..updatedAt = DateTime.utc(2026, 8, 18, 1);
+
+      expect(await repository.saveSyncedFromPull(pulled), isTrue);
+      final stored = await isar.groupExpenseEntitys.where().findAll();
+      expect(stored, hasLength(1));
+      expect(stored.single.expenseId, serverId);
+      expect(stored.single.clientRecordId, _clientRecordId);
+    },
+  );
+
+  test('eski remote snapshot daha yeni synced kaydı geriye sarmaz', () async {
+    final newest = _expense()
+      ..title = 'Yeni başlık'
+      ..syncState = SyncState.synced
+      ..updatedAt = DateTime.utc(2026, 8, 19);
+    await repository.saveSyncedFromPull(newest);
+    final stale = _expense()
+      ..title = 'Eski başlık'
+      ..syncState = SyncState.synced
+      ..updatedAt = DateTime.utc(2026, 8, 18);
+
+    expect(await repository.saveSyncedFromPull(stale), isFalse);
+    expect((await repository.getByExpenseId(_expenseId))?.title, 'Yeni başlık');
+  });
+
   test('delete tombstone ve OfflineTask atomik kaydedilir', () async {
     final expense = _expense()..syncState = SyncState.synced;
     await repository.saveSyncedFromPull(expense);

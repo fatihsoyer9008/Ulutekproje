@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/database_providers.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../application/group_sync_coordinator.dart';
+import '../application/local_first_group_expense_reader.dart';
 import '../application/offline_first_group_expense_writer.dart';
 import '../domain/group_models.dart';
 import 'api_group_repository.dart';
@@ -61,6 +62,20 @@ final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(
   (ref) => ref.watch(groupRepositoryProvider),
 );
 
+final groupExpenseLocalFirstListingEnabledProvider = Provider<bool>(
+  (ref) =>
+      !ref.watch(groupMockModeProvider) &&
+      ref.watch(groupExpenseRepositoryProvider) is ApiGroupRepository,
+);
+
+final localFirstGroupExpenseReaderProvider =
+    Provider<LocalFirstGroupExpenseReader>(
+      (ref) => LocalFirstGroupExpenseReader(
+        ref.watch(groupExpenseOfflineRepositoryProvider),
+        ref.watch(groupExpenseRepositoryProvider),
+      ),
+    );
+
 final offlineFirstGroupExpenseWriterProvider =
     Provider<OfflineFirstGroupExpenseWriter>(
       (ref) => OfflineFirstGroupExpenseWriter(
@@ -85,9 +100,25 @@ final groupDetailProvider = FutureProvider.family<GroupDetail, String>(
   (ref, groupId) => ref.watch(groupRepositoryProvider).getGroup(groupId),
 );
 
-final groupExpensesProvider = FutureProvider.family<List<GroupExpense>, String>(
-  (ref, groupId) =>
-      ref.watch(groupExpenseRepositoryProvider).listExpenses(groupId),
+final groupExpensesProvider = StreamProvider.family<List<GroupExpense>, String>(
+  (ref, groupId) {
+    final remote = ref.watch(groupExpenseRepositoryProvider);
+    final userId = ref.watch(currentGroupUserIdProvider);
+    if (!ref.watch(groupExpenseLocalFirstListingEnabledProvider) ||
+        userId == null) {
+      return Stream.fromFuture(remote.listExpenses(groupId));
+    }
+
+    final ownerKey = 'user:$userId';
+    final reader = ref.watch(localFirstGroupExpenseReaderProvider);
+    unawaited(
+      reader
+          .refresh(groupId: groupId, ownerKey: ownerKey)
+          .then<void>((_) {})
+          .catchError((Object _) {}),
+    );
+    return reader.watch(groupId: groupId, ownerKey: ownerKey);
+  },
 );
 
 final groupDebtSummaryProvider = FutureProvider.family<DebtSummary, String>(

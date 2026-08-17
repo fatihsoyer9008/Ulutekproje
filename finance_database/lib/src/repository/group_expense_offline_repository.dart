@@ -110,6 +110,19 @@ class GroupExpenseOfflineRepository {
       .sortByExpenseDateDesc()
       .findAll();
 
+  /// UI için aktif masrafları yerel veritabanından canlı olarak yayınlar.
+  /// Tombstone kayıtları sync/audit amacıyla saklanır fakat listede gösterilmez.
+  Stream<List<GroupExpenseEntity>> watchActiveByGroup({
+    required String groupId,
+    required String ownerKey,
+  }) => _isar.groupExpenseEntitys
+      .filter()
+      .groupIdEqualTo(groupId)
+      .ownerKeyEqualTo(ownerKey)
+      .deletedAtIsNull()
+      .sortByExpenseDateDesc()
+      .watch(fireImmediately: true);
+
   /// Yalnız grup operasyonlarını oluşturulma sırasıyla döndürür.
   Future<List<OfflineTask>> getPendingSyncTasks({
     required String ownerKey,
@@ -237,11 +250,30 @@ class GroupExpenseOfflineRepository {
     }
 
     return _isar.writeTxn(() async {
-      final existing = await _isar.groupExpenseEntitys.getByExpenseId(
-        expense.expenseId,
-      );
-      if (existing != null && existing.syncState != SyncState.synced) {
+      final existingByExpenseId = await _isar.groupExpenseEntitys
+          .getByExpenseId(expense.expenseId);
+      final existingByClientRecordId = await _isar.groupExpenseEntitys
+          .getByClientRecordId(expense.clientRecordId);
+      final existingRecords = <GroupExpenseEntity>{
+        ?existingByExpenseId,
+        ?existingByClientRecordId,
+      };
+      if (existingRecords.any(
+        (existing) => existing.syncState != SyncState.synced,
+      )) {
         return false;
+      }
+      if (existingRecords.any(
+        (existing) =>
+            existing.updatedAt.toUtc().isAfter(expense.updatedAt.toUtc()),
+      )) {
+        return false;
+      }
+      final existing = existingByClientRecordId ?? existingByExpenseId;
+      if (existingByExpenseId != null &&
+          existingByClientRecordId != null &&
+          existingByExpenseId.id != existingByClientRecordId.id) {
+        await _isar.groupExpenseEntitys.delete(existingByExpenseId.id);
       }
       if (existing != null) expense.id = existing.id;
       await _isar.groupExpenseEntitys.put(expense);
