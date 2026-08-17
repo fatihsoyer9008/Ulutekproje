@@ -8,6 +8,7 @@ from fastapi.exception_handlers import (
     request_validation_exception_handler,
 )
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -133,6 +134,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.add_middleware(ReceiptImageBodyLimitMiddleware)
+if settings.cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(settings.cors_origins),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 app.include_router(assistant_router)
 app.include_router(auth_router)
 app.include_router(groups_router)

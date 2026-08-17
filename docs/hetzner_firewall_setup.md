@@ -33,8 +33,15 @@ aşağıdaki "API portu 8000 — karar" bölümüne bakın.
 `127.0.0.1:8000`'e proxy ediyor ve gerçek, geçerli bir Let's Encrypt
 sertifikası kullanıyor (`sslip.io` ücretsiz IP-tabanlı DNS servisi — gerçek
 domain almaya gerek kalmadan Let's Encrypt için geçerli bir hostname
-sağlıyor). uvicorn komutuna `--proxy-headers --forwarded-allow-ips=127.0.0.1`
-eklendi, böylece Caddy arkasında doğru client IP/scheme algılanıyor.
+sağlıyor).
+
+uvicorn'a `--proxy-headers` **eklenmedi** — `tests/test_deployment_config.py::
+test_uvicorn_runtime_commands_disable_proxy_header_processing` bunu bilerek
+zorunlu kılıyor. Proje, proxy güvenini uvicorn seviyesinde değil, uygulama
+seviyesinde (`TRUST_PROXY_HEADERS` / `TRUSTED_CLIENT_IP_HEADER` /
+`TRUSTED_PROXY_CIDRS`, bkz. `app/api/dependencies.py:request_ip`) CIDR
+tabanlı olarak yapıyor. Bunun sunucuda etkinleştirilmesi **8000 tamamen
+kapanana kadar ertelendi** — bkz. Task 7.3 notları altında.
 
 **8000 hâlâ UFW'de açık ve `docker-compose.yml`'de `0.0.0.0:8000` olarak
 mapping'li — bilerek.** Sebep: proje kapalı bir grup için (staj sunumu,
@@ -126,3 +133,21 @@ Test-NetConnection -ComputerName 116.202.14.23 -Port 8000   # TcpTestSucceeded: 
 Bu testleri ben (Claude) çalıştırmadım — gerçek production IP'sine dışarıdan
 bağlantı denemesi olduğu için, firewall değişikliklerini siz sunucuda
 uyguladıktan sonra sonucu doğrulamanız gerekiyor.
+
+## Task 7.3 — Production environment, CORS ve secret kontrolü (durum)
+
+Sunucudaki `.env` içeriği (değerler gösterilmeden) kontrol edildi:
+
+| Kontrol | Durum |
+| --- | --- |
+| JWT_SECRET / SECURITY_HMAC_SECRET güçlü, default değil | ✅ |
+| SMTP/Gemini/Google OAuth secret'ları `.env`'de, Git'te değil | ✅ (Gemini ve Assistant Gemini key'leri doğru şekilde farklı) |
+| `EMAIL_ACTION_BASE_URL` HTTPS | ✅ düzeltildi → `https://116-202-14-23.sslip.io/api/v1/auth` |
+| CORS middleware/allowlist | ✅ eklendi (`CORS_ALLOWED_ORIGINS`, kod: `app/main.py` + `app/core/config.py`), wildcard (`*`) yapısal olarak reddediliyor. Sunucuda henüz `.env`'e değer girilmedi (boş = CORS middleware hiç eklenmiyor, tarayıcı cross-origin isteği yapılamıyor — mobil app için sorun değil) |
+| `TRUST_PROXY_HEADERS=true` | ❌ **kasıtlı olarak false bırakıldı.** Sebep: API container tüm bağlantıları aynı Docker bridge gateway IP'sinden (`172.18.0.1`) görüyor — hem Caddy üzerinden hem doğrudan `:8000`'e gelen istekler aynı IP. 8000 dışa açık kaldığı sürece bunu açmak, doğrudan `:8000`'e bağlanan birinin kendi `X-Forwarded-For` header'ını sahtekarlıkla ekleyip IP tabanlı rate limiting'i atlatmasına izin verir. **8000 kapanınca** (yukarıdaki "Kapatma sırası") `TRUSTED_CLIENT_IP_HEADER=X-Forwarded-For`, `TRUSTED_PROXY_CIDRS=172.18.0.1/32`, `TRUST_PROXY_HEADERS=true` ayarlanmalı. |
+| `APP_ENV=production` | ❌ **kasıtlı olarak development bırakıldı**, `TRUST_PROXY_HEADERS` şartına bağlı — `app/main.py:_validate_production_settings` `TRUST_PROXY_HEADERS=true` olmadan `RuntimeError` fırlatıp uygulamayı başlatmaz. `docker-compose.yml`'deki hardcoded `APP_ENV: development` override'ı kaldırıldı, artık `.env`'deki değer geçerli oluyor. |
+
+Yani production'a tam geçiş de 8000'in kapanmasına bağlı — Task 7.1/7.2'deki
+"8000'i kapat" adımı tamamlanınca aynı oturumda `TRUST_PROXY_HEADERS=true` ve
+`APP_ENV=production` da ayarlanıp `_validate_production_settings` ile
+doğrulanmalı.
