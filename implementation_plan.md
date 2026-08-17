@@ -236,7 +236,7 @@ Tüm auth endpoint'leri `/api/v1/auth` altında yayınlanmalıdır. Hassas cevap
 - Endpoint bazlı IP, e-posta ve birleşik limitler ayarlardan yönetilmeli.
 - Login başarısızlıklarında artan gecikme; kalıcı hesap kilidi yerine kısa süreli Redis kilidi kullanılmalı.
 - Register, resend, forgot-password ve OAuth endpoint'leri daha sıkı limitlenmeli.
-- `X-Forwarded-For` yalnızca güvenilen proxy/DigitalOcean yapılandırmasında kabul edilmeli.
+  X-Forwarded-For yalnızca güvenilen Hetzner reverse proxy yapılandırmasında kabul edilmeli.
 - Redis erişilemezse auth yazma endpoint'lerinde seçilen güvenli davranış dokümante edilmeli; üretimde korumasız devam edilmemeli.
 - Receipt parser misafir kullanımına açık kalacağı için IP + installation kimliği bazlı ayrı kota uygulanmalı.
 
@@ -360,8 +360,7 @@ Resmi referanslar:
 3. Gerekli PostgreSQL extension/CITEXT oluşturma
 
 Deploy sırasında migration tek bir release/pre-deploy job olarak çalıştırılmalı; birden fazla API instance aynı anda migration çalıştırmamalıdır.
-
-DigitalOcean yapılandırmasına `DATABASE_URL`, `REDIS_URL`, JWT key/issuer/audience, OAuth client değerleri, Apple key bilgileri, token encryption key ve e-posta provider secret'ları encrypted env olarak eklenmelidir.
+Hetzner production ortamına `DATABASE_URL`, `REDIS_URL`, JWT key/issuer/audience, OAuth client değerleri, Apple key bilgileri, token encryption key ve e-posta provider secret'ları encrypted env olarak eklenmelidir.
 
 ## 13. Uygulama Fazları
 
