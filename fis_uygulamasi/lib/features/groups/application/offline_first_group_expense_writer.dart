@@ -20,10 +20,21 @@ class OfflineFirstGroupExpenseWriter {
 
   Future<Id> save(GroupExpenseOfflineOperation operation) async {
     if (operation.type == GroupOfflineOperationType.groupExpenseDelete) {
-      throw UnsupportedError(
-        'GroupExpense delete yerel tombstone akışı Task 6.4 kapsamında '
-        'ayrı bir metotla ele alınmalıdır.',
+      if (!operation.ownerKey.startsWith('user:') ||
+          operation.syncState != SyncState.pendingDelete) {
+        throw StateError(
+          'Grup masrafı silme işlemi kullanıcı kapsamında pendingDelete '
+          'durumunda olmalıdır.',
+        );
+      }
+      final taskId = await _repository.markPendingDeleteWithOfflineTask(
+        expenseId: operation.expenseId,
+        groupId: operation.groupId,
+        ownerKey: operation.ownerKey,
+        task: operation.toOfflineTask(),
       );
+      _triggerSynchronization?.call();
+      return taskId;
     }
 
     final entity = operation.toGroupExpenseEntity();
@@ -42,6 +53,21 @@ class OfflineFirstGroupExpenseWriter {
     final id = await _repository.savePendingWithOfflineTask(
       entity,
       operation.toOfflineTask(),
+    );
+    _triggerSynchronization?.call();
+    return id;
+  }
+
+  Future<Id> saveSettlement(SettlementOfflineOperation operation) async {
+    if (!operation.ownerKey.startsWith('user:')) {
+      throw StateError('Settlement için aktif kullanıcı oturumu gerekli.');
+    }
+    if (operation.syncState != SyncState.pending) {
+      throw StateError('Yeni settlement pending durumda olmalıdır.');
+    }
+    final id = await _repository.enqueueGroupTask(
+      operation.toOfflineTask(),
+      ownerKey: operation.ownerKey,
     );
     _triggerSynchronization?.call();
     return id;

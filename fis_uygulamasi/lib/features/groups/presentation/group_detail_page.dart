@@ -6,9 +6,13 @@ import 'package:go_router/go_router.dart';
 import '../../../core/network/request_id.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../../transaction_draft/model/turkish_money.dart';
+import '../application/group_expense_flow_controller.dart';
 import '../data/group_api_failure.dart';
 import '../data/group_providers.dart';
+import '../data/fake_group_repository.dart';
+import '../domain/group_expense_draft.dart';
 import '../domain/group_models.dart';
+import '../domain/group_offline_operation.dart';
 import 'debt_summary_page.dart';
 import 'fast_split_page.dart';
 
@@ -19,6 +23,7 @@ class GroupDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(groupExpenseFlowControllerProvider);
     final groupAsync = ref.watch(groupDetailProvider(groupId));
 
     return Scaffold(
@@ -249,53 +254,39 @@ class _GroupDetailContent extends ConsumerWidget {
           group: group,
           currentUserId: currentUserId,
           onSubmit: (value) async {
-            final nowText = DateTime.now().toUtc().toIso8601String();
-
-            final split = switch (value.calculation.type) {
-              SplitType.equal => ExpenseSplitRequest.equal(
-                memberIds: value.calculation.shares
-                    .map((share) => share.userId)
-                    .toList(growable: false),
-              ),
-              SplitType.percentage => ExpenseSplitRequest.percentage(
-                shares: [
-                  for (final share in value.calculation.shares)
-                    ExpenseSplitShareRequest.percentage(
-                      userId: share.userId,
-                      percentageBasisPoints:
-                          value.percentageBasisPoints[share.userId]!,
-                    ),
-                ],
-              ),
-              SplitType.fixedAmount => ExpenseSplitRequest.fixedAmount(
-                shares: [
-                  for (final share in value.calculation.shares)
-                    ExpenseSplitShareRequest.fixedAmount(
-                      userId: share.userId,
-                      amountInMinor: share.amountInMinor,
-                    ),
-                ],
-              ),
-              SplitType.itemized => throw StateError(
-                'Fast Split itemized bölüştürmeyi desteklemez.',
-              ),
-            };
-
-            final request = CreateGroupExpenseRequest(
-              groupId: group.id,
-              receiptId: null,
-              payerUserId: value.payerUserId,
-              title: value.title,
-              note: null,
-              expenseDate: nowText,
-              totalAmountInMinor: value.calculation.totalAmountInMinor,
-              currency: group.currency,
-              split: split,
+            final controller = ref.read(
+              groupExpenseFlowControllerProvider.notifier,
             );
+            controller.start(
+              group: group,
+              activeUserId: currentUserId,
+              draft: GroupExpenseDraft(
+                groupId: group.id,
+                payerUserId: value.payerUserId,
+                merchantName: value.title,
+                category: '',
+                totalAmountInMinor: value.calculation.totalAmountInMinor,
+                expenseDate: DateTime.now().toUtc(),
+                currency: group.currency,
+                rawOcrText: null,
+                items: const <GroupExpenseDraftItem>[],
+              ),
+            );
+            controller.setFastSplit(
+              value.calculation,
+              percentageBasisPoints: value.percentageBasisPoints,
+            );
+            await controller.submitFastSplit(idempotencyKey: idempotencyKey);
 
-            await ref
-                .read(groupExpenseRepositoryProvider)
-                .createExpense(request, idempotencyKey: idempotencyKey);
+            final flowState = ref.read(groupExpenseFlowControllerProvider);
+            if (flowState.status == GroupExpenseFlowStatus.error) {
+              throw flowState.error ??
+                  StateError('Grup masrafı kuyruğa eklenemedi.');
+            }
+            if (flowState.status != GroupExpenseFlowStatus.success) {
+              throw StateError('Grup masrafı kaydı tamamlanamadı.');
+            }
+            controller.clear();
 
             ref.invalidate(groupExpensesProvider(group.id));
             ref.invalidate(groupDebtSummaryProvider(group.id));
@@ -331,7 +322,7 @@ class _GroupDetailContent extends ConsumerWidget {
           onMarkPaid: (transfer) async {
             final now = DateTime.now().toUtc();
             final nowText = now.toIso8601String();
-            final settlementId = 'settlement-${now.microsecondsSinceEpoch}';
+            final settlementId = newUuidV4();
 
             final settlement = Settlement(
               id: settlementId,
@@ -345,12 +336,23 @@ class _GroupDetailContent extends ConsumerWidget {
               createdAt: nowText,
             );
 
-            await ref
-                .read(groupRepositoryProvider)
-                .createSettlement(
-                  settlement,
-                  idempotencyKey: 'settlement-$settlementId',
-                );
+            final repository = ref.read(groupRepositoryProvider);
+            if (repository is FakeGroupRepository) {
+              await repository.createSettlement(
+                settlement,
+                idempotencyKey: settlementId,
+              );
+            } else {
+              await ref
+                  .read(offlineFirstGroupExpenseWriterProvider)
+                  .saveSettlement(
+                    SettlementOfflineOperation.create(
+                      settlement: settlement,
+                      clientRecordId: settlementId,
+                      ownerKey: 'user:$currentUserId',
+                    ),
+                  );
+            }
 
             ref.invalidate(groupDebtSummaryProvider(group.id));
             ref.invalidate(groupSettlementsProvider(group.id));

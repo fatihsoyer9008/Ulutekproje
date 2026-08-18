@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:app_main/features/groups/data/group_sync_gateway.dart';
+import 'package:dio/dio.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -116,6 +118,191 @@ void main() {
     );
     await expectLater(server.push(malformed), throwsA(isA<FormatException>()));
   });
+
+  test('Dio gateway expense payloadını clientRecordId ile gönderir', () async {
+    late RequestOptions captured;
+    final gateway = DioGroupPushGateway(
+      _dio((options) {
+        captured = options;
+        return _response(<String, Object?>{'expense': <String, Object?>{}});
+      }),
+    );
+    final task = _task(11)
+      ..payloadJson = jsonEncode(<String, Object?>{
+        ...jsonDecode(_task(11).payloadJson)! as Map<String, dynamic>,
+        'sync_payload': <String, Object?>{
+          'title': 'Market',
+          'total_amount_in_minor': 12500,
+          'currency': 'TRY',
+          'split': <String, Object?>{
+            'type': 'percentage',
+            'shares': <Object?>[
+              <String, Object?>{
+                'user_id': '91000000-0000-4000-8000-000000000001',
+                'percentage_basis_points': 3333,
+              },
+              <String, Object?>{
+                'user_id': '91000000-0000-4000-8000-000000000002',
+                'percentage_basis_points': 6667,
+              },
+            ],
+          },
+        },
+      });
+
+    final result = await gateway.push(task);
+
+    expect(result.status, GroupPushStatus.accepted);
+    expect(captured.path, '/api/v1/sync/groups/push');
+    expect(captured.headers['Idempotency-Key'], task.clientTaskId);
+    final split =
+        ((captured.data as Map)['sync_payload'] as Map)['split'] as Map;
+    expect((split['shares'] as List).last['percentage_basis_points'], 6667);
+  });
+
+  test(
+    'Dio gateway settlement DTOsunu gereksiz yerel alanlardan arındırır',
+    () async {
+      late RequestOptions captured;
+      final gateway = DioGroupPushGateway(
+        _dio((options) {
+          captured = options;
+          return _response(<String, Object?>{
+            'settlement': <String, Object?>{},
+          });
+        }),
+      );
+      final task = _settlementTask();
+
+      await gateway.push(task);
+
+      expect(captured.path, '/api/v1/sync/groups/push');
+      expect(captured.headers['Idempotency-Key'], task.clientTaskId);
+      final syncPayload = (captured.data as Map)['sync_payload'] as Map;
+      expect(syncPayload, isNot(contains('id')));
+      expect(syncPayload, isNot(contains('group_id')));
+      expect(syncPayload, isNot(contains('created_at')));
+      expect(syncPayload['amount_in_minor'], 4500);
+    },
+  );
+
+  test(
+    'Dio gateway ExpenseShare create update delete operasyonlarını gönderir',
+    () async {
+      final captured = <RequestOptions>[];
+      final gateway = DioGroupPushGateway(
+        _dio((options) {
+          captured.add(options);
+          return _response(<String, Object?>{
+            'operation_id': (options.data as Map)['client_record_id'],
+            'status': 'accepted',
+          });
+        }),
+      );
+
+      for (final type in <OfflineTaskType>[
+        OfflineTaskType.expenseShareCreate,
+        OfflineTaskType.expenseShareUpdate,
+        OfflineTaskType.expenseShareDelete,
+      ]) {
+        final task = _shareTask(type);
+        expect((await gateway.push(task)).status, GroupPushStatus.accepted);
+      }
+
+      expect(captured, hasLength(3));
+      expect(
+        captured.map((request) => (request.data as Map)['operation_type']),
+        <String>[
+          'expenseShareCreate',
+          'expenseShareUpdate',
+          'expenseShareDelete',
+        ],
+      );
+      expect(
+        captured.map((request) => request.headers['Idempotency-Key']).toSet(),
+        hasLength(3),
+      );
+    },
+  );
+
+  test(
+    'Dio gateway GroupExpense update ve delete operasyonlarını gönderir',
+    () async {
+      final captured = <RequestOptions>[];
+      final gateway = DioGroupPushGateway(
+        _dio((options) {
+          captured.add(options);
+          return _response(<String, Object?>{
+            'operation_id': (options.data as Map)['client_record_id'],
+            'status': 'accepted',
+          });
+        }),
+      );
+
+      for (final type in <OfflineTaskType>[
+        OfflineTaskType.groupExpenseUpdate,
+        OfflineTaskType.groupExpenseDelete,
+      ]) {
+        final task = _expenseMutationTask(type);
+        expect((await gateway.push(task)).status, GroupPushStatus.accepted);
+      }
+
+      expect(
+        captured.map((request) => (request.data as Map)['operation_type']),
+        <String>['groupExpenseUpdate', 'groupExpenseDelete'],
+      );
+      expect(
+        captured.map((request) => request.headers['Idempotency-Key']).toSet(),
+        hasLength(2),
+      );
+    },
+  );
+
+  test('replayed response aynı clientRecordId için duplicate olur', () async {
+    final gateway = DioGroupPushGateway(
+      _dio(
+        (_) => _response(
+          <String, Object?>{'expense': <String, Object?>{}},
+          headers: <String, List<String>>{
+            'Idempotency-Replayed': <String>['true'],
+          },
+        ),
+      ),
+    );
+    final task = _task(12);
+
+    final firstReplay = await gateway.push(task);
+    final secondReplay = await gateway.push(task);
+
+    expect(firstReplay.status, GroupPushStatus.duplicate);
+    expect(secondReplay.operationId, task.clientTaskId);
+  });
+
+  for (final entry in <String, String>{
+    'expense_financially_locked': 'finansal olarak kilitlendi',
+    'record_soft_deleted': 'sunucuda silinmiş',
+    'version_mismatch': 'başka bir cihazda güncellendi',
+    'idempotency_conflict': 'işlem kimliği',
+  }.entries) {
+    test('409 ${entry.key} anlaşılır conflict sonucuna çevrilir', () async {
+      final gateway = DioGroupPushGateway(
+        _dio(
+          (_) => _response(<String, Object?>{
+            'detail': <String, Object?>{
+              'code': entry.key,
+              'message': 'server detail',
+            },
+          }, statusCode: 409),
+        ),
+      );
+
+      final result = await gateway.push(_task(13));
+
+      expect(result.status, GroupPushStatus.conflict);
+      expect(result.conflictCode, entry.key);
+      expect(result.message, contains(entry.value));
+    });
+  }
 }
 
 OfflineTask _task(int id, {String title = 'Market'}) {
@@ -139,4 +326,140 @@ OfflineTask _task(int id, {String title = 'Market'}) {
     })
     ..createdAt = DateTime.utc(2026, 8, 17)
     ..updatedAt = DateTime.utc(2026, 8, 17);
+}
+
+OfflineTask _settlementTask() {
+  const id = '95000000-0000-4000-8000-000000000001';
+  return OfflineTask()
+    ..clientTaskId = id
+    ..type = OfflineTaskType.settlementCreate
+    ..status = OfflineTaskStatus.pending
+    ..payloadJson = jsonEncode(<String, Object?>{
+      'operation_type': OfflineTaskType.settlementCreate.name,
+      'group_id': '92000000-0000-4000-8000-000000000001',
+      'client_record_id': id,
+      'owner_key': 'user:91000000-0000-4000-8000-000000000001',
+      'sync_state': SyncState.pending.name,
+      'payload': <String, Object?>{
+        'id': id,
+        'group_id': '92000000-0000-4000-8000-000000000001',
+        'from_user_id': '91000000-0000-4000-8000-000000000001',
+        'to_user_id': '91000000-0000-4000-8000-000000000002',
+        'amount_in_minor': 4500,
+        'currency': 'TRY',
+        'settled_at': '2026-08-17T12:00:00Z',
+        'note': null,
+        'created_at': '2026-08-17T12:00:00Z',
+      },
+    })
+    ..createdAt = DateTime.utc(2026, 8, 17)
+    ..updatedAt = DateTime.utc(2026, 8, 17);
+}
+
+OfflineTask _shareTask(OfflineTaskType type) {
+  final suffix = switch (type) {
+    OfflineTaskType.expenseShareCreate => '1',
+    OfflineTaskType.expenseShareUpdate => '2',
+    OfflineTaskType.expenseShareDelete => '3',
+    _ => throw ArgumentError.value(type),
+  };
+  final id = '96000000-0000-4000-8000-${suffix.padLeft(12, '0')}';
+  return OfflineTask()
+    ..clientTaskId = id
+    ..type = type
+    ..status = OfflineTaskStatus.pending
+    ..payloadJson = jsonEncode(<String, Object?>{
+      'operation_type': type.name,
+      'group_id': '92000000-0000-4000-8000-000000000001',
+      'client_record_id': id,
+      'owner_key': 'user:91000000-0000-4000-8000-000000000001',
+      'sync_state': type == OfflineTaskType.expenseShareDelete
+          ? SyncState.pendingDelete.name
+          : SyncState.pending.name,
+      'payload': <String, Object?>{
+        'expense_id': '94000000-0000-4000-8000-000000000001',
+        'user_id': '91000000-0000-4000-8000-000000000002',
+        if (type != OfflineTaskType.expenseShareDelete) ...<String, Object?>{
+          'display_name': 'Pay sahibi',
+          'amount_in_minor': 4500,
+          'status': 'open',
+          'settled_at': null,
+        },
+      },
+    })
+    ..createdAt = DateTime.utc(2026, 8, 17)
+    ..updatedAt = DateTime.utc(2026, 8, 17);
+}
+
+OfflineTask _expenseMutationTask(OfflineTaskType type) {
+  final suffix = switch (type) {
+    OfflineTaskType.groupExpenseUpdate => '1',
+    OfflineTaskType.groupExpenseDelete => '2',
+    _ => throw ArgumentError.value(type),
+  };
+  final id = '97000000-0000-4000-8000-${suffix.padLeft(12, '0')}';
+  const expenseId = '94000000-0000-4000-8000-000000000001';
+  const groupId = '92000000-0000-4000-8000-000000000001';
+  return OfflineTask()
+    ..clientTaskId = id
+    ..type = type
+    ..status = OfflineTaskStatus.pending
+    ..payloadJson = jsonEncode(<String, Object?>{
+      'operation_type': type.name,
+      'group_id': groupId,
+      'client_record_id': id,
+      'owner_key': 'user:91000000-0000-4000-8000-000000000001',
+      'sync_state': type == OfflineTaskType.groupExpenseDelete
+          ? SyncState.pendingDelete.name
+          : SyncState.pending.name,
+      'payload': <String, Object?>{
+        'group_id': groupId,
+        if (type == OfflineTaskType.groupExpenseDelete)
+          'expense_id': expenseId
+        else ...<String, Object?>{
+          'id': expenseId,
+          'payer_user_id': '91000000-0000-4000-8000-000000000001',
+          'title': 'Güncellenen masraf',
+          'expense_date': '2026-08-17T12:00:00Z',
+          'total_amount_in_minor': 4500,
+          'currency': 'TRY',
+          'split_type': 'fixed_amount',
+          'shares': <Object?>[],
+        },
+      },
+    })
+    ..createdAt = DateTime.utc(2026, 8, 17)
+    ..updatedAt = DateTime.utc(2026, 8, 17);
+}
+
+Dio _dio(ResponseBody Function(RequestOptions) handler) =>
+    Dio(BaseOptions(baseUrl: 'https://example.test'))
+      ..httpClientAdapter = _Adapter(handler);
+
+ResponseBody _response(
+  Map<String, Object?> body, {
+  int statusCode = 200,
+  Map<String, List<String>> headers = const <String, List<String>>{},
+}) => ResponseBody.fromString(
+  jsonEncode(body),
+  statusCode,
+  headers: <String, List<String>>{
+    Headers.contentTypeHeader: <String>[Headers.jsonContentType],
+    ...headers,
+  },
+);
+
+class _Adapter implements HttpClientAdapter {
+  _Adapter(this.handler);
+  final ResponseBody Function(RequestOptions) handler;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async => handler(options);
+
+  @override
+  void close({bool force = false}) {}
 }

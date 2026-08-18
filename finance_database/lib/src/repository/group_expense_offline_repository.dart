@@ -48,6 +48,55 @@ class GroupExpenseOfflineRepository {
     });
   }
 
+  /// Var olan masrafı cihazda tombstone'a çevirip silme görevini aynı
+  /// transaction içinde kuyruğa ekler.
+  ///
+  /// Masrafın ilk create operasyonundaki [GroupExpenseEntity.clientRecordId]
+  /// korunur. Silme operasyonunun ayrı idempotency anahtarı [task] üzerinde
+  /// tutulur ve payload içindeki `expense_id` ile masrafa bağlanır.
+  Future<Id> markPendingDeleteWithOfflineTask({
+    required String expenseId,
+    required String groupId,
+    required String ownerKey,
+    required OfflineTask task,
+    DateTime? deletedAt,
+  }) {
+    final payload = _decodePayload(task.payloadJson);
+    final nestedPayload = payload['payload'];
+    if (!ownerKey.startsWith('user:') ||
+        task.type != OfflineTaskType.groupExpenseDelete ||
+        task.status != OfflineTaskStatus.pending ||
+        payload['operation_type'] != OfflineTaskType.groupExpenseDelete.name ||
+        payload['client_record_id'] != task.clientTaskId ||
+        payload['group_id'] != groupId ||
+        payload['owner_key'] != ownerKey ||
+        nestedPayload is! Map ||
+        nestedPayload['expense_id'] != expenseId) {
+      throw StateError('Geçersiz grup masrafı silme görevi.');
+    }
+
+    final now = (deletedAt ?? DateTime.now()).toUtc();
+    task
+      ..createdAt = now
+      ..updatedAt = now;
+
+    return _isar.writeTxn(() async {
+      final expense = await _isar.groupExpenseEntitys.getByExpenseId(expenseId);
+      if (expense == null ||
+          expense.groupId != groupId ||
+          expense.ownerKey != ownerKey) {
+        throw StateError('Silinecek grup masrafı yerel kapsamda bulunamadı.');
+      }
+      expense
+        ..syncState = SyncState.pendingDelete
+        ..deletedAt = now
+        ..updatedAt = now
+        ..payloadJson = _withTombstone(expense.payloadJson, now);
+      await _isar.groupExpenseEntitys.put(expense);
+      return _isar.offlineTasks.put(task);
+    });
+  }
+
   Future<GroupExpenseEntity?> getByExpenseId(String expenseId) =>
       _isar.groupExpenseEntitys.getByExpenseId(expenseId);
 
@@ -62,7 +111,10 @@ class GroupExpenseOfflineRepository {
       .findAll();
 
   /// Yalnız grup operasyonlarını oluşturulma sırasıyla döndürür.
-  Future<List<OfflineTask>> getPendingSyncTasks({int limit = 50}) async {
+  Future<List<OfflineTask>> getPendingSyncTasks({
+    required String ownerKey,
+    int limit = 50,
+  }) async {
     if (limit <= 0) return const [];
     final tasks = await _isar.offlineTasks
         .filter()
@@ -70,9 +122,37 @@ class GroupExpenseOfflineRepository {
         .sortByCreatedAt()
         .findAll();
     return tasks
-        .where((task) => task.type.isGroupOperation)
+        .where((task) {
+          if (!task.type.isGroupOperation) return false;
+          try {
+            return _decodePayload(task.payloadJson)['owner_key'] == ownerKey;
+          } on StateError {
+            return false;
+          }
+        })
         .take(limit)
         .toList(growable: false);
+  }
+
+  /// Expense dışındaki immutable grup operasyonlarını (örn. settlement)
+  /// owner scope'u doğrulandıktan sonra kalıcı kuyruğa ekler.
+  Future<Id> enqueueGroupTask(OfflineTask task, {required String ownerKey}) {
+    final payload = _decodePayload(task.payloadJson);
+    if (!ownerKey.startsWith('user:') || payload['owner_key'] != ownerKey) {
+      throw StateError(
+        'Grup sync görevi aktif kullanıcı kapsamıyla eşleşmiyor.',
+      );
+    }
+    if (!task.type.isGroupOperation ||
+        task.status != OfflineTaskStatus.pending ||
+        payload['client_record_id'] != task.clientTaskId) {
+      throw StateError('Geçersiz grup sync görevi.');
+    }
+    final now = DateTime.now().toUtc();
+    task
+      ..createdAt = now
+      ..updatedAt = now;
+    return _isar.writeTxn(() => _isar.offlineTasks.put(task));
   }
 
   /// Failed/conflict grup görevlerini audit alanlarına dokunmadan pending
@@ -164,6 +244,39 @@ class GroupExpenseOfflineRepository {
         return false;
       }
       if (existing != null) expense.id = existing.id;
+      await _isar.groupExpenseEntitys.put(expense);
+      return true;
+    });
+  }
+
+  /// Başka cihazdan pull edilen silmeyi var olan yerel kayda uygular.
+  ///
+  /// Bekleyen yerel create/update/delete değişikliği varsa tombstone sessizce
+  /// uygulanmaz; conflict çözümü için yerel kayıt korunur.
+  Future<bool> applyPulledTombstone({
+    required String expenseId,
+    required String groupId,
+    required String ownerKey,
+    required DateTime deletedAt,
+  }) {
+    if (!ownerKey.startsWith('user:')) {
+      throw StateError('Pull tombstone kayıtlı kullanıcıya ait olmalıdır.');
+    }
+    final tombstoneAt = deletedAt.toUtc();
+    return _isar.writeTxn(() async {
+      final expense = await _isar.groupExpenseEntitys.getByExpenseId(expenseId);
+      if (expense == null ||
+          expense.groupId != groupId ||
+          expense.ownerKey != ownerKey ||
+          expense.syncState != SyncState.synced) {
+        return false;
+      }
+      if (expense.deletedAt?.toUtc() == tombstoneAt) return false;
+      expense
+        ..syncState = SyncState.synced
+        ..deletedAt = tombstoneAt
+        ..updatedAt = tombstoneAt
+        ..payloadJson = _withTombstone(expense.payloadJson, tombstoneAt);
       await _isar.groupExpenseEntitys.put(expense);
       return true;
     });
@@ -273,5 +386,14 @@ class GroupExpenseOfflineRepository {
         'OfflineTask payloadJson geçerli bir JSON nesnesi değil.',
       );
     }
+  }
+
+  String _withTombstone(String payloadJson, DateTime deletedAt) {
+    final payload = _decodePayload(payloadJson);
+    final timestamp = deletedAt.toUtc().toIso8601String();
+    payload
+      ..['deleted_at'] = timestamp
+      ..['updated_at'] = timestamp;
+    return jsonEncode(payload);
   }
 }

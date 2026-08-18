@@ -467,6 +467,7 @@ class GroupExpenseResponse(BaseModel):
         expense: GroupExpense,
         *,
         display_names: Mapping[uuid.UUID, str],
+        is_financially_locked: bool = False,
     ) -> "GroupExpenseResponse":
         return cls(
             id=expense.id,
@@ -480,7 +481,7 @@ class GroupExpenseResponse(BaseModel):
             total_amount_in_minor=expense.total_amount_in_minor,
             currency=expense.currency,
             split_type=expense.split_type,
-            is_financially_locked=False,
+            is_financially_locked=is_financially_locked,
             shares=[
                 ExpenseShareResponse.from_model(
                     share,

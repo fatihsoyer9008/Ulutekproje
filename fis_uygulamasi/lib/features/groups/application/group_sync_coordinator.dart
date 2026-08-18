@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 
 import '../../../core/database/database_providers.dart';
+import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../data/group_offline_operation_mapper.dart';
 import '../data/group_sync_gateway.dart';
 import '../domain/group_offline_operation.dart';
@@ -24,13 +25,14 @@ abstract interface class GroupSyncTaskRepository {
 }
 
 class IsarGroupSyncTaskRepository implements GroupSyncTaskRepository {
-  const IsarGroupSyncTaskRepository(this.repository);
+  const IsarGroupSyncTaskRepository(this.repository, this.ownerKey);
 
   final GroupExpenseOfflineRepository repository;
+  final String ownerKey;
 
   @override
   Future<List<OfflineTask>> getPendingTasks({int limit = 50}) =>
-      repository.getPendingSyncTasks(limit: limit);
+      repository.getPendingSyncTasks(ownerKey: ownerKey, limit: limit);
 
   @override
   Future<Set<Id>> requeueFailedAndConflicted() =>
@@ -56,12 +58,20 @@ class IsarGroupSyncTaskRepository implements GroupSyncTaskRepository {
     var applied = 0;
     for (final change in changes) {
       final operation = GroupOfflineOperation.fromJson(change.operation);
-      // TODO(task-6.4): ExpenseShare, Settlement ve GroupExpense delete pull
-      // operasyonlarını ilgili yerel persistence modelleri hazır olduğunda
-      // burada uygula. Şimdilik yalnız güvenle kalıcılaştırılabilen masraf
-      // snapshot'ları applied sayısına dahil edilir.
-      if (operation is! GroupExpenseOfflineOperation ||
-          operation.type == GroupOfflineOperationType.groupExpenseDelete) {
+      // ExpenseShare ve Settlement için ayrı yerel persistence modelleri henüz
+      // bulunmadığından yalnız GroupExpense snapshot/tombstone uygulanır.
+      if (operation is! GroupExpenseOfflineOperation) {
+        continue;
+      }
+      if (operation.type == GroupOfflineOperationType.groupExpenseDelete) {
+        if (await repository.applyPulledTombstone(
+          expenseId: operation.expenseId,
+          groupId: operation.groupId,
+          ownerKey: operation.ownerKey,
+          deletedAt: change.serverUpdatedAt,
+        )) {
+          applied += 1;
+        }
         continue;
       }
       final entity = operation.toGroupExpenseEntity()
@@ -77,18 +87,34 @@ final fakeGroupSyncServerProvider = Provider<FakeGroupSyncServer>(
 );
 
 final groupPushGatewayProvider = Provider<GroupPushGateway>(
-  (ref) => FakeGroupPushGateway(ref.watch(fakeGroupSyncServerProvider)),
+  (ref) =>
+      ref.watch(groupMockModeForSyncProvider) ||
+          ref.watch(authSessionControllerProvider).user == null
+      ? FakeGroupPushGateway(ref.watch(fakeGroupSyncServerProvider))
+      : DioGroupPushGateway(ref.watch(apiClientProvider).dio),
 );
 
 final groupPullGatewayProvider = Provider<GroupPullGateway>(
-  (ref) => FakeGroupPullGateway(ref.watch(fakeGroupSyncServerProvider)),
+  (ref) =>
+      ref.watch(groupMockModeForSyncProvider) ||
+          ref.watch(authSessionControllerProvider).user == null
+      ? FakeGroupPullGateway(ref.watch(fakeGroupSyncServerProvider))
+      : const NoopGroupPullGateway(),
 );
 
-final groupSyncTaskRepositoryProvider = Provider<GroupSyncTaskRepository>(
-  (ref) => IsarGroupSyncTaskRepository(
-    ref.watch(groupExpenseOfflineRepositoryProvider),
-  ),
+final groupMockModeForSyncProvider = Provider<bool>(
+  (ref) => const bool.fromEnvironment('GROUP_MOCK_MODE'),
 );
+
+final groupSyncTaskRepositoryProvider = Provider<GroupSyncTaskRepository>((
+  ref,
+) {
+  final userId = ref.watch(authSessionControllerProvider).user?.id;
+  return IsarGroupSyncTaskRepository(
+    ref.watch(groupExpenseOfflineRepositoryProvider),
+    userId == null ? 'guest:no-session' : 'user:$userId',
+  );
+});
 
 final groupSyncCoordinatorProvider =
     NotifierProvider<GroupSyncCoordinator, GroupSyncState>(

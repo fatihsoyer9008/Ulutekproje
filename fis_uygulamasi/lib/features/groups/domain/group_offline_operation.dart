@@ -29,6 +29,7 @@ sealed class GroupOfflineOperation {
     required String clientRecordId,
     required String ownerKey,
     required this.syncState,
+    this.syncPayload,
   }) : groupId = _validUuid(groupId, 'groupId'),
        clientRecordId = _validUuid(clientRecordId, 'clientRecordId'),
        ownerKey = _validOwnerKey(ownerKey);
@@ -39,6 +40,7 @@ sealed class GroupOfflineOperation {
     );
     final common = _OperationCommon.fromJson(json);
     final payload = _requiredMap(json, 'payload');
+    final syncPayload = _optionalMap(json, 'sync_payload');
 
     final operation = switch (type) {
       GroupOfflineOperationType.groupExpenseCreate =>
@@ -47,6 +49,7 @@ sealed class GroupOfflineOperation {
           ownerKey: common.ownerKey,
           syncState: common.syncState,
           expense: GroupExpense.fromJson(payload),
+          syncPayload: syncPayload,
         ),
       GroupOfflineOperationType.groupExpenseUpdate =>
         GroupExpenseOfflineOperation.update(
@@ -110,6 +113,7 @@ sealed class GroupOfflineOperation {
   final String clientRecordId;
   final String ownerKey;
   final SyncState syncState;
+  final Map<String, Object?>? syncPayload;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'operation_type': type.name,
@@ -118,6 +122,7 @@ sealed class GroupOfflineOperation {
     'owner_key': ownerKey,
     'sync_state': syncState.name,
     'payload': payloadToJson(),
+    if (syncPayload != null) 'sync_payload': _copyJsonMap(syncPayload!),
   };
 
   Map<String, Object?> payloadToJson();
@@ -135,7 +140,11 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
     required super.ownerKey,
     required super.syncState,
     required Map<String, Object?>? expenseSnapshot,
-  }) : assert(
+    Map<String, Object?>? syncPayload,
+  }) : _syncPayload = syncPayload == null
+           ? null
+           : _immutableJsonSnapshot(syncPayload),
+       assert(
          type == GroupOfflineOperationType.groupExpenseCreate ||
              type == GroupOfflineOperationType.groupExpenseUpdate ||
              type == GroupOfflineOperationType.groupExpenseDelete,
@@ -150,11 +159,18 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
            : _immutableJsonSnapshot(expenseSnapshot),
        expenseId = _validUuid(expenseId, 'expenseId');
 
+  final Map<String, Object?>? _syncPayload;
+
+  @override
+  Map<String, Object?>? get syncPayload =>
+      _syncPayload == null ? null : _copyJsonMap(_syncPayload);
+
   factory GroupExpenseOfflineOperation.create({
     required GroupExpense expense,
     required String clientRecordId,
     required String ownerKey,
     SyncState syncState = SyncState.pending,
+    Map<String, Object?>? syncPayload,
   }) => GroupExpenseOfflineOperation._(
     type: GroupOfflineOperationType.groupExpenseCreate,
     groupId: expense.groupId,
@@ -163,6 +179,7 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
     ownerKey: ownerKey,
     syncState: syncState,
     expenseSnapshot: expense.toJson(),
+    syncPayload: syncPayload,
   );
 
   factory GroupExpenseOfflineOperation.update({
@@ -227,6 +244,7 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
         ownerKey: ownerKey,
         syncState: syncState,
         expenseSnapshot: _expenseSnapshot,
+        syncPayload: _syncPayload,
       );
 }
 
@@ -487,6 +505,15 @@ Map<String, Object?> _requiredMap(Map<String, Object?> json, String field) {
   final value = json[field];
   if (value is! Map) {
     throw FormatException('Offline operation "$field" nesnesi eksik.');
+  }
+  return Map<String, Object?>.from(value);
+}
+
+Map<String, Object?>? _optionalMap(Map<String, Object?> json, String field) {
+  final value = json[field];
+  if (value == null) return null;
+  if (value is! Map) {
+    throw FormatException('Offline operation "$field" nesnesi geçersiz.');
   }
   return Map<String, Object?>.from(value);
 }

@@ -140,6 +140,7 @@ class GroupExpenseRepository:
         expense_id: uuid.UUID,
         *,
         include_deleted: bool = False,
+        for_update: bool = False,
     ) -> GroupExpense | None:
         statement = (
             select(GroupExpense)
@@ -154,6 +155,8 @@ class GroupExpenseRepository:
         )
         if not include_deleted:
             statement = statement.where(GroupExpense.deleted_at.is_(None))
+        if for_update:
+            statement = statement.with_for_update()
         return await self.session.scalar(statement)
 
     async def list_for_group(

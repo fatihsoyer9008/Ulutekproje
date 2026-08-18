@@ -9,14 +9,706 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_debt_summary_cache
 from app.core.database import Base, get_db_session
 from app.main import app
 from app.models.cloud_transaction import CloudTransaction
+from app.models.group import Group, GroupMember, GroupRole
+from app.models.group_expense import (
+    ExpenseShare,
+    ExpenseShareStatus,
+    ExpenseSplitType,
+    GroupExpense,
+)
+from app.models.group_sync_operation import GroupSyncOperation
+from app.models.settlement import Settlement
 from app.models.sync_claim_request import SyncClaimRequest
 from app.models.user import User
 
 INSTALLATION_ID = "installation-sync-test-1234"
+
+
+class _FakeDebtSummaryCache:
+    async def invalidate(self, group_id: uuid.UUID) -> None:
+        del group_id
+
+    async def invalidate_best_effort(self, group_id: uuid.UUID) -> bool:
+        del group_id
+        return True
+
+
+@pytest.mark.asyncio
+async def test_group_sync_push_creates_expense_and_replays_idempotently(
+    sync_context,
+) -> None:
+    client, session_factory, _, first_user, second_user = sync_context
+    async with session_factory() as session:
+        group = Group(name="Sync Group", currency="TRY", created_by=first_user.id)
+        session.add(group)
+        await session.flush()
+        session.add_all(
+            [
+                GroupMember(
+                    group_id=group.id, user_id=first_user.id, role=GroupRole.owner
+                ),
+                GroupMember(
+                    group_id=group.id, user_id=second_user.id, role=GroupRole.member
+                ),
+            ]
+        )
+        await session.commit()
+
+    record_id = uuid.uuid4()
+    envelope = {
+        "operation_type": "groupExpenseCreate",
+        "group_id": str(group.id),
+        "client_record_id": str(record_id),
+        "owner_key": f"user:{first_user.id}",
+        "sync_state": "pending",
+        "payload": {"local_snapshot": True},
+        "sync_payload": {
+            "title": "Offline market",
+            "note": None,
+            "expense_date": "2026-08-17T12:00:00Z",
+            "total_amount_in_minor": 12000,
+            "currency": "TRY",
+            "receipt_id": None,
+            "payer_user_id": str(first_user.id),
+            "split": {
+                "type": "percentage",
+                "shares": [
+                    {"user_id": str(first_user.id), "percentage_basis_points": 3333},
+                    {"user_id": str(second_user.id), "percentage_basis_points": 6667},
+                ],
+            },
+        },
+    }
+    headers = {"Idempotency-Key": str(record_id)}
+
+    first = await client.post(
+        "/api/v1/sync/groups/push", json=envelope, headers=headers
+    )
+    replay = await client.post(
+        "/api/v1/sync/groups/push", json=envelope, headers=headers
+    )
+
+    assert first.status_code == 200
+    assert first.json() == {"operation_id": str(record_id), "status": "accepted"}
+    assert replay.status_code == 200
+    assert replay.json() == {"operation_id": str(record_id), "status": "duplicate"}
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    async with session_factory() as session:
+        stored_expense = await session.scalar(
+            select(GroupExpense).where(GroupExpense.group_id == group.id)
+        )
+        assert stored_expense is not None
+        shares = (
+            await session.scalars(
+                select(ExpenseShare).where(ExpenseShare.expense_id == stored_expense.id)
+            )
+        ).all()
+    assert {share.user_id: share.amount_in_minor for share in shares} == {
+        first_user.id: 4000,
+        second_user.id: 8000,
+    }
+
+
+@pytest.mark.asyncio
+async def test_group_sync_push_creates_settlement_and_replays_idempotently(
+    sync_context,
+) -> None:
+    client, session_factory, _, first_user, second_user = sync_context
+    async with session_factory() as session:
+        group = Group(name="Settlement Sync", currency="TRY", created_by=first_user.id)
+        session.add(group)
+        await session.flush()
+        session.add_all(
+            [
+                GroupMember(
+                    group_id=group.id, user_id=first_user.id, role=GroupRole.owner
+                ),
+                GroupMember(
+                    group_id=group.id, user_id=second_user.id, role=GroupRole.member
+                ),
+            ]
+        )
+        await session.commit()
+
+    record_id = uuid.uuid4()
+    envelope = {
+        "operation_type": "settlementCreate",
+        "group_id": str(group.id),
+        "client_record_id": str(record_id),
+        "owner_key": f"user:{first_user.id}",
+        "sync_state": "pending",
+        "payload": {
+            "from_user_id": str(first_user.id),
+            "to_user_id": str(second_user.id),
+            "amount_in_minor": 2500,
+            "currency": "TRY",
+            "settled_at": "2026-08-17T13:00:00Z",
+            "note": "Offline ödeme",
+        },
+    }
+    headers = {"Idempotency-Key": str(record_id)}
+
+    first = await client.post(
+        "/api/v1/sync/groups/push", json=envelope, headers=headers
+    )
+    replay = await client.post(
+        "/api/v1/sync/groups/push", json=envelope, headers=headers
+    )
+
+    assert first.json() == {"operation_id": str(record_id), "status": "accepted"}
+    assert replay.json() == {"operation_id": str(record_id), "status": "duplicate"}
+    async with session_factory() as session:
+        settlements = (await session.scalars(select(Settlement))).all()
+    assert len(settlements) == 1
+    assert settlements[0].amount_in_minor == 2500
+
+
+@pytest.mark.asyncio
+async def test_group_sync_push_rejects_foreign_owner_scope(sync_context) -> None:
+    client, _, _, first_user, _ = sync_context
+    record_id = uuid.uuid4()
+    response = await client.post(
+        "/api/v1/sync/groups/push",
+        headers={"Idempotency-Key": str(record_id)},
+        json={
+            "operation_type": "settlementCreate",
+            "group_id": str(uuid.uuid4()),
+            "client_record_id": str(record_id),
+            "owner_key": f"user:{uuid.uuid4()}",
+            "sync_state": "pending",
+            "payload": {},
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "owner_scope_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_group_sync_pushes_expense_share_crud_with_durable_idempotency(
+    sync_context,
+) -> None:
+    client, session_factory, _, first_user, second_user = sync_context
+    async with session_factory() as session:
+        group = Group(name="Share Sync", currency="TRY", created_by=first_user.id)
+        session.add(group)
+        await session.flush()
+        session.add_all(
+            [
+                GroupMember(
+                    group_id=group.id, user_id=first_user.id, role=GroupRole.owner
+                ),
+                GroupMember(
+                    group_id=group.id, user_id=second_user.id, role=GroupRole.member
+                ),
+            ]
+        )
+        expense = GroupExpense(
+            group_id=group.id,
+            payer_user_id=first_user.id,
+            created_by_id=first_user.id,
+            created_by=first_user.id,
+            title="Offline share",
+            expense_date=datetime.now(UTC),
+            total_amount_in_minor=1000,
+            currency="TRY",
+            split_type=ExpenseSplitType.fixed_amount,
+        )
+        session.add(expense)
+        await session.flush()
+        session.add(
+            ExpenseShare(
+                expense_id=expense.id,
+                user_id=first_user.id,
+                amount_in_minor=1000,
+            )
+        )
+        await session.commit()
+
+    async def push(
+        operation_type: str,
+        record_id: uuid.UUID,
+        payload: dict[str, object],
+    ) -> httpx.Response:
+        return await client.post(
+            "/api/v1/sync/groups/push",
+            headers={"Idempotency-Key": str(record_id)},
+            json={
+                "operation_type": operation_type,
+                "group_id": str(group.id),
+                "client_record_id": str(record_id),
+                "owner_key": f"user:{first_user.id}",
+                "sync_state": (
+                    "pendingDelete"
+                    if operation_type == "expenseShareDelete"
+                    else "pending"
+                ),
+                "payload": payload,
+            },
+        )
+
+    share_payload = {
+        "expense_id": str(expense.id),
+        "user_id": str(second_user.id),
+        "display_name": "Second User",
+        "amount_in_minor": 0,
+        "status": "open",
+        "settled_at": None,
+    }
+    create_id, update_id, delete_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    created = await push("expenseShareCreate", create_id, share_payload)
+    updated = await push("expenseShareUpdate", update_id, share_payload)
+    replay = await push("expenseShareUpdate", update_id, share_payload)
+    conflicting = await push(
+        "expenseShareUpdate", update_id, {**share_payload, "amount_in_minor": 1}
+    )
+    deleted = await push(
+        "expenseShareDelete",
+        delete_id,
+        {"expense_id": str(expense.id), "user_id": str(second_user.id)},
+    )
+
+    assert created.json()["status"] == "accepted"
+    assert updated.json()["status"] == "accepted"
+    assert replay.json()["status"] == "duplicate"
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert conflicting.status_code == 409
+    assert conflicting.json()["detail"]["code"] == "idempotency_conflict"
+    assert deleted.json()["status"] == "accepted"
+    async with session_factory() as session:
+        assert await session.get(ExpenseShare, (expense.id, second_user.id)) is None
+        receipts = (await session.scalars(select(GroupSyncOperation))).all()
+    assert len(receipts) == 3
+
+
+@pytest.mark.asyncio
+async def test_group_sync_expense_share_reports_financial_lock_conflict(
+    sync_context,
+) -> None:
+    client, session_factory, _, first_user, _ = sync_context
+    async with session_factory() as session:
+        group = Group(name="Locked Sync", currency="TRY", created_by=first_user.id)
+        session.add(group)
+        await session.flush()
+        session.add(
+            GroupMember(group_id=group.id, user_id=first_user.id, role=GroupRole.owner)
+        )
+        expense = GroupExpense(
+            group_id=group.id,
+            payer_user_id=first_user.id,
+            created_by_id=first_user.id,
+            created_by=first_user.id,
+            title="Locked",
+            expense_date=datetime.now(UTC),
+            total_amount_in_minor=1000,
+            currency="TRY",
+            split_type=ExpenseSplitType.fixed_amount,
+        )
+        session.add(expense)
+        await session.flush()
+        session.add(
+            ExpenseShare(
+                expense_id=expense.id,
+                user_id=first_user.id,
+                amount_in_minor=1000,
+                status=ExpenseShareStatus.settled,
+                settled_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+    record_id = uuid.uuid4()
+    response = await client.post(
+        "/api/v1/sync/groups/push",
+        headers={"Idempotency-Key": str(record_id)},
+        json={
+            "operation_type": "expenseShareUpdate",
+            "group_id": str(group.id),
+            "client_record_id": str(record_id),
+            "owner_key": f"user:{first_user.id}",
+            "sync_state": "pending",
+            "payload": {
+                "expense_id": str(expense.id),
+                "user_id": str(first_user.id),
+                "amount_in_minor": 900,
+            },
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "expense_financially_locked"
+
+
+@pytest.mark.asyncio
+async def test_group_sync_pushes_expense_update_and_delete_idempotently(
+    sync_context,
+) -> None:
+    client, session_factory, _, first_user, second_user = sync_context
+    async with session_factory() as session:
+        group = Group(
+            name="Expense mutation sync",
+            currency="TRY",
+            created_by=first_user.id,
+        )
+        session.add(group)
+        await session.flush()
+        session.add_all(
+            [
+                GroupMember(
+                    group_id=group.id,
+                    user_id=first_user.id,
+                    role=GroupRole.owner,
+                ),
+                GroupMember(
+                    group_id=group.id,
+                    user_id=second_user.id,
+                    role=GroupRole.member,
+                ),
+            ]
+        )
+        expense = GroupExpense(
+            group_id=group.id,
+            payer_user_id=first_user.id,
+            created_by_id=first_user.id,
+            created_by=first_user.id,
+            title="Eski başlık",
+            expense_date=datetime(2026, 8, 17, 10, tzinfo=UTC),
+            total_amount_in_minor=1000,
+            currency="TRY",
+            split_type=ExpenseSplitType.fixed_amount,
+        )
+        expense.shares = [
+            ExpenseShare(user_id=first_user.id, amount_in_minor=500),
+            ExpenseShare(user_id=second_user.id, amount_in_minor=500),
+        ]
+        session.add(expense)
+        await session.commit()
+
+    async def push(
+        operation_type: str,
+        operation_id: uuid.UUID,
+        body: dict[str, object],
+    ) -> httpx.Response:
+        return await client.post(
+            "/api/v1/sync/groups/push",
+            headers={"Idempotency-Key": str(operation_id)},
+            json={
+                "operation_type": operation_type,
+                "group_id": str(group.id),
+                "client_record_id": str(operation_id),
+                "owner_key": f"user:{first_user.id}",
+                "sync_state": (
+                    "pendingDelete"
+                    if operation_type == "groupExpenseDelete"
+                    else "pending"
+                ),
+                "payload": body,
+            },
+        )
+
+    update_payload = {
+        "id": str(expense.id),
+        "group_id": str(group.id),
+        "receipt_id": None,
+        "payer_user_id": str(second_user.id),
+        "created_by": str(first_user.id),
+        "title": "Güncel başlık",
+        "note": "Offline düzeltme",
+        "expense_date": "2026-08-17T11:00:00Z",
+        "total_amount_in_minor": 1200,
+        "currency": "TRY",
+        "split_type": "fixed_amount",
+        "is_financially_locked": False,
+        "shares": [
+            {"user_id": str(first_user.id), "amount_in_minor": 400},
+            {"user_id": str(second_user.id), "amount_in_minor": 800},
+        ],
+        "line_item_assignments": [],
+        "extra_amounts": [],
+        "created_at": "2026-08-17T10:00:00Z",
+        "updated_at": "2026-08-17T11:00:00Z",
+        "deleted_at": None,
+    }
+    update_id = uuid.uuid4()
+    first_update = await push("groupExpenseUpdate", update_id, update_payload)
+    replayed_update = await push("groupExpenseUpdate", update_id, update_payload)
+    conflicting_replay = await push(
+        "groupExpenseUpdate",
+        update_id,
+        {**update_payload, "title": "Farklı tekrar"},
+    )
+
+    assert first_update.json()["status"] == "accepted"
+    assert replayed_update.json()["status"] == "duplicate"
+    assert replayed_update.headers["Idempotency-Replayed"] == "true"
+    assert conflicting_replay.status_code == 409
+    assert conflicting_replay.json()["detail"]["code"] == "idempotency_conflict"
+
+    delete_id = uuid.uuid4()
+    delete_payload = {
+        "group_id": str(group.id),
+        "expense_id": str(expense.id),
+    }
+    first_delete = await push("groupExpenseDelete", delete_id, delete_payload)
+    replayed_delete = await push("groupExpenseDelete", delete_id, delete_payload)
+    update_after_delete = await push(
+        "groupExpenseUpdate",
+        uuid.uuid4(),
+        update_payload,
+    )
+
+    assert first_delete.json()["status"] == "accepted"
+    assert replayed_delete.json()["status"] == "duplicate"
+    assert update_after_delete.status_code == 409
+    assert update_after_delete.json()["detail"]["code"] == "record_soft_deleted"
+
+    async with session_factory() as session:
+        stored = await session.get(GroupExpense, expense.id)
+        assert stored is not None
+        assert stored.title == "Güncel başlık"
+        assert stored.payer_user_id == second_user.id
+        assert stored.total_amount_in_minor == 1200
+        assert stored.deleted_at is not None
+        shares = (
+            await session.scalars(
+                select(ExpenseShare).where(ExpenseShare.expense_id == expense.id)
+            )
+        ).all()
+        receipts = (await session.scalars(select(GroupSyncOperation))).all()
+    assert {share.user_id: share.amount_in_minor for share in shares} == {
+        first_user.id: 400,
+        second_user.id: 800,
+    }
+    assert len(receipts) == 2
+
+
+@pytest.mark.asyncio
+async def test_group_sync_expense_mutations_enforce_settlement_lock(
+    sync_context,
+) -> None:
+    client, session_factory, _, first_user, second_user = sync_context
+    async with session_factory() as session:
+        group = Group(
+            name="Locked expense mutation",
+            currency="TRY",
+            created_by=first_user.id,
+        )
+        session.add(group)
+        await session.flush()
+        session.add_all(
+            [
+                GroupMember(
+                    group_id=group.id,
+                    user_id=first_user.id,
+                    role=GroupRole.owner,
+                ),
+                GroupMember(
+                    group_id=group.id,
+                    user_id=second_user.id,
+                    role=GroupRole.member,
+                ),
+            ]
+        )
+        expense = GroupExpense(
+            group_id=group.id,
+            payer_user_id=first_user.id,
+            created_by_id=first_user.id,
+            created_by=first_user.id,
+            title="Kilitli masraf",
+            expense_date=datetime(2026, 8, 17, 10, tzinfo=UTC),
+            total_amount_in_minor=1000,
+            currency="TRY",
+            split_type=ExpenseSplitType.fixed_amount,
+        )
+        expense.shares = [
+            ExpenseShare(user_id=first_user.id, amount_in_minor=500),
+            ExpenseShare(user_id=second_user.id, amount_in_minor=500),
+        ]
+        session.add(expense)
+        await session.flush()
+        session.add(
+            Settlement(
+                group_id=group.id,
+                from_user_id=second_user.id,
+                to_user_id=first_user.id,
+                amount_in_minor=100,
+                currency="TRY",
+                settled_at=datetime(2026, 8, 17, 12, tzinfo=UTC),
+            )
+        )
+        await session.commit()
+
+    base_payload = {
+        "id": str(expense.id),
+        "group_id": str(group.id),
+        "receipt_id": None,
+        "payer_user_id": str(first_user.id),
+        "title": "Kilitli masraf",
+        "note": None,
+        "expense_date": "2026-08-17T10:00:00Z",
+        "total_amount_in_minor": 1000,
+        "currency": "TRY",
+        "split_type": "fixed_amount",
+        "shares": [
+            {"user_id": str(first_user.id), "amount_in_minor": 500},
+            {"user_id": str(second_user.id), "amount_in_minor": 500},
+        ],
+    }
+
+    async def push(operation_type: str, body: dict[str, object]) -> httpx.Response:
+        operation_id = uuid.uuid4()
+        return await client.post(
+            "/api/v1/sync/groups/push",
+            headers={"Idempotency-Key": str(operation_id)},
+            json={
+                "operation_type": operation_type,
+                "group_id": str(group.id),
+                "client_record_id": str(operation_id),
+                "owner_key": f"user:{first_user.id}",
+                "sync_state": (
+                    "pendingDelete"
+                    if operation_type == "groupExpenseDelete"
+                    else "pending"
+                ),
+                "payload": body,
+            },
+        )
+
+    metadata_update = await push(
+        "groupExpenseUpdate",
+        {**base_payload, "title": "Kilitliyken açıklama düzeltildi"},
+    )
+    financial_update = await push(
+        "groupExpenseUpdate",
+        {
+            **base_payload,
+            "total_amount_in_minor": 1200,
+            "shares": [
+                {"user_id": str(first_user.id), "amount_in_minor": 600},
+                {"user_id": str(second_user.id), "amount_in_minor": 600},
+            ],
+        },
+    )
+    delete = await push(
+        "groupExpenseDelete",
+        {"group_id": str(group.id), "expense_id": str(expense.id)},
+    )
+
+    assert metadata_update.json()["status"] == "accepted"
+    assert financial_update.status_code == 409
+    assert financial_update.json()["detail"]["code"] == "expense_financially_locked"
+    assert delete.status_code == 409
+    assert delete.json()["detail"]["code"] == "expense_financially_locked"
+
+
+@pytest.mark.asyncio
+async def test_group_sync_expense_mutations_enforce_rbac_and_expected_version(
+    sync_context,
+) -> None:
+    client, session_factory, current_user, first_user, second_user = sync_context
+    async with session_factory() as session:
+        group = Group(
+            name="Expense mutation RBAC",
+            currency="TRY",
+            created_by=first_user.id,
+        )
+        session.add(group)
+        await session.flush()
+        session.add_all(
+            [
+                GroupMember(
+                    group_id=group.id,
+                    user_id=first_user.id,
+                    role=GroupRole.owner,
+                ),
+                GroupMember(
+                    group_id=group.id,
+                    user_id=second_user.id,
+                    role=GroupRole.member,
+                ),
+            ]
+        )
+        expense = GroupExpense(
+            group_id=group.id,
+            payer_user_id=first_user.id,
+            created_by_id=first_user.id,
+            created_by=first_user.id,
+            title="Yetki kontrollü masraf",
+            expense_date=datetime(2026, 8, 17, 10, tzinfo=UTC),
+            total_amount_in_minor=1000,
+            currency="TRY",
+            split_type=ExpenseSplitType.fixed_amount,
+        )
+        expense.shares = [
+            ExpenseShare(user_id=first_user.id, amount_in_minor=500),
+            ExpenseShare(user_id=second_user.id, amount_in_minor=500),
+        ]
+        session.add(expense)
+        await session.commit()
+
+    update_payload = {
+        "id": str(expense.id),
+        "group_id": str(group.id),
+        "payer_user_id": str(first_user.id),
+        "title": "Yetkisiz değişiklik",
+        "expense_date": "2026-08-17T10:00:00Z",
+        "total_amount_in_minor": 1000,
+        "currency": "TRY",
+        "split_type": "fixed_amount",
+        "shares": [
+            {"user_id": str(first_user.id), "amount_in_minor": 500},
+            {"user_id": str(second_user.id), "amount_in_minor": 500},
+        ],
+    }
+
+    async def push(
+        *,
+        operation_type: str,
+        actor: User,
+        body: dict[str, object],
+    ) -> httpx.Response:
+        current_user["value"] = actor
+        operation_id = uuid.uuid4()
+        return await client.post(
+            "/api/v1/sync/groups/push",
+            headers={"Idempotency-Key": str(operation_id)},
+            json={
+                "operation_type": operation_type,
+                "group_id": str(group.id),
+                "client_record_id": str(operation_id),
+                "owner_key": f"user:{actor.id}",
+                "sync_state": (
+                    "pendingDelete"
+                    if operation_type == "groupExpenseDelete"
+                    else "pending"
+                ),
+                "payload": body,
+            },
+        )
+
+    forbidden = await push(
+        operation_type="groupExpenseUpdate",
+        actor=second_user,
+        body=update_payload,
+    )
+    stale = await push(
+        operation_type="groupExpenseDelete",
+        actor=first_user,
+        body={
+            "group_id": str(group.id),
+            "expense_id": str(expense.id),
+            "expected_updated_at": "2020-01-01T00:00:00Z",
+        },
+    )
+
+    assert forbidden.status_code == 403
+    assert forbidden.json()["detail"]["code"] == "group_forbidden"
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "version_mismatch"
 
 
 def transaction_payload(
@@ -72,8 +764,12 @@ async def sync_context():
     async def override_current_user() -> User:
         return current_user["value"]
 
+    async def override_debt_cache() -> _FakeDebtSummaryCache:
+        return _FakeDebtSummaryCache()
+
     app.dependency_overrides[get_db_session] = override_db
     app.dependency_overrides[get_current_user] = override_current_user
+    app.dependency_overrides[get_debt_summary_cache] = override_debt_cache
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
