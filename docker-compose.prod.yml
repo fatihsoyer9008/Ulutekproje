@@ -92,6 +92,9 @@ services:
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY must be set}
       N8N_SECURE_COOKIE: "true"
       GENERIC_TIMEZONE: Europe/Istanbul
+      # Code nodes are sandboxed and block Node built-ins by default; the
+      # HMAC signing step in the receipt-parsing workflow needs `crypto`.
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
     ports:
       - "127.0.0.1:5678:5678"
     volumes:
