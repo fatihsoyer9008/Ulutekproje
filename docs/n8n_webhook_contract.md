@@ -173,10 +173,25 @@ fiş değil), event hiç gönderilmemeli; gönderilirse backend `422`
 }
 ```
 
-Oluşturulan fiş, kullanıcının kişisel `GET /api/v1/sync/pull` akışında
-`cloud_receipts` alanı altında döner (grup masrafı itemization akışının
-oluşturduğu fişler, PRD gereği kişisel/grup ayrımını korumak için bu
-listeye **dahil edilmez** — bkz. `app/repositories/cloud_receipts.py`).
+Oluşturulan fiş **`status=draft`** ile kaydedilir — kullanıcı onayı olmadan
+kesinleşmiş sayılmaz ve bu yüzden `GET /api/v1/sync/pull`'un `cloud_receipts`
+alanına (o kanal yalnızca `status=approved` kayıtları döndürür) **dahil
+edilmez**. Bunun yerine kullanıcının kişisel onay kuyruğunda görünür:
+
+- `GET /api/v1/receipts/pending` — mevcut kullanıcının `draft` durumundaki
+  fişlerini listeler (grup itemization akışının oluşturduğu fişler burada da
+  hariç tutulur).
+- `POST /api/v1/receipts/{receipt_id}/approve` — gövdede (hepsi opsiyonel)
+  `merchant_name`, `total_amount_in_minor`, `currency`, `receipt_date`,
+  `category` override'ları kabul eder, uygular ve `status=approved` yapar.
+  Kayıt draft değilse veya başka bir kullanıcıya aitse `404` döner.
+- `POST /api/v1/receipts/{receipt_id}/reject` — `status=rejected` yapar,
+  aynı `404` kuralları geçerlidir.
+
+Onaylanan fiş `approved` durumuna geçtiği andan itibaren `sync/pull`
+akışında görünür hale gelir. Grup masrafı itemization akışının oluşturduğu
+fişler PRD gereği kişisel/grup ayrımını korumak için bu listeye hiçbir
+zaman **dahil edilmez** — bkz. `app/repositories/cloud_receipts.py`.
 
 ## Backend uygulama notları
 

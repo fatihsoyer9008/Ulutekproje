@@ -19,7 +19,7 @@ from app.core.n8n_webhook_security import (
 )
 from app.core.rate_limit import RateLimiter, RateLimitRule
 from app.core.security import privacy_hash
-from app.models.cloud_receipt import CloudReceipt
+from app.models.cloud_receipt import CloudReceipt, CloudReceiptStatus
 from app.models.n8n_webhook_event import N8nWebhookEvent
 from app.models.user import UserStatus
 from app.n8n_webhook_schemas import N8nWebhookEnvelope, ReceiptParsedEventData
@@ -97,6 +97,7 @@ async def _create_receipt_from_email_event(
         category=payload.category,
         normalized_ocr_text=payload.normalized_ocr_text,
         is_parse_successful=True,
+        status=CloudReceiptStatus.draft,
         client_created_at=envelope.occurred_at,
         client_updated_at=envelope.occurred_at,
     )

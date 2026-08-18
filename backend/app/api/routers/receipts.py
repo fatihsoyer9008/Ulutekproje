@@ -1,4 +1,5 @@
 import logging
+import uuid
 from time import perf_counter
 from typing import Annotated
 
@@ -12,13 +13,18 @@ from fastapi import (
     UploadFile,
     status,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_rate_limiter, request_ip
+from app.api.dependencies import get_current_user, get_rate_limiter, request_ip
+from app.cloud_receipt_schemas import ApproveReceiptRequest, PendingReceiptOut
 from app.core.config import settings
+from app.core.database import get_db_session
 from app.core.rate_limit import RateLimiter
 from app.core.receipt_image_security import read_validated_receipt_image
 from app.core.receipt_rate_limits import enforce_receipt_rate_limits
+from app.models.user import User
 from app.schemas import ReceiptParserRequest, ReceiptParserResponse
+from app.services.cloud_receipt_service import CloudReceiptService
 from app.services.receipt_parser import (
     DummyReceiptParserService,
     GeminiReceiptParserService,
@@ -160,3 +166,50 @@ async def parse_receipt_image(
             model_name,
             outcome,
         )
+
+
+def _receipt_not_found() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Onay bekleyen fiş bulunamadı.",
+    )
+
+
+@router.get("/receipts/pending", response_model=list[PendingReceiptOut])
+async def list_pending_receipts(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[PendingReceiptOut]:
+    receipts = await CloudReceiptService(db).list_pending(user_id=user.id)
+    return [PendingReceiptOut.model_validate(r, from_attributes=True) for r in receipts]
+
+
+@router.post("/receipts/{receipt_id}/approve", response_model=PendingReceiptOut)
+async def approve_pending_receipt(
+    receipt_id: uuid.UUID,
+    payload: ApproveReceiptRequest | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> PendingReceiptOut:
+    receipt = await CloudReceiptService(db).approve(
+        user_id=user.id,
+        receipt_id=receipt_id,
+        overrides=payload or ApproveReceiptRequest(),
+    )
+    if receipt is None:
+        raise _receipt_not_found()
+    return PendingReceiptOut.model_validate(receipt, from_attributes=True)
+
+
+@router.post("/receipts/{receipt_id}/reject", response_model=PendingReceiptOut)
+async def reject_pending_receipt(
+    receipt_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> PendingReceiptOut:
+    receipt = await CloudReceiptService(db).reject(
+        user_id=user.id, receipt_id=receipt_id
+    )
+    if receipt is None:
+        raise _receipt_not_found()
+    return PendingReceiptOut.model_validate(receipt, from_attributes=True)

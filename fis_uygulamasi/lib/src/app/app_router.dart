@@ -32,6 +32,8 @@ import '../../features/groups/presentation/groups_page.dart';
 import '../../features/groups/presentation/group_detail_page.dart';
 import '../../features/groups/presentation/group_ocr_page.dart';
 import '../../features/groups/presentation/group_expense_conflicts_page.dart';
+import '../../features/pending_receipts/application/pending_receipts_controller.dart';
+import '../../features/pending_receipts/presentation/pending_receipts_page.dart';
 
 import 'finance_home.dart';
 
@@ -429,6 +431,9 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
         ? ref.watch(offlineQueueSummaryProvider).asData?.value
         : const OfflineQueueSummary();
     final pendingTaskCount = queueSummary?.pendingCount ?? 0;
+    final pendingReceiptCount = widget.enableDatabaseFeatures
+        ? ref.watch(pendingReceiptCountProvider)
+        : 0;
     final displayName = auth.user?.displayName?.trim();
     final email = auth.user?.email.trim();
     final greetingName = displayName != null && displayName.isNotEmpty
@@ -460,6 +465,13 @@ class _FinanceDataHostState extends ConsumerState<_FinanceDataHost> {
           onGroupsPressed: () => context.push('/groups'),
           onGuestGroupsPressed: () => context.go(groupsLoginLocation()),
           pendingOfflineTaskCount: pendingTaskCount,
+          pendingReceiptCount: pendingReceiptCount,
+          onPendingReceiptsPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  PendingReceiptsPage(saveTransaction: widget.saveTransaction),
+            ),
+          ),
           enableAccountMenu: true,
           enablePersistentSavings: widget.enableDatabaseFeatures,
           aiAssistantMessageStream: widget.aiAssistantMessageStream,

@@ -28,6 +28,8 @@ class FinanceHome extends StatefulWidget {
     this.onGroupsPressed,
     this.onGuestGroupsPressed,
     this.pendingOfflineTaskCount = 0,
+    this.pendingReceiptCount = 0,
+    this.onPendingReceiptsPressed,
     this.enableAccountMenu = false,
     this.enablePersistentSavings = false,
     this.aiAssistantMessageStream,
@@ -45,6 +47,8 @@ class FinanceHome extends StatefulWidget {
   final VoidCallback? onGroupsPressed;
   final VoidCallback? onGuestGroupsPressed;
   final int pendingOfflineTaskCount;
+  final int pendingReceiptCount;
+  final VoidCallback? onPendingReceiptsPressed;
   final bool enableAccountMenu;
   final bool enablePersistentSavings;
   final AiAssistantMessageStream? aiAssistantMessageStream;
@@ -97,6 +101,8 @@ class _FinanceHomeState extends State<FinanceHome> {
 
         parseReceiptImage: widget.parseReceiptImage,
         onAiAssistantPressed: _showAiAssistant,
+        pendingReceiptCount: widget.pendingReceiptCount,
+        onPendingReceiptsPressed: widget.onPendingReceiptsPressed,
       ),
       StatisticsScreen(
         controller: _statisticsController,

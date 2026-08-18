@@ -15,6 +15,8 @@ class DashboardScreen extends StatelessWidget {
     this.parseReceipt,
     this.parseReceiptImage,
     this.onAiAssistantPressed,
+    this.pendingReceiptCount = 0,
+    this.onPendingReceiptsPressed,
     super.key,
   });
 
@@ -26,6 +28,10 @@ class DashboardScreen extends StatelessWidget {
   final ReceiptImageParseHandler? parseReceiptImage;
 
   final VoidCallback? onAiAssistantPressed;
+
+  /// n8n'in e-postadan çıkarıp henüz onaylanmamış fiş sayısı.
+  final int pendingReceiptCount;
+  final VoidCallback? onPendingReceiptsPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +47,13 @@ class DashboardScreen extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         _BalanceCard(transactions: transactions),
+        if (pendingReceiptCount > 0) ...[
+          const SizedBox(height: 16),
+          _PendingReceiptsBanner(
+            count: pendingReceiptCount,
+            onTap: onPendingReceiptsPressed,
+          ),
+        ],
         const SizedBox(height: 16),
         Row(
           children: [
@@ -237,5 +250,39 @@ class _BalanceCard extends StatelessWidget {
       symbol: '₺',
       decimalDigits: 2,
     ).format(amountInMinor / 100);
+  }
+}
+
+class _PendingReceiptsBanner extends StatelessWidget {
+  const _PendingReceiptsBanner({required this.count, this.onTap});
+
+  final int count;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AppCard(
+      onTap: onTap,
+      color: scheme.tertiaryContainer,
+      child: Row(
+        children: [
+          Icon(
+            Icons.mark_email_unread_outlined,
+            color: scheme.onTertiaryContainer,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              count == 1
+                  ? 'E-postadan 1 yeni fatura bulundu. İncelemek ister misin?'
+                  : 'E-postadan $count yeni fatura bulundu. İncelemek ister misin?',
+              style: TextStyle(color: scheme.onTertiaryContainer),
+            ),
+          ),
+          Icon(Icons.chevron_right, color: scheme.onTertiaryContainer),
+        ],
+      ),
+    );
   }
 }
