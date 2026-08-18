@@ -4,6 +4,8 @@ export 'src/backup/transaction_json_backup.dart';
 export 'src/backup/transaction_csv_backup.dart';
 export 'src/models/offline_task.dart';
 export 'src/models/group_expense_entity.dart';
+export 'src/models/expense_share_entity.dart';
+export 'src/models/group_settlement_entity.dart';
 export 'src/models/category_entity.dart';
 export 'src/models/receipt_entity.dart';
 export 'src/models/receipt_line_item_entity.dart';

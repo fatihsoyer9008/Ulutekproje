@@ -64,25 +64,41 @@ class IsarGroupSyncTaskRepository implements GroupSyncTaskRepository {
     var applied = 0;
     for (final change in changes) {
       final operation = GroupOfflineOperation.fromJson(change.operation);
-      // ExpenseShare ve Settlement için ayrı yerel persistence modelleri henüz
-      // bulunmadığından yalnız GroupExpense snapshot/tombstone uygulanır.
-      if (operation is! GroupExpenseOfflineOperation) {
-        continue;
-      }
-      if (operation.type == GroupOfflineOperationType.groupExpenseDelete) {
-        if (await repository.applyPulledTombstone(
-          expenseId: operation.expenseId,
-          groupId: operation.groupId,
-          ownerKey: operation.ownerKey,
-          deletedAt: change.serverUpdatedAt,
-        )) {
-          applied += 1;
-        }
-        continue;
-      }
-      final entity = operation.toGroupExpenseEntity()
-        ..syncState = SyncState.synced;
-      if (await repository.saveSyncedFromPull(entity)) applied += 1;
+      final wasApplied = switch (operation) {
+        GroupExpenseOfflineOperation operation =>
+          operation.type == GroupOfflineOperationType.groupExpenseDelete
+              ? await repository.applyPulledTombstone(
+                  expenseId: operation.expenseId,
+                  groupId: operation.groupId,
+                  ownerKey: operation.ownerKey,
+                  deletedAt: change.serverUpdatedAt,
+                )
+              : await repository.saveSyncedFromPull(
+                  operation.toGroupExpenseEntity()
+                    ..syncState = SyncState.synced,
+                ),
+        ExpenseShareOfflineOperation operation =>
+          operation.type == GroupOfflineOperationType.expenseShareDelete
+              ? await repository.applyExpenseShareTombstoneFromPull(
+                  expenseId: operation.expenseId,
+                  userId: operation.userId,
+                  groupId: operation.groupId,
+                  ownerKey: operation.ownerKey,
+                  deletedAt: change.serverUpdatedAt,
+                )
+              : await repository.saveExpenseShareFromPull(
+                  operation.toExpenseShareEntity(
+                    serverUpdatedAt: change.serverUpdatedAt,
+                  ),
+                ),
+        SettlementOfflineOperation operation =>
+          await repository.saveSettlementFromPull(
+            operation.toGroupSettlementEntity(
+              serverUpdatedAt: change.serverUpdatedAt,
+            ),
+          ),
+      };
+      if (wasApplied) applied += 1;
     }
     return applied;
   }

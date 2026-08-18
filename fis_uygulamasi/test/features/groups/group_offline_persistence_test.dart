@@ -37,7 +37,12 @@ void main() {
       'group_offline_persistence_test_',
     );
     isar = await Isar.open(
-      [GroupExpenseEntitySchema, OfflineTaskSchema],
+      [
+        GroupExpenseEntitySchema,
+        ExpenseShareEntitySchema,
+        GroupSettlementEntitySchema,
+        OfflineTaskSchema,
+      ],
       directory: tempDirectory.path,
       name: 'group_offline_persistence_test',
     );
@@ -403,6 +408,70 @@ void main() {
       expect(stored?.expenseId, fastSplitTransferExpense.id);
     },
   );
+
+  test(
+    'ExpenseShare ve Settlement pull snapshotları kalıcı ve idempotenttir',
+    () async {
+      final syncRepository = IsarGroupSyncTaskRepository(
+        GroupExpenseOfflineRepository(isar),
+        groupOperationOwnerKey,
+      );
+      final changes = <GroupPullChange>[
+        GroupPullChange(
+          cursor: '1',
+          operation: expenseShareCreateOperation
+              .withSyncState(SyncState.synced)
+              .toJson(),
+          serverUpdatedAt: DateTime.utc(2026, 8, 18, 10),
+        ),
+        GroupPullChange(
+          cursor: '2',
+          operation: settlementCreateOperation
+              .withSyncState(SyncState.synced)
+              .toJson(),
+          serverUpdatedAt: DateTime.utc(2026, 8, 18, 11),
+        ),
+      ];
+
+      expect(await syncRepository.applyPulledChanges(changes), 2);
+      expect(await syncRepository.applyPulledChanges(changes), 0);
+      expect(await isar.expenseShareEntitys.count(), 1);
+      expect(await isar.groupSettlementEntitys.count(), 1);
+      expect(
+        (await isar.expenseShareEntitys.where().findFirst())?.displayName,
+        fastSplitTransferExpense.shares.first.displayName,
+      );
+      expect(
+        (await isar.groupSettlementEntitys.where().findFirst())?.settlementId,
+        sampleSettlement.id,
+      );
+    },
+  );
+
+  test('ExpenseShare delete pull değişikliği tombstone saklar', () async {
+    final syncRepository = IsarGroupSyncTaskRepository(
+      GroupExpenseOfflineRepository(isar),
+      groupOperationOwnerKey,
+    );
+    final deletedAt = DateTime.utc(2026, 8, 18, 12);
+
+    final applied = await syncRepository.applyPulledChanges(<GroupPullChange>[
+      GroupPullChange(
+        cursor: '3',
+        operation: expenseShareDeleteOperation
+            .withSyncState(SyncState.synced)
+            .toJson(),
+        serverUpdatedAt: deletedAt,
+      ),
+    ]);
+
+    final stored = await isar.expenseShareEntitys.where().findFirst();
+    expect(applied, 1);
+    expect(stored?.expenseId, fastSplitTransferExpense.id);
+    expect(stored?.userId, secondUserId);
+    expect(stored?.deletedAt?.toUtc(), deletedAt);
+    expect(stored?.payloadJson, isNull);
+  });
 }
 
 GroupExpenseDraft _draft() => GroupExpenseDraft(

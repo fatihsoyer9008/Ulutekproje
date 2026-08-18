@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:isar/isar.dart';
 
+import '../models/expense_share_entity.dart';
 import '../models/group_expense_entity.dart';
+import '../models/group_settlement_entity.dart';
 import '../models/offline_task.dart';
 import '../models/transaction_entity.dart';
 
@@ -122,6 +124,126 @@ class GroupExpenseOfflineRepository {
       .deletedAtIsNull()
       .sortByExpenseDateDesc()
       .watch(fireImmediately: true);
+
+  /// Pull ile gelen ExpenseShare snapshot'ını idempotent biçimde saklar.
+  /// Daha yeni bir snapshot veya tombstone eski pull verisiyle ezilmez.
+  Future<bool> saveExpenseShareFromPull(ExpenseShareEntity share) {
+    _validatePulledShare(share);
+    return _isar.writeTxn(() async {
+      final existing = await _isar.expenseShareEntitys.getByRecordKey(
+        share.recordKey,
+      );
+      if (existing != null) {
+        if (existing.serverUpdatedAt.toUtc().isAfter(
+          share.serverUpdatedAt.toUtc(),
+        )) {
+          return false;
+        }
+        if (_sameShareSnapshot(existing, share)) return false;
+        share.id = existing.id;
+      }
+      await _isar.expenseShareEntitys.put(share);
+      return true;
+    });
+  }
+
+  /// Pull ile gelen ExpenseShare silmesini kayıt yoksa bile tombstone olarak
+  /// saklar. Böylece daha eski create/update snapshot'ları diriltilemez.
+  Future<bool> applyExpenseShareTombstoneFromPull({
+    required String expenseId,
+    required String userId,
+    required String groupId,
+    required String ownerKey,
+    required DateTime deletedAt,
+  }) {
+    _requirePulledOwner(ownerKey);
+    final tombstoneAt = deletedAt.toUtc();
+    final recordKey = _expenseShareRecordKey(ownerKey, expenseId, userId);
+    return _isar.writeTxn(() async {
+      final existing = await _isar.expenseShareEntitys.getByRecordKey(
+        recordKey,
+      );
+      if (existing != null) {
+        if (existing.groupId != groupId ||
+            existing.expenseId != expenseId ||
+            existing.userId != userId ||
+            existing.ownerKey != ownerKey) {
+          throw StateError('ExpenseShare tombstone kapsamı eşleşmiyor.');
+        }
+        if (existing.serverUpdatedAt.toUtc().isAfter(tombstoneAt) ||
+            (_sameInstant(existing.serverUpdatedAt, tombstoneAt) &&
+                existing.deletedAt != null)) {
+          return false;
+        }
+        existing
+          ..serverUpdatedAt = tombstoneAt
+          ..deletedAt = tombstoneAt;
+        await _isar.expenseShareEntitys.put(existing);
+        return true;
+      }
+
+      await _isar.expenseShareEntitys.put(
+        ExpenseShareEntity()
+          ..recordKey = recordKey
+          ..expenseId = expenseId
+          ..userId = userId
+          ..groupId = groupId
+          ..ownerKey = ownerKey
+          ..serverUpdatedAt = tombstoneAt
+          ..deletedAt = tombstoneAt,
+      );
+      return true;
+    });
+  }
+
+  Future<ExpenseShareEntity?> getExpenseShare({
+    required String expenseId,
+    required String userId,
+    required String ownerKey,
+  }) => _isar.expenseShareEntitys.getByRecordKey(
+    _expenseShareRecordKey(ownerKey, expenseId, userId),
+  );
+
+  Future<List<ExpenseShareEntity>> getActiveExpenseShares({
+    required String expenseId,
+    required String ownerKey,
+  }) => _isar.expenseShareEntitys
+      .filter()
+      .expenseIdEqualTo(expenseId)
+      .ownerKeyEqualTo(ownerKey)
+      .deletedAtIsNull()
+      .findAll();
+
+  /// Immutable settlement snapshot'ını kullanıcı kapsamında idempotent saklar.
+  Future<bool> saveSettlementFromPull(GroupSettlementEntity settlement) {
+    _validatePulledSettlement(settlement);
+    return _isar.writeTxn(() async {
+      final existing = await _isar.groupSettlementEntitys.getByRecordKey(
+        settlement.recordKey,
+      );
+      if (existing != null) {
+        if (existing.serverUpdatedAt.toUtc().isAfter(
+          settlement.serverUpdatedAt.toUtc(),
+        )) {
+          return false;
+        }
+        if (_sameSettlementSnapshot(existing, settlement)) return false;
+        settlement.id = existing.id;
+      }
+      await _isar.groupSettlementEntitys.put(settlement);
+      return true;
+    });
+  }
+
+  Future<List<GroupSettlementEntity>> getSettlementsByGroup({
+    required String groupId,
+    required String ownerKey,
+  }) => _isar.groupSettlementEntitys
+      .filter()
+      .groupIdEqualTo(groupId)
+      .ownerKeyEqualTo(ownerKey)
+      .sortByCreatedAtDesc()
+      .findAll();
 
   /// Yalnız grup operasyonlarını oluşturulma sırasıyla döndürür.
   Future<List<OfflineTask>> getPendingSyncTasks({
@@ -401,8 +523,10 @@ class GroupExpenseOfflineRepository {
       final existingByClientRecordId = await _isar.groupExpenseEntitys
           .getByClientRecordId(expense.clientRecordId);
       final existingRecords = <GroupExpenseEntity>{
-        ?existingByExpenseId,
-        ?existingByClientRecordId,
+        // ignore: use_null_aware_elements, analyzer sürümü Isar generator'dan yeni
+        if (existingByExpenseId != null) existingByExpenseId,
+        // ignore: use_null_aware_elements, analyzer sürümü Isar generator'dan yeni
+        if (existingByClientRecordId != null) existingByClientRecordId,
       };
       if (existingRecords.any(
         (existing) => existing.syncState != SyncState.synced,
@@ -588,4 +712,80 @@ class GroupExpenseOfflineRepository {
       ..['updated_at'] = timestamp;
     return jsonEncode(payload);
   }
+
+  void _validatePulledShare(ExpenseShareEntity share) {
+    _requirePulledOwner(share.ownerKey);
+    if (share.recordKey !=
+            _expenseShareRecordKey(
+              share.ownerKey,
+              share.expenseId,
+              share.userId,
+            ) ||
+        share.deletedAt != null ||
+        share.payloadJson == null ||
+        share.displayName == null ||
+        share.amountInMinor == null ||
+        share.status == null) {
+      throw StateError('Geçersiz ExpenseShare pull snapshotı.');
+    }
+  }
+
+  void _validatePulledSettlement(GroupSettlementEntity settlement) {
+    _requirePulledOwner(settlement.ownerKey);
+    if (settlement.recordKey !=
+        _settlementRecordKey(settlement.ownerKey, settlement.settlementId)) {
+      throw StateError('Geçersiz Settlement pull snapshotı.');
+    }
+  }
+
+  void _requirePulledOwner(String ownerKey) {
+    if (!ownerKey.startsWith('user:')) {
+      throw StateError('Pull snapshotı kayıtlı kullanıcıya ait olmalıdır.');
+    }
+  }
+
+  bool _sameShareSnapshot(ExpenseShareEntity left, ExpenseShareEntity right) =>
+      _sameInstant(left.serverUpdatedAt, right.serverUpdatedAt) &&
+      left.groupId == right.groupId &&
+      left.ownerKey == right.ownerKey &&
+      left.expenseId == right.expenseId &&
+      left.userId == right.userId &&
+      left.displayName == right.displayName &&
+      left.amountInMinor == right.amountInMinor &&
+      left.status == right.status &&
+      _sameNullableInstant(left.settledAt, right.settledAt) &&
+      left.payloadJson == right.payloadJson &&
+      _sameNullableInstant(left.deletedAt, right.deletedAt);
+
+  bool _sameSettlementSnapshot(
+    GroupSettlementEntity left,
+    GroupSettlementEntity right,
+  ) =>
+      _sameInstant(left.serverUpdatedAt, right.serverUpdatedAt) &&
+      left.groupId == right.groupId &&
+      left.ownerKey == right.ownerKey &&
+      left.settlementId == right.settlementId &&
+      left.fromUserId == right.fromUserId &&
+      left.toUserId == right.toUserId &&
+      left.amountInMinor == right.amountInMinor &&
+      left.currency == right.currency &&
+      _sameInstant(left.settledAt, right.settledAt) &&
+      left.note == right.note &&
+      _sameInstant(left.createdAt, right.createdAt) &&
+      left.payloadJson == right.payloadJson;
+
+  bool _sameInstant(DateTime left, DateTime right) =>
+      left.toUtc() == right.toUtc();
+
+  bool _sameNullableInstant(DateTime? left, DateTime? right) =>
+      left == null || right == null ? left == right : _sameInstant(left, right);
+
+  String _expenseShareRecordKey(
+    String ownerKey,
+    String expenseId,
+    String userId,
+  ) => '$ownerKey|$expenseId|$userId';
+
+  String _settlementRecordKey(String ownerKey, String settlementId) =>
+      '$ownerKey|$settlementId';
 }

@@ -24,6 +24,8 @@ void main() {
         CategoryEntitySchema,
         SavingsGoalEntitySchema,
         GroupExpenseEntitySchema,
+        ExpenseShareEntitySchema,
+        GroupSettlementEntitySchema,
       ],
       directory: tempDirectory.path,
       name: 'database_providers_test',
