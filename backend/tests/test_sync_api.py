@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.dependencies import get_current_user, get_debt_summary_cache
 from app.core.database import Base, get_db_session
 from app.main import app
+from app.models.cloud_receipt import CloudReceipt
 from app.models.cloud_transaction import CloudTransaction
 from app.models.group import Group, GroupMember, GroupRole
 from app.models.group_expense import (
@@ -1045,12 +1046,76 @@ async def test_pull_is_cursor_paginated_and_includes_tombstones(
         "transactions": [],
         "next_cursor": final_cursor,
         "has_more": False,
+        "cloud_receipts": [],
+        "cloud_receipts_next_cursor": None,
+        "cloud_receipts_has_more": False,
     }
 
     current_user["value"] = second_user
     isolated = await client.get("/api/v1/sync/pull")
     assert isolated.status_code == 200
     assert isolated.json()["transactions"] == []
+
+
+@pytest.mark.asyncio
+async def test_pull_includes_personal_receipts_but_excludes_group_linked_ones(
+    sync_context,
+) -> None:
+    client, session_factory, _, first_user, _ = sync_context
+    now = datetime(2026, 8, 18, 10, 0, tzinfo=UTC)
+    personal_receipt_id = uuid.uuid4()
+    group_receipt_id = uuid.uuid4()
+
+    async with session_factory() as session:
+        group = Group(name="Receipt Group", currency="TRY", created_by=first_user.id)
+        session.add(group)
+        await session.flush()
+
+        session.add_all(
+            [
+                CloudReceipt(
+                    id=personal_receipt_id,
+                    user_id=first_user.id,
+                    client_record_id=uuid.uuid4(),
+                    installation_id_hash="n8n-import-hash",
+                    merchant_name="Kişisel Market",
+                    total_amount_in_minor=1000,
+                    client_created_at=now,
+                    client_updated_at=now,
+                ),
+                CloudReceipt(
+                    id=group_receipt_id,
+                    user_id=first_user.id,
+                    client_record_id=uuid.uuid4(),
+                    installation_id_hash="group-ocr-hash",
+                    merchant_name="Grup Market",
+                    total_amount_in_minor=2000,
+                    client_created_at=now,
+                    client_updated_at=now,
+                ),
+            ]
+        )
+        await session.flush()
+        session.add(
+            GroupExpense(
+                group_id=group.id,
+                receipt_id=group_receipt_id,
+                payer_user_id=first_user.id,
+                created_by_id=first_user.id,
+                created_by=first_user.id,
+                title="Grup masrafı",
+                expense_date=now,
+                total_amount_in_minor=2000,
+                split_type=ExpenseSplitType.equal,
+            )
+        )
+        await session.commit()
+
+    response = await client.get("/api/v1/sync/pull")
+
+    assert response.status_code == 200
+    receipt_ids = {item["id"] for item in response.json()["cloud_receipts"]}
+    assert receipt_ids == {str(personal_receipt_id)}
 
 
 @pytest.mark.asyncio

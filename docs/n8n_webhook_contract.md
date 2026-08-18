@@ -136,6 +136,43 @@ dead-letter/alarm akışına yönlendirilmelidir.
   süre gibi güvenli metadata tutulur.
 - Ham webhook payload'ı veya HMAC secret loglanmaz.
 
+## Event-özel veri şemaları
+
+### `receipt.parsed`
+
+n8n'in bir e-postadan (dekont/fiş/borç belgesi) çıkardığı veriyi taşır.
+Belgenin kaynağı FişKon uygulaması değildir (fiziksel cihaz/OCR akışı
+yok) — bu yüzden kullanıcı `client_record_id`/`installation_id` yerine
+**e-posta adresiyle** eşleştirilir. Eşleşen aktif kullanıcı yoksa `422`
+`user_not_found` döner. Eşleşme başarılıysa yeni bir `CloudReceipt`
+kaydı **oluşturulur** (var olan bir kayıt aranmaz/güncellenmez);
+`client_record_id` olarak `event_id` kullanılır, böylece aynı olay tekrar
+gönderilse bile (Idempotency-Key katmanından bağımsız olarak) veritabanı
+seviyesinde de tekilliği garanti eder.
+
+```json
+{
+  "event_type": "receipt.parsed",
+  "event_id": "4a6d8f18-668c-4aea-895c-0681a818890a",
+  "occurred_at": "2026-08-17T12:30:00Z",
+  "schema_version": 1,
+  "data": {
+    "email": "kullanici@example.com",
+    "merchant_name": "Örnek Market",
+    "total_amount_in_minor": 12550,
+    "currency": "TRY",
+    "receipt_date": "2026-08-17T10:00:00Z",
+    "category": "market",
+    "normalized_ocr_text": null
+  }
+}
+```
+
+Oluşturulan fiş, kullanıcının kişisel `GET /api/v1/sync/pull` akışında
+`cloud_receipts` alanı altında döner (grup masrafı itemization akışının
+oluşturduğu fişler, PRD gereği kişisel/grup ayrımını korumak için bu
+listeye **dahil edilmez** — bkz. `app/repositories/cloud_receipts.py`).
+
 ## Backend uygulama notları
 
 Backend ekibi endpointi eklemeden önce bu sözleşmeyi onaylamalıdır. Uygulama:
