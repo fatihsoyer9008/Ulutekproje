@@ -11,6 +11,7 @@ import '../../features/savings/application/savings_goal_notifier.dart';
 import '../../features/savings/domain/savings_goal_insights.dart';
 import '../../features/savings/domain/savings_money.dart';
 import '../models/ui_models.dart';
+import '../../features/savings/presentation/savings_journey_screen.dart';
 
 class SavingsScreen extends StatelessWidget {
   const SavingsScreen({super.key, this.goals = const []}) : live = false;
@@ -186,10 +187,10 @@ class _GoalCard extends StatelessWidget {
   final _GoalView goal;
   final bool featured;
   final Future<void> Function(int id, int amountInMinor)? onUpdateAmount;
+  Future<int?> _showAddMoneySheet(BuildContext context) async {
+    if (goal.id == null || onUpdateAmount == null) return null;
 
-  Future<void> _showAddMoneySheet(BuildContext context) async {
-    if (goal.id == null || onUpdateAmount == null) return;
-    await showModalBottomSheet<void>(
+    return showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -200,6 +201,26 @@ class _GoalCard extends StatelessWidget {
         onSave: (amountInMinor) => onUpdateAmount!(
           goal.id!,
           goal.currentAmountInMinor + amountInMinor,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openJourney(BuildContext context) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => SavingsJourneyScreen(
+          goal: SavingsJourneyGoal(
+            title: goal.title,
+            currentAmountInMinor: goal.currentAmountInMinor,
+            targetAmountInMinor: goal.targetAmountInMinor,
+            icon: goal.icon,
+            color: goal.color,
+          ),
+
+          onAddMoney: onUpdateAmount == null || goal.id == null
+              ? null
+              : () => _showAddMoneySheet(context),
         ),
       ),
     );
@@ -333,6 +354,17 @@ class _GoalCard extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: ValueKey('open_savings_journey_${goal.id ?? goal.title}'),
+              onPressed: () => _openJourney(context),
+              icon: const Icon(Icons.route_rounded),
+              label: const Text('Hedef Yolculuğunu Gör'),
+            ),
           ),
           if (onUpdateAmount != null && goal.id != null) ...[
             const SizedBox(height: 14),
@@ -616,7 +648,7 @@ class _AddSavingsAmountSheetState extends State<_AddSavingsAmountSheet> {
     setState(() => _saving = true);
     try {
       await widget.onSave(_amountInMinor()!);
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) Navigator.of(context).pop(_amountInMinor());
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -997,6 +1029,7 @@ class _GoalView {
   final Color color;
 
   int get currentAmountInMinor => (current * 100).round();
+  int get targetAmountInMinor => (target * 100).round();
 
   double get progress => target <= 0 ? 0 : (current / target).clamp(0.0, 1.0);
 }
