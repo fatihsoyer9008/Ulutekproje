@@ -29,30 +29,40 @@ kullanılmıyor.
   aynı prensip, dışarıya asla doğrudan açık değil
   (`backend/tests/test_deployment_config.py::test_production_compose_binds_ports_to_loopback_only`
   bunu regression olarak kilitliyor).
-- Dışarıdan erişim yalnızca Caddy üzerinden, path-bazlı:
-  `https://116-202-14-23.sslip.io/n8n/` → `127.0.0.1:5678`. Caddy config
-  (`/etc/caddy/Caddyfile`, sunucuda, Git'e tabi değil — bkz.
+- Dışarıdan erişim **ayrı bir subdomain** üzerinden, path değil:
+  `https://n8n.116-202-14-23.sslip.io/` → `127.0.0.1:5678`. `sslip.io`
+  herhangi bir alt alan adını (`<herhangi-bir-şey>.<ip-tire-ile>.sslip.io`)
+  aynı IP'ye çözdüğü için ayrıca DNS ayarı gerekmedi.
+
+  **Neden path değil (`/n8n/`) subdomain kullanıldı:** İlk denemede
+  `N8N_PATH=/n8n/` ile path-bazlı hosting kuruldu, ama n8n'in editor UI'ı
+  kendi JS/CSS asset'lerini (`/n8n/assets/...`) doğru servis etmiyor —
+  bu path'e giden istekler `text/html` dönüyor (SPA fallback'e düşüyor),
+  tarayıcı "MIME type mismatch" hatasıyla script'leri yüklemeyi reddediyor,
+  editor boş sayfa açıyor. Bu, Caddy'yi bypass edip n8n'e doğrudan
+  `127.0.0.1:5678`'den istek atılarak da doğrulandı — reverse proxy'nin
+  suçu değil, n8n'in kendi `N8N_PATH` desteğindeki bir kısıt/hata. Ayrı
+  subdomain'de n8n kökte (`/`) çalıştığı için bu sorun hiç oluşmuyor.
+
+  Caddy config (`/etc/caddy/Caddyfile`, sunucuda, Git'e tabi değil — bkz.
   `docs/hetzner_firewall_setup.md`):
 
   ```caddyfile
   116-202-14-23.sslip.io {
-  	handle /n8n/* {
-  		reverse_proxy 127.0.0.1:5678
-  	}
-  	handle {
-  		reverse_proxy 127.0.0.1:8000
-  	}
+  	reverse_proxy 127.0.0.1:8000
+  }
+
+  n8n.116-202-14-23.sslip.io {
+  	reverse_proxy 127.0.0.1:5678
   }
   ```
-- n8n'e `N8N_PATH=/n8n/` verildi ki ürettiği tüm URL'ler (webhook'lar,
-  static asset'ler, editor) bu path altında doğru üretilsin.
 
 ## İlk kurulum
 
 n8n ilk açıldığında bir "owner" hesabı oluşturma ekranı gösterir
 (`N8N_USER_MANAGEMENT`, n8n'in kendi yerleşik oturum sistemi — ayrı bir
 basic-auth şifresi kullanılmadı). Bu adım tarayıcıdan, sunucuya erişimi
-olan kişi tarafından tamamlanmalı: `https://116-202-14-23.sslip.io/n8n/`
+olan kişi tarafından tamamlanmalı: `https://n8n.116-202-14-23.sslip.io/`
 
 ## n8n → FişKon webhook otomasyonu
 
