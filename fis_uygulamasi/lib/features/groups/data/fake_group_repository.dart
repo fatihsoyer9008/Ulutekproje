@@ -439,6 +439,81 @@ class FakeGroupRepository implements GroupRepository {
     return GroupExpense.fromJson(expense.toJson());
   }
 
+  Future<GroupExpense> updateExpenseMetadata({
+    required String groupId,
+    required String expenseId,
+    required String title,
+    required String? note,
+  }) async {
+    await _beforeRequest();
+    final group = _requireGroup(groupId);
+    _requireCurrentUserMembership(group);
+    final expenses = _expensesByGroup[groupId] ?? const <GroupExpense>[];
+    final index = expenses.indexWhere(
+      (expense) => expense.id == expenseId && expense.deletedAt == null,
+    );
+    if (index < 0) {
+      throw _apiException(
+        statusCode: 404,
+        code: 'expense_not_found',
+        message: 'Masraf bulunamadı.',
+      );
+    }
+    final current = expenses[index];
+    _requireExpenseMutationPermission(group, current);
+    final normalizedTitle = title.trim();
+    if (normalizedTitle.isEmpty || normalizedTitle.length > 255) {
+      throw _apiException(
+        statusCode: 422,
+        code: 'invalid_title',
+        message: 'Masraf başlığı geçersiz.',
+      );
+    }
+    final updated = GroupExpense.fromJson(<String, Object?>{
+      ...current.toJson(),
+      'title': normalizedTitle,
+      'note': note?.trim().isEmpty == true ? null : note?.trim(),
+      'updated_at': _timestamp(),
+    });
+    expenses[index] = updated;
+    return GroupExpense.fromJson(updated.toJson());
+  }
+
+  Future<void> deleteExpense({
+    required String groupId,
+    required String expenseId,
+  }) async {
+    await _beforeRequest();
+    final group = _requireGroup(groupId);
+    _requireCurrentUserMembership(group);
+    final expenses = _expensesByGroup[groupId] ?? const <GroupExpense>[];
+    final index = expenses.indexWhere(
+      (expense) => expense.id == expenseId && expense.deletedAt == null,
+    );
+    if (index < 0) {
+      throw _apiException(
+        statusCode: 404,
+        code: 'expense_not_found',
+        message: 'Masraf bulunamadı.',
+      );
+    }
+    final current = expenses[index];
+    _requireExpenseMutationPermission(group, current);
+    if (current.isFinanciallyLocked) {
+      throw _apiException(
+        statusCode: 409,
+        code: 'expense_financially_locked',
+        message: 'Borç kapatma sonrasında finansal masraf silinemez.',
+      );
+    }
+    final timestamp = _timestamp();
+    expenses[index] = GroupExpense.fromJson(<String, Object?>{
+      ...current.toJson(),
+      'updated_at': timestamp,
+      'deleted_at': timestamp,
+    });
+  }
+
   @override
   Future<GroupExpense> createExpense(
     CreateGroupExpenseRequest request, {
@@ -1149,6 +1224,23 @@ class FakeGroupRepository implements GroupRepository {
         message: 'Bu grup için yetkiniz yok.',
       );
     }
+  }
+
+  void _requireExpenseMutationPermission(
+    GroupDetail group,
+    GroupExpense expense,
+  ) {
+    final role = _currentUserRole(group);
+    if (expense.createdBy == currentUserId ||
+        role == GroupRole.owner ||
+        role == GroupRole.admin) {
+      return;
+    }
+    throw _apiException(
+      statusCode: 403,
+      code: 'group_forbidden',
+      message: 'Bu masrafı değiştirme yetkiniz yok.',
+    );
   }
 
   void _validateExpense(GroupDetail group, GroupExpense expense) {

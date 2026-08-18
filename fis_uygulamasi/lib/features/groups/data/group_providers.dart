@@ -6,6 +6,7 @@ import '../../../core/database/database_providers.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../application/group_sync_coordinator.dart';
 import '../application/local_first_group_expense_reader.dart';
+import '../application/offline_first_group_expense_mutator.dart';
 import '../application/offline_first_group_expense_writer.dart';
 import '../domain/group_models.dart';
 import 'api_group_repository.dart';
@@ -85,6 +86,14 @@ final offlineFirstGroupExpenseWriterProvider =
             ref.read(groupSyncCoordinatorProvider.notifier).syncAfterSave(),
           );
         },
+      ),
+    );
+
+final offlineFirstGroupExpenseMutatorProvider =
+    Provider<OfflineFirstGroupExpenseMutator>(
+      (ref) => OfflineFirstGroupExpenseMutator(
+        ref.watch(groupExpenseOfflineRepositoryProvider),
+        ref.watch(offlineFirstGroupExpenseWriterProvider),
       ),
     );
 
