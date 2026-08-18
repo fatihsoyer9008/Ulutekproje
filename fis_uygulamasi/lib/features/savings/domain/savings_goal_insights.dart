@@ -54,3 +54,57 @@ int? requiredMonthlySavingsInMinor({
   final months = (targetDate.difference(now).inDays / 30).ceil().clamp(1, 360);
   return (remainingAmountInMinor / months).ceil();
 }
+
+const int savingsGoalLevelCount = 5;
+
+class SavingsGoalLevelTransition {
+  const SavingsGoalLevelTransition({
+    required this.previousLevel,
+    required this.currentLevel,
+  });
+
+  final int previousLevel;
+  final int currentLevel;
+
+  bool get didLevelUp => currentLevel > previousLevel;
+
+  int get gainedLevelCount => currentLevel - previousLevel;
+}
+
+int calculateSavingsGoalLevel({
+  required int amountInMinor,
+  required int targetAmountInMinor,
+}) {
+  if (targetAmountInMinor <= 0) {
+    throw ArgumentError.value(
+      targetAmountInMinor,
+      'targetAmountInMinor',
+      'Hedef tutarı sıfırdan büyük olmalıdır.',
+    );
+  }
+
+  final safeAmount = amountInMinor.clamp(0, targetAmountInMinor);
+  final progress = safeAmount / targetAmountInMinor;
+
+  return (progress * savingsGoalLevelCount).floor().clamp(
+    0,
+    savingsGoalLevelCount,
+  );
+}
+
+SavingsGoalLevelTransition calculateSavingsGoalLevelTransition({
+  required int previousAmountInMinor,
+  required int currentAmountInMinor,
+  required int targetAmountInMinor,
+}) {
+  return SavingsGoalLevelTransition(
+    previousLevel: calculateSavingsGoalLevel(
+      amountInMinor: previousAmountInMinor,
+      targetAmountInMinor: targetAmountInMinor,
+    ),
+    currentLevel: calculateSavingsGoalLevel(
+      amountInMinor: currentAmountInMinor,
+      targetAmountInMinor: targetAmountInMinor,
+    ),
+  );
+}

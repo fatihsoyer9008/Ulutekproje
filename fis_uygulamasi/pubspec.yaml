@@ -73,13 +73,11 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
   uses-material-design: true
 
   assets:
     - assets/branding/econbuddy_logo.png
+    - assets/images/savings/journey_savings_vault.png
 
 # path_provider_foundation 2.6.0, Windows'ta boşluk içeren kullanıcı yolu
 # altında objective_c native-asset hook'unun çalışmasını engelliyor.
@@ -90,7 +88,6 @@ dependency_overrides:
   # assets:
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
-
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 
