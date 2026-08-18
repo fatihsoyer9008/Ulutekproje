@@ -150,6 +150,11 @@ kaydı **oluşturulur** (var olan bir kayıt aranmaz/güncellenmez);
 gönderilse bile (Idempotency-Key katmanından bağımsız olarak) veritabanı
 seviyesinde de tekilliği garanti eder.
 
+`merchant_name` ve `total_amount_in_minor` **zorunludur** — n8n bu ikisini
+bulamadıysa (ör. ek dosyası olmayan bir bülten/bildirim maili, gerçek bir
+fiş değil), event hiç gönderilmemeli; gönderilirse backend `422`
+`invalid_payload` ile reddeder, boş görünen bir `CloudReceipt` oluşturmaz.
+
 ```json
 {
   "event_type": "receipt.parsed",

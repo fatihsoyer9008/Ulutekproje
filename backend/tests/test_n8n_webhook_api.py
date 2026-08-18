@@ -254,6 +254,41 @@ async def test_receipt_parsed_creates_a_receipt_for_the_matched_user(
 
 
 @pytest.mark.asyncio
+async def test_receipt_parsed_without_merchant_or_amount_is_rejected(
+    webhook_context,
+) -> None:
+    client, session_factory = webhook_context
+    user_id = uuid.uuid4()
+
+    async with session_factory() as session:
+        session.add(User(id=user_id, email="webhook-no-amount@example.com"))
+        await session.commit()
+
+    body = _envelope_bytes(
+        event_type="receipt.parsed",
+        data={"email": "webhook-no-amount@example.com", "category": "Eğlence"},
+    )
+    key = str(uuid.uuid4())
+
+    response = await client.post(
+        WEBHOOK_PATH, content=body, headers=_headers(raw_body=body, idempotency_key=key)
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "invalid_payload"
+
+    async with session_factory() as session:
+        count = len(
+            (
+                await session.scalars(
+                    select(CloudReceipt).where(CloudReceipt.user_id == user_id)
+                )
+            ).all()
+        )
+    assert count == 0
+
+
+@pytest.mark.asyncio
 async def test_receipt_parsed_replay_does_not_create_a_duplicate_receipt(
     webhook_context,
 ) -> None:
@@ -266,7 +301,11 @@ async def test_receipt_parsed_replay_does_not_create_a_duplicate_receipt(
 
     body = _envelope_bytes(
         event_type="receipt.parsed",
-        data={"email": "webhook-replay@example.com", "total_amount_in_minor": 100},
+        data={
+            "email": "webhook-replay@example.com",
+            "merchant_name": "Test Market",
+            "total_amount_in_minor": 100,
+        },
     )
     key = str(uuid.uuid4())
     headers = _headers(raw_body=body, idempotency_key=key)
@@ -294,7 +333,11 @@ async def test_receipt_parsed_for_unknown_email_is_rejected(webhook_context) -> 
     client, _ = webhook_context
     body = _envelope_bytes(
         event_type="receipt.parsed",
-        data={"email": "no-such-fiskon-user@example.com"},
+        data={
+            "email": "no-such-fiskon-user@example.com",
+            "merchant_name": "Test Market",
+            "total_amount_in_minor": 100,
+        },
     )
     key = str(uuid.uuid4())
 
@@ -321,7 +364,11 @@ async def test_receipt_parsed_for_suspended_user_is_rejected(webhook_context) ->
 
     body = _envelope_bytes(
         event_type="receipt.parsed",
-        data={"email": "webhook-suspended@example.com"},
+        data={
+            "email": "webhook-suspended@example.com",
+            "merchant_name": "Test Market",
+            "total_amount_in_minor": 100,
+        },
     )
     key = str(uuid.uuid4())
 
