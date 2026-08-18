@@ -17,6 +17,7 @@ typedef GroupSyncDelay = Future<void> Function(Duration duration);
 abstract interface class GroupSyncTaskRepository {
   Future<List<OfflineTask>> getPendingTasks({int limit = 50});
   Future<Set<Id>> requeueFailedAndConflicted();
+  Future<Set<Id>> requeueRetryableFailures();
   Future<void> markAsSynced(Id id);
   Future<void> recordRetryableError(Id id, String error);
   Future<void> markPermanentlyFailed(Id id, String error);
@@ -37,6 +38,10 @@ class IsarGroupSyncTaskRepository implements GroupSyncTaskRepository {
   @override
   Future<Set<Id>> requeueFailedAndConflicted() =>
       repository.requeueFailedAndConflictedSyncTasks();
+
+  @override
+  Future<Set<Id>> requeueRetryableFailures() =>
+      repository.requeueRetryableFailedSyncTasks(ownerKey: ownerKey);
 
   @override
   Future<void> markAsSynced(Id id) => repository.markSyncTaskAsSynced(id);
@@ -138,6 +143,7 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
   Future<void>? _activeSync;
   bool _rerunRequested = false;
   bool _manualRetryRequested = false;
+  bool _connectivityRetryRequested = false;
   String? _pullCursor;
 
   @override
@@ -154,8 +160,15 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
 
   Future<void> manualRetry() => retryFailedAndConflicted();
 
+  Future<void> syncAfterConnectivityRestored() => _startSync(
+    manualRetry: false,
+    retryAfterConnectivityRestored: true,
+    rerunIfActive: true,
+  );
+
   Future<void> _startSync({
     required bool manualRetry,
+    bool retryAfterConnectivityRestored = false,
     required bool rerunIfActive,
   }) {
     final running = _activeSync;
@@ -163,12 +176,16 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
       if (rerunIfActive || manualRetry) {
         _rerunRequested = true;
         _manualRetryRequested = _manualRetryRequested || manualRetry;
+        _connectivityRetryRequested =
+            _connectivityRetryRequested || retryAfterConnectivityRestored;
       }
       return running;
     }
 
     _rerunRequested = true;
     _manualRetryRequested = _manualRetryRequested || manualRetry;
+    _connectivityRetryRequested =
+        _connectivityRetryRequested || retryAfterConnectivityRestored;
     late final Future<void> operation;
     operation = _drainRequests().whenComplete(() {
       if (identical(_activeSync, operation)) _activeSync = null;
@@ -181,16 +198,26 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
     while (_rerunRequested) {
       _rerunRequested = false;
       final manualRetry = _manualRetryRequested;
+      final connectivityRetry = _connectivityRetryRequested;
       _manualRetryRequested = false;
-      await _runSafely(manualRetry: manualRetry);
+      _connectivityRetryRequested = false;
+      await _runSafely(
+        manualRetry: manualRetry,
+        retryAfterConnectivityRestored: connectivityRetry,
+      );
     }
   }
 
-  Future<void> _runSafely({required bool manualRetry}) async {
+  Future<void> _runSafely({
+    required bool manualRetry,
+    required bool retryAfterConnectivityRestored,
+  }) async {
     try {
       final repository = ref.read(groupSyncTaskRepositoryProvider);
       final freshRetryIds = manualRetry
           ? await repository.requeueFailedAndConflicted()
+          : retryAfterConnectivityRestored
+          ? await repository.requeueRetryableFailures()
           : const <Id>{};
       await _sync(repository, freshRetryIds: freshRetryIds);
     } on Object catch (error) {

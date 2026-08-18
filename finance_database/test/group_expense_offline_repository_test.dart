@@ -233,6 +233,71 @@ void main() {
     });
   }
 
+  test(
+    'otomatik retry yalnız aktif ownerın geçici hatalı failed görevini alır',
+    () async {
+      final retryable =
+          _task(clientRecordId: '83000000-0000-4000-8000-000000000021')
+            ..status = OfflineTaskStatus.failed
+            ..retryCount = 5;
+      final permanent = _task(
+        clientRecordId: '83000000-0000-4000-8000-000000000022',
+      )..status = OfflineTaskStatus.failed;
+      final conflict =
+          _task(clientRecordId: '83000000-0000-4000-8000-000000000023')
+            ..status = OfflineTaskStatus.conflict
+            ..retryCount = 5;
+      final otherOwner =
+          _task(
+              ownerKey: 'user:other',
+              clientRecordId: '83000000-0000-4000-8000-000000000024',
+            )
+            ..status = OfflineTaskStatus.failed
+            ..retryCount = 5;
+      final now = DateTime.utc(2026, 8, 18);
+      for (final task in <OfflineTask>[
+        retryable,
+        permanent,
+        conflict,
+        otherOwner,
+      ]) {
+        task
+          ..createdAt = now
+          ..updatedAt = now;
+      }
+      await isar.writeTxn(
+        () => isar.offlineTasks.putAll(<OfflineTask>[
+          retryable,
+          permanent,
+          conflict,
+          otherOwner,
+        ]),
+      );
+
+      final ids = await repository.requeueRetryableFailedSyncTasks(
+        ownerKey: 'user:test-user',
+      );
+
+      expect(ids, <Id>{retryable.id});
+      expect(
+        (await isar.offlineTasks.get(retryable.id))?.status,
+        OfflineTaskStatus.pending,
+      );
+      expect(
+        (await isar.offlineTasks.get(permanent.id))?.status,
+        OfflineTaskStatus.failed,
+      );
+      expect(
+        (await isar.offlineTasks.get(conflict.id))?.status,
+        OfflineTaskStatus.conflict,
+      );
+      expect(
+        (await isar.offlineTasks.get(otherOwner.id))?.status,
+        OfflineTaskStatus.failed,
+      );
+    },
+  );
+
   test('pull snapshotı pending yerel masrafı ezmez', () async {
     final pending = _expense();
     await repository.savePendingWithOfflineTask(pending, _task());

@@ -195,6 +195,37 @@ class GroupExpenseOfflineRepository {
     });
   }
 
+  /// Bağlantı geri geldiğinde yalnız geçici hata denemesi bulunan ve aktif
+  /// kullanıcıya ait failed grup görevlerini yeniden kuyruğa alır.
+  Future<Set<Id>> requeueRetryableFailedSyncTasks({required String ownerKey}) {
+    return _isar.writeTxn(() async {
+      final tasks = await _isar.offlineTasks.where().findAll();
+      final retryable = tasks.where((task) {
+        if (!task.type.isGroupOperation ||
+            task.status != OfflineTaskStatus.failed ||
+            task.retryCount <= 0) {
+          return false;
+        }
+        try {
+          return _decodePayload(task.payloadJson)['owner_key'] == ownerKey;
+        } on StateError {
+          return false;
+        }
+      }).toList();
+      if (retryable.isEmpty) return const <Id>{};
+
+      final now = DateTime.now().toUtc();
+      for (final task in retryable) {
+        task
+          ..status = OfflineTaskStatus.pending
+          ..updatedAt = now;
+        await _updateExpenseSyncState(task, _pendingSyncState(task));
+      }
+      await _isar.offlineTasks.putAll(retryable);
+      return retryable.map((task) => task.id).toSet();
+    });
+  }
+
   /// Task ve bağlı GroupExpense kaydını aynı transaction içinde synced yapar.
   /// retryCount/lastError/lastAttemptAt audit geçmişi bilinçli olarak korunur.
   Future<void> markSyncTaskAsSynced(Id taskId) =>

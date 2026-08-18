@@ -166,6 +166,27 @@ void main() {
     );
   }
 
+  test(
+    'bağlantı geri gelince yalnız retryable failed kuyruğunu çalıştırır',
+    () async {
+      final retryTask = task(1, retryCount: 5)
+        ..status = OfflineTaskStatus.failed
+        ..lastError = 'offline';
+      final repository = _FakeSyncTaskRepository([])..addRetryable(retryTask);
+      final gateway = _FakeGateway((_) async {});
+      final scope = container(repository: repository, gateway: gateway);
+
+      await scope
+          .read(syncCoordinatorProvider.notifier)
+          .syncAfterConnectivityRestored();
+
+      expect(repository.connectivityRequeueCalls, 1);
+      expect(repository.requeueCalls, 0);
+      expect(gateway.calls, 1);
+      expect(repository.syncedIds, [1]);
+    },
+  );
+
   test('eş zamanlı çağrılar aynı gönderimi paylaşır', () async {
     final repository = _FakeSyncTaskRepository([task(1)]);
     final release = Completer<void>();
@@ -274,6 +295,7 @@ class _FakeSyncTaskRepository implements SyncTaskRepository {
   final cleanupResults = <int>[];
   int errorUpdates = 0;
   int requeueCalls = 0;
+  int connectivityRequeueCalls = 0;
   Completer<void>? cleanupStarted;
   Completer<void>? cleanupRelease;
 
@@ -290,6 +312,18 @@ class _FakeSyncTaskRepository implements SyncTaskRepository {
   @override
   Future<Set<Id>> requeueFailedAndConflicted() async {
     requeueCalls += 1;
+    final ids = _retryable.keys.toSet();
+    for (final task in _retryable.values) {
+      task.status = OfflineTaskStatus.pending;
+      _pending[task.id] = task;
+    }
+    _retryable.clear();
+    return ids;
+  }
+
+  @override
+  Future<Set<Id>> requeueRetryableFailures() async {
+    connectivityRequeueCalls += 1;
     final ids = _retryable.keys.toSet();
     for (final task in _retryable.values) {
       task.status = OfflineTaskStatus.pending;

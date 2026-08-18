@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/database_providers.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
-import '../application/group_sync_coordinator.dart';
+import '../../sync/application/automatic_sync_service.dart';
 import '../application/local_first_group_expense_reader.dart';
 import '../application/offline_first_group_expense_mutator.dart';
 import '../application/offline_first_group_expense_writer.dart';
@@ -83,7 +83,7 @@ final offlineFirstGroupExpenseWriterProvider =
         ref.watch(groupExpenseOfflineRepositoryProvider),
         triggerSynchronization: () {
           unawaited(
-            ref.read(groupSyncCoordinatorProvider.notifier).syncAfterSave(),
+            ref.read(automaticSyncServiceProvider).syncGroupAfterSave(),
           );
         },
       ),

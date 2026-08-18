@@ -181,6 +181,29 @@ void main() {
     });
   }
 
+  test(
+    'bağlantı geri gelince retryable failed grup görevini gönderir',
+    () async {
+      final task = _task(1)
+        ..status = OfflineTaskStatus.failed
+        ..retryCount = 5
+        ..lastError = 'offline';
+      final repository = _MemoryGroupSyncRepository([])..addRetryable(task);
+      final scope = container(
+        repository: repository,
+        server: FakeGroupSyncServer(),
+      );
+
+      await scope
+          .read(groupSyncCoordinatorProvider.notifier)
+          .syncAfterConnectivityRestored();
+
+      expect(repository.connectivityRequeueCalls, 1);
+      expect(repository.requeueCalls, 0);
+      expect(repository.syncedIds, <Id>[task.id]);
+    },
+  );
+
   test('pending task olmasa da fake pull değişikliklerini uygular', () async {
     final server = FakeGroupSyncServer()
       ..seedRemoteOperation(_operationJson(9));
@@ -259,6 +282,7 @@ class _MemoryGroupSyncRepository implements GroupSyncTaskRepository {
   final List<Id> syncedIds = <Id>[];
   final List<GroupPullChange> appliedChanges = <GroupPullChange>[];
   int requeueCalls = 0;
+  int connectivityRequeueCalls = 0;
 
   void addRetryable(OfflineTask task) => _retryable[task.id] = task;
 
@@ -269,6 +293,18 @@ class _MemoryGroupSyncRepository implements GroupSyncTaskRepository {
   @override
   Future<Set<Id>> requeueFailedAndConflicted() async {
     requeueCalls += 1;
+    final ids = _retryable.keys.toSet();
+    for (final task in _retryable.values) {
+      task.status = OfflineTaskStatus.pending;
+      _pending[task.id] = task;
+    }
+    _retryable.clear();
+    return ids;
+  }
+
+  @override
+  Future<Set<Id>> requeueRetryableFailures() async {
+    connectivityRequeueCalls += 1;
     final ids = _retryable.keys.toSet();
     for (final task in _retryable.values) {
       task.status = OfflineTaskStatus.pending;
