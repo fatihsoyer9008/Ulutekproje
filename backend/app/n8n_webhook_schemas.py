@@ -36,8 +36,12 @@ class ReceiptParsedEventData(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     email: EmailStr
-    merchant_name: str | None = Field(default=None, max_length=255)
-    total_amount_in_minor: int | None = Field(default=None, ge=0)
+    # Required, not just optional-with-a-default: without these two, n8n
+    # did not actually find a receipt in the email (seen in practice with
+    # newsletter/notification mail that has no attachment) — better to
+    # reject the event than create an empty-looking CloudReceipt.
+    merchant_name: str = Field(min_length=1, max_length=255)
+    total_amount_in_minor: int = Field(ge=0)
     currency: str = Field(default="TRY", min_length=3, max_length=3)
     receipt_date: datetime | None = None
     category: str | None = Field(default=None, max_length=64)
