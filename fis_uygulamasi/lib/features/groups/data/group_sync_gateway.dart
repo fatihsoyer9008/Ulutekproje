@@ -85,6 +85,8 @@ class DioGroupPushGateway implements GroupPushGateway {
 
     switch (task.type) {
       case OfflineTaskType.groupExpenseCreate:
+      case OfflineTaskType.groupExpenseUpdate:
+      case OfflineTaskType.groupExpenseDelete:
       case OfflineTaskType.expenseShareCreate:
       case OfflineTaskType.expenseShareUpdate:
       case OfflineTaskType.expenseShareDelete:

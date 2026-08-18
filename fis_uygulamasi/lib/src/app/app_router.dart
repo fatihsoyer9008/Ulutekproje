@@ -22,8 +22,8 @@ import '../../features/backup/data/transaction_json_import_service.dart';
 import '../../core/database/database_providers.dart';
 import '../../features/transaction_draft/data/receipt_parser_client.dart';
 import '../screens/expense_screen.dart';
+import '../../features/groups/application/group_expense_flow_controller.dart';
 import '../../features/groups/data/group_providers.dart';
-import '../../features/groups/data/group_repository.dart';
 import '../../features/groups/domain/group_expense_draft.dart';
 import '../../features/groups/domain/group_models.dart';
 import '../../features/groups/presentation/fast_split_page.dart';
@@ -204,132 +204,97 @@ GoRouter createAppRouter({
 
 Future<void> _createOcrFastSplit(
   WidgetRef ref,
+  GroupDetail group,
   GroupExpenseDraft draft,
   FastSplitFormValue value,
   String idempotencyKey,
 ) async {
-  final now = DateTime.now().toUtc();
-
-  await ref
-      .read(groupExpenseRepositoryProvider)
-      .createFastSplit(
-        FastSplitExpenseRequest(
-          groupId: draft.groupId,
-          title: value.title,
-          payerUserId: value.payerUserId,
-          expenseDate: (draft.expenseDate ?? now).toUtc().toIso8601String(),
-          totalAmountInMinor: value.calculation.totalAmountInMinor,
-          currency: draft.currency,
-          splitType: value.calculation.type,
-          orderedMemberIds: value.calculation.shares
-              .map((share) => share.userId)
-              .toList(growable: false),
-          percentageBasisPoints: value.calculation.type == SplitType.percentage
-              ? value.percentageBasisPoints
-              : const <String, int>{},
-          fixedAmountsInMinor: value.calculation.type == SplitType.fixedAmount
-              ? {
-                  for (final share in value.calculation.shares)
-                    share.userId: share.amountInMinor,
-                }
-              : const <String, int>{},
-        ),
-        idempotencyKey: idempotencyKey,
-      );
+  final activeUserId = ref.read(currentGroupUserIdProvider);
+  if (activeUserId == null) {
+    throw StateError('Grup masrafı için aktif kullanıcı oturumu gerekli.');
+  }
+  final controller = ref.read(groupExpenseFlowControllerProvider.notifier);
+  controller.start(
+    group: group,
+    activeUserId: activeUserId,
+    draft: _submissionDraft(
+      draft,
+      title: value.title,
+      payerUserId: value.payerUserId,
+      totalAmountInMinor: value.calculation.totalAmountInMinor,
+    ),
+  );
+  controller.setFastSplit(
+    value.calculation,
+    percentageBasisPoints: value.percentageBasisPoints,
+  );
+  await controller.submitFastSplit(idempotencyKey: idempotencyKey);
+  _requireSuccessfulGroupExpenseSubmission(ref, controller);
 
   _invalidateGroupExpenseData(ref, draft.groupId);
 }
 
 Future<void> _createOcrItemizedSplit(
   WidgetRef ref,
+  GroupDetail group,
   GroupExpenseDraft draft,
   ItemizedSplitFormValue value,
   String idempotencyKey,
 ) async {
-  final now = DateTime.now().toUtc();
-  final meaningfulItems = draft.meaningfulItems;
-
-  await ref
-      .read(groupExpenseRepositoryProvider)
-      .createItemizedSplit(
-        ItemizedExpenseRequest(
-          groupId: draft.groupId,
-          receiptId: value.receiptId,
-          receiptDraft: value.receiptId == null
-              ? ItemizedReceiptDraftInput(
-                  merchantName: draft.merchantName.trim().isEmpty
-                      ? null
-                      : draft.merchantName.trim(),
-                  category: draft.category.trim().isEmpty
-                      ? null
-                      : draft.category.trim(),
-                  rawOcrText: draft.rawOcrText,
-                  lineItems: [
-                    for (
-                      var index = 0;
-                      index < meaningfulItems.length;
-                      index += 1
-                    )
-                      ItemizedReceiptDraftLineInput(
-                        position: index,
-                        name: meaningfulItems[index].name,
-                        category: meaningfulItems[index].category,
-                        quantityMilli: meaningfulItems[index].quantityMilli,
-                        unitPriceInMinor:
-                            meaningfulItems[index].unitPriceInMinor,
-                        totalAmountInMinor:
-                            meaningfulItems[index].totalAmountInMinor!,
-                        taxRateBasisPoints:
-                            meaningfulItems[index].taxRateBasisPoints,
-                        taxAmountInMinor:
-                            meaningfulItems[index].taxAmountInMinor,
-                      ),
-                  ],
-                )
-              : null,
-          title: value.title,
-          payerUserId: value.payerUserId,
-          expenseDate: (draft.expenseDate ?? now).toUtc().toIso8601String(),
-          totalAmountInMinor: value.calculation.receiptTotalInMinor,
-          currency: draft.currency,
-          lineShares: [
-            for (final share in value.calculation.lineItemShares)
-              ItemizedLineShareInput(
-                receiptLineItemId: share.receiptLineItemId,
-                receiptLineItemPosition: share.receiptLineItemPosition,
-                userId: share.userId,
-                amountInMinor: share.amountInMinor,
-                quantityShareMilli: share.quantityShareMilli,
-              ),
-          ],
-          extraShares: [
-            for (final share in value.calculation.extraAmountShares)
-              ItemizedExtraShareInput(
-                userId: share.userId,
-                amountInMinor: share.amountInMinor,
-              ),
-          ],
-          extraAmounts: value.calculation.extraAmountInMinor > 0
-              ? [
-                  ItemizedExtraAmountInput(
-                    type: ExpenseExtraAmountType.other,
-                    label: 'Fiş toplam farkı',
-                    amountInMinor: value.calculation.extraAmountInMinor,
-                    shares: [
-                      for (final share in value.calculation.extraAmountShares)
-                        ItemizedExtraShareInput(
-                          userId: share.userId,
-                          amountInMinor: share.amountInMinor,
-                        ),
-                    ],
-                  ),
-                ]
-              : const <ItemizedExtraAmountInput>[],
-        ),
-        idempotencyKey: idempotencyKey,
-      );
+  final activeUserId = ref.read(currentGroupUserIdProvider);
+  if (activeUserId == null) {
+    throw StateError('Grup masrafı için aktif kullanıcı oturumu gerekli.');
+  }
+  final controller = ref.read(groupExpenseFlowControllerProvider.notifier);
+  controller.start(
+    group: group,
+    activeUserId: activeUserId,
+    draft: _submissionDraft(
+      draft,
+      title: value.title,
+      payerUserId: value.payerUserId,
+      totalAmountInMinor: value.calculation.receiptTotalInMinor,
+    ),
+  );
+  controller.setItemizedSplit(
+    receiptId: value.receiptId,
+    calculation: value.calculation,
+  );
+  await controller.submitItemizedSplit(idempotencyKey: idempotencyKey);
+  _requireSuccessfulGroupExpenseSubmission(ref, controller);
 
   _invalidateGroupExpenseData(ref, draft.groupId);
+}
+
+GroupExpenseDraft _submissionDraft(
+  GroupExpenseDraft source, {
+  required String title,
+  required String payerUserId,
+  required int totalAmountInMinor,
+}) => GroupExpenseDraft(
+  groupId: source.groupId,
+  payerUserId: payerUserId,
+  merchantName: title,
+  category: source.category,
+  totalAmountInMinor: totalAmountInMinor,
+  expenseDate: source.expenseDate ?? DateTime.now().toUtc(),
+  currency: source.currency,
+  rawOcrText: source.rawOcrText,
+  items: source.items,
+);
+
+void _requireSuccessfulGroupExpenseSubmission(
+  WidgetRef ref,
+  GroupExpenseFlowController controller,
+) {
+  final state = ref.read(groupExpenseFlowControllerProvider);
+  if (state.status == GroupExpenseFlowStatus.error) {
+    throw state.error ?? StateError('Grup masrafı kuyruğa eklenemedi.');
+  }
+  if (state.status != GroupExpenseFlowStatus.success) {
+    throw StateError('Grup masrafı kaydı tamamlanamadı.');
+  }
+  controller.clear();
 }
 
 void _invalidateGroupExpenseData(WidgetRef ref, String groupId) {
@@ -353,6 +318,7 @@ class _GroupOcrRoutePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(groupExpenseFlowControllerProvider);
     final cachedGroup = initialGroup;
 
     if (cachedGroup != null && cachedGroup.id == groupId) {
@@ -405,9 +371,9 @@ class _GroupOcrRoutePage extends ConsumerWidget {
       scanReceipt: scanReceipt,
       parseReceipt: parseReceipt ?? parser.parse,
       onFastSplitSubmit: (draft, value, idempotencyKey) =>
-          _createOcrFastSplit(ref, draft, value, idempotencyKey),
+          _createOcrFastSplit(ref, group, draft, value, idempotencyKey),
       onItemizedSplitSubmit: (draft, value, idempotencyKey) =>
-          _createOcrItemizedSplit(ref, draft, value, idempotencyKey),
+          _createOcrItemizedSplit(ref, group, draft, value, idempotencyKey),
     );
   }
 }

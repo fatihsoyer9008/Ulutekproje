@@ -248,6 +248,94 @@ void main() {
       'Market',
     );
   });
+
+  test('delete tombstone ve OfflineTask atomik kaydedilir', () async {
+    final expense = _expense()..syncState = SyncState.synced;
+    await repository.saveSyncedFromPull(expense);
+    final task = _deleteTask();
+    final deletedAt = DateTime.utc(2026, 8, 17, 13);
+
+    await repository.markPendingDeleteWithOfflineTask(
+      expenseId: _expenseId,
+      groupId: _groupId,
+      ownerKey: 'user:test-user',
+      task: task,
+      deletedAt: deletedAt,
+    );
+
+    final stored = (await repository.getByExpenseId(_expenseId))!;
+    expect(stored.syncState, SyncState.pendingDelete);
+    expect(stored.deletedAt?.toUtc(), deletedAt);
+    expect((jsonDecode(stored.payloadJson) as Map)['deleted_at'], isNotNull);
+    expect(
+      (await isar.offlineTasks.get(task.id))?.status,
+      OfflineTaskStatus.pending,
+    );
+  });
+
+  test(
+    'delete task yazımı başarısız olursa tombstone rollback edilir',
+    () async {
+      final expense = _expense()..syncState = SyncState.synced;
+      await repository.saveSyncedFromPull(expense);
+      final existingTask = _deleteTask();
+      final createdAt = DateTime.utc(2026, 8, 17, 12);
+      existingTask
+        ..createdAt = createdAt
+        ..updatedAt = createdAt;
+      await isar.writeTxn(() => isar.offlineTasks.put(existingTask));
+
+      await expectLater(
+        repository.markPendingDeleteWithOfflineTask(
+          expenseId: _expenseId,
+          groupId: _groupId,
+          ownerKey: 'user:test-user',
+          task: _deleteTask(),
+        ),
+        throwsA(anything),
+      );
+
+      final stored = (await repository.getByExpenseId(_expenseId))!;
+      expect(stored.syncState, SyncState.synced);
+      expect(stored.deletedAt, isNull);
+      expect(await isar.offlineTasks.count(), 1);
+    },
+  );
+
+  test('pull tombstone synced kayda uygulanır, pending kaydı ezmez', () async {
+    final expense = _expense()..syncState = SyncState.synced;
+    await repository.saveSyncedFromPull(expense);
+    final deletedAt = DateTime.utc(2026, 8, 17, 14);
+
+    expect(
+      await repository.applyPulledTombstone(
+        expenseId: _expenseId,
+        groupId: _groupId,
+        ownerKey: 'user:test-user',
+        deletedAt: deletedAt,
+      ),
+      isTrue,
+    );
+    final tombstone = (await repository.getByExpenseId(_expenseId))!;
+    expect(tombstone.syncState, SyncState.synced);
+    expect(tombstone.deletedAt?.toUtc(), deletedAt);
+
+    tombstone.syncState = SyncState.pending;
+    await isar.writeTxn(() => isar.groupExpenseEntitys.put(tombstone));
+    expect(
+      await repository.applyPulledTombstone(
+        expenseId: _expenseId,
+        groupId: _groupId,
+        ownerKey: 'user:test-user',
+        deletedAt: deletedAt.add(const Duration(hours: 1)),
+      ),
+      isFalse,
+    );
+    expect(
+      (await repository.getByExpenseId(_expenseId))?.deletedAt?.toUtc(),
+      deletedAt,
+    );
+  });
 }
 
 const _expenseId = '81000000-0000-4000-8000-000000000001';
@@ -284,4 +372,19 @@ OfflineTask _task({
     'owner_key': ownerKey,
     'sync_state': SyncState.pending.name,
     'payload': const <String, Object?>{'id': _expenseId},
+  });
+
+OfflineTask _deleteTask() => OfflineTask()
+  ..clientTaskId = '83000000-0000-4000-8000-000000000002'
+  ..type = OfflineTaskType.groupExpenseDelete
+  ..payloadJson = jsonEncode(<String, Object?>{
+    'operation_type': OfflineTaskType.groupExpenseDelete.name,
+    'group_id': _groupId,
+    'client_record_id': '83000000-0000-4000-8000-000000000002',
+    'owner_key': 'user:test-user',
+    'sync_state': SyncState.pendingDelete.name,
+    'payload': const <String, Object?>{
+      'group_id': _groupId,
+      'expense_id': _expenseId,
+    },
   });
