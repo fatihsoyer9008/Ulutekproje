@@ -329,6 +329,23 @@ async def _legacy_snapshot(
         await connection.close()
 
 
+def _expect_cloud_receipt_status(
+    snapshot: dict[str, object], status: str
+) -> dict[str, object]:
+    """Legacy `cloud_receipts` rows gain a `status` column at revision 0016
+    (server_default='approved'). Snapshots taken before that migration ran
+    naturally lack the key, so upgraded-side comparisons must expect it.
+    """
+    receipts = snapshot["cloud_receipts"]
+    return {
+        **snapshot,
+        "cloud_receipts": {
+            **receipts,
+            "row": {**receipts["row"], "status": status},
+        },
+    }
+
+
 async def _seed_pre_assignment_group_data(
     database_url: URL,
     identifiers: dict[str, uuid.UUID],
@@ -1391,11 +1408,14 @@ async def test_group_migrations_preserve_legacy_data_on_postgresql() -> None:
             await _assert_group_expense_schema(migration_url)
             await _assert_group_relations_and_indexes(migration_url)
 
+            expected_after_upgrade = _expect_cloud_receipt_status(
+                before_upgrade, "approved"
+            )
             after_upgrade = await _legacy_snapshot(
                 migration_url,
                 identifiers,
             )
-            assert after_upgrade == before_upgrade
+            assert after_upgrade == expected_after_upgrade
 
             await _assert_constraints_and_group_cascade(
                 migration_url,
@@ -1405,7 +1425,7 @@ async def test_group_migrations_preserve_legacy_data_on_postgresql() -> None:
                 migration_url,
                 identifiers,
             )
-            assert after_cascade == before_upgrade
+            assert after_cascade == expected_after_upgrade
 
             _run_alembic(
                 migration_url_string,
@@ -1445,7 +1465,7 @@ async def test_group_migrations_preserve_legacy_data_on_postgresql() -> None:
                 migration_url,
                 identifiers,
             )
-            assert after_second_upgrade == before_upgrade
+            assert after_second_upgrade == expected_after_upgrade
         finally:
             await admin_connection.execute(
                 "SELECT pg_terminate_backend(pid) "
@@ -1612,6 +1632,9 @@ async def test_assignment_migration_preserves_existing_group_data() -> None:
             await _seed_pre_assignment_group_data(migration_url, identifiers)
 
             legacy_before = await _legacy_snapshot(migration_url, identifiers)
+            legacy_after_upgrade = _expect_cloud_receipt_status(
+                legacy_before, "approved"
+            )
             group_before = await _pre_assignment_snapshot(
                 migration_url,
                 identifiers,
@@ -1620,7 +1643,10 @@ async def test_assignment_migration_preserves_existing_group_data() -> None:
             _run_alembic(migration_url_string, "upgrade", "head")
             current = _run_alembic(migration_url_string, "current")
             assert f"{EXPECTED_REVISION} (head)" in current
-            assert await _legacy_snapshot(migration_url, identifiers) == legacy_before
+            assert (
+                await _legacy_snapshot(migration_url, identifiers)
+                == legacy_after_upgrade
+            )
             assert (
                 await _pre_assignment_snapshot(migration_url, identifiers)
                 == group_before
@@ -1671,7 +1697,10 @@ async def test_assignment_migration_preserves_existing_group_data() -> None:
             )
 
             _run_alembic(migration_url_string, "upgrade", "head")
-            assert await _legacy_snapshot(migration_url, identifiers) == legacy_before
+            assert (
+                await _legacy_snapshot(migration_url, identifiers)
+                == legacy_after_upgrade
+            )
             assert (
                 await _pre_assignment_snapshot(migration_url, identifiers)
                 == group_before
