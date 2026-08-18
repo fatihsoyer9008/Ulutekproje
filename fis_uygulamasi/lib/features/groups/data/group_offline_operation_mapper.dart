@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:finance_database/finance_database.dart';
 
+import '../domain/group_models.dart';
 import '../domain/group_offline_operation.dart';
 
 extension GroupOfflineOperationPersistenceMapper on GroupOfflineOperation {
@@ -43,6 +44,87 @@ extension GroupExpenseOperationPersistenceMapper
       ..deletedAt = groupExpense.deletedAt == null
           ? null
           : DateTime.parse(groupExpense.deletedAt!).toUtc();
+  }
+}
+
+extension GroupExpenseEntityDomainMapper on GroupExpenseEntity {
+  GroupExpense toGroupExpense() {
+    final decoded = jsonDecode(payloadJson);
+    if (decoded is! Map) {
+      throw const FormatException('Yerel grup masrafı snapshotı geçersiz.');
+    }
+    return GroupExpense.fromJson(Map<String, Object?>.from(decoded));
+  }
+}
+
+extension ExpenseShareOperationPersistenceMapper
+    on ExpenseShareOfflineOperation {
+  ExpenseShareEntity toExpenseShareEntity({required DateTime serverUpdatedAt}) {
+    final snapshot = share;
+    if (snapshot == null) {
+      throw StateError(
+        'Silme operasyonundan ExpenseShare snapshotı üretilemez.',
+      );
+    }
+    final json = snapshot.toJson();
+    return ExpenseShareEntity()
+      ..recordKey = '$ownerKey|${snapshot.expenseId}|${snapshot.userId}'
+      ..expenseId = snapshot.expenseId
+      ..userId = snapshot.userId
+      ..groupId = groupId
+      ..ownerKey = ownerKey
+      ..displayName = snapshot.displayName
+      ..amountInMinor = snapshot.amountInMinor
+      ..status = snapshot.status.name
+      ..settledAt = snapshot.settledAt == null
+          ? null
+          : DateTime.parse(snapshot.settledAt!).toUtc()
+      ..payloadJson = jsonEncode(json)
+      ..serverUpdatedAt = serverUpdatedAt.toUtc();
+  }
+}
+
+extension ExpenseShareEntityDomainMapper on ExpenseShareEntity {
+  ExpenseShare? toExpenseShare() {
+    final snapshot = payloadJson;
+    if (deletedAt != null || snapshot == null) return null;
+    final decoded = jsonDecode(snapshot);
+    if (decoded is! Map) {
+      throw const FormatException('Yerel masraf payı snapshotı geçersiz.');
+    }
+    return ExpenseShare.fromJson(Map<String, Object?>.from(decoded));
+  }
+}
+
+extension SettlementOperationPersistenceMapper on SettlementOfflineOperation {
+  GroupSettlementEntity toGroupSettlementEntity({
+    required DateTime serverUpdatedAt,
+  }) {
+    final json = settlement.toJson();
+    return GroupSettlementEntity()
+      ..recordKey = '$ownerKey|${settlement.id}'
+      ..settlementId = settlement.id
+      ..groupId = settlement.groupId
+      ..ownerKey = ownerKey
+      ..fromUserId = settlement.fromUserId
+      ..toUserId = settlement.toUserId
+      ..amountInMinor = settlement.amountInMinor
+      ..currency = settlement.currency
+      ..settledAt = DateTime.parse(settlement.settledAt).toUtc()
+      ..note = settlement.note
+      ..createdAt = DateTime.parse(settlement.createdAt).toUtc()
+      ..payloadJson = jsonEncode(json)
+      ..serverUpdatedAt = serverUpdatedAt.toUtc();
+  }
+}
+
+extension GroupSettlementEntityDomainMapper on GroupSettlementEntity {
+  Settlement toSettlement() {
+    final decoded = jsonDecode(payloadJson);
+    if (decoded is! Map) {
+      throw const FormatException('Yerel settlement snapshotı geçersiz.');
+    }
+    return Settlement.fromJson(Map<String, Object?>.from(decoded));
   }
 }
 

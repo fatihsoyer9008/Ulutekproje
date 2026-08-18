@@ -17,6 +17,7 @@ typedef Clock = DateTime Function();
 abstract interface class SyncTaskRepository {
   Future<List<OfflineTask>> getPendingTasks({int limit = 50});
   Future<Set<Id>> requeueFailedAndConflicted();
+  Future<Set<Id>> requeueRetryableFailures();
   Future<void> markAsSynced(Id id);
   Future<void> updateTaskError(Id id, String error);
   Future<void> markPermanentlyFailed(Id id, String error);
@@ -36,6 +37,10 @@ class IsarSyncTaskRepository implements SyncTaskRepository {
   @override
   Future<Set<Id>> requeueFailedAndConflicted() =>
       repository.requeueFailedAndConflictedPersonalTasks();
+
+  @override
+  Future<Set<Id>> requeueRetryableFailures() =>
+      repository.requeueRetryableFailedPersonalTasks();
 
   @override
   Future<void> markAsSynced(Id id) => repository.markAsSynced(id);
@@ -99,6 +104,7 @@ class SyncCoordinator extends Notifier<SyncState> {
   Future<void>? _activeSync;
   bool _rerunRequested = false;
   bool _retryRequested = false;
+  bool _connectivityRetryRequested = false;
 
   @override
   SyncState build() => const SyncState();
@@ -109,11 +115,21 @@ class SyncCoordinator extends Notifier<SyncState> {
   Future<void> syncAfterSave() =>
       _startSync(requeueRetryable: false, rerunIfActive: true);
 
-  Future<void> retryFailedAndConflicted() =>
-      _startSync(requeueRetryable: true, rerunIfActive: true);
+  Future<void> retryFailedAndConflicted() => _startSync(
+    requeueRetryable: true,
+    retryAfterConnectivityRestored: false,
+    rerunIfActive: true,
+  );
+
+  Future<void> syncAfterConnectivityRestored() => _startSync(
+    requeueRetryable: false,
+    retryAfterConnectivityRestored: true,
+    rerunIfActive: true,
+  );
 
   Future<void> _startSync({
     required bool requeueRetryable,
+    bool retryAfterConnectivityRestored = false,
     required bool rerunIfActive,
   }) {
     final running = _activeSync;
@@ -121,12 +137,16 @@ class SyncCoordinator extends Notifier<SyncState> {
       if (rerunIfActive || requeueRetryable) {
         _rerunRequested = true;
         _retryRequested = _retryRequested || requeueRetryable;
+        _connectivityRetryRequested =
+            _connectivityRetryRequested || retryAfterConnectivityRestored;
       }
       return running;
     }
 
     _rerunRequested = true;
     _retryRequested = _retryRequested || requeueRetryable;
+    _connectivityRetryRequested =
+        _connectivityRetryRequested || retryAfterConnectivityRestored;
 
     late final Future<void> operation;
     operation = _drainSyncRequests().whenComplete(() {
@@ -142,18 +162,27 @@ class SyncCoordinator extends Notifier<SyncState> {
     while (_rerunRequested) {
       _rerunRequested = false;
       final shouldRequeueRetryable = _retryRequested;
+      final shouldRetryAfterConnectivityRestored = _connectivityRetryRequested;
       _retryRequested = false;
+      _connectivityRetryRequested = false;
 
-      await _runSyncSafely(requeueRetryable: shouldRequeueRetryable);
+      await _runSyncSafely(
+        requeueRetryable: shouldRequeueRetryable,
+        retryAfterConnectivityRestored: shouldRetryAfterConnectivityRestored,
+      );
     }
   }
 
-  Future<void> _runSyncSafely({required bool requeueRetryable}) async {
+  Future<void> _runSyncSafely({
+    required bool requeueRetryable,
+    required bool retryAfterConnectivityRestored,
+  }) async {
     try {
+      final repository = ref.read(syncTaskRepositoryProvider);
       final freshRetryTaskIds = requeueRetryable
-          ? await ref
-                .read(syncTaskRepositoryProvider)
-                .requeueFailedAndConflicted()
+          ? await repository.requeueFailedAndConflicted()
+          : retryAfterConnectivityRestored
+          ? await repository.requeueRetryableFailures()
           : const <Id>{};
       await _sync(freshRetryTaskIds: freshRetryTaskIds);
     } on Object catch (error) {

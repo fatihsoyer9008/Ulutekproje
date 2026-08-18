@@ -3,8 +3,12 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/database_providers.dart';
+import '../../../core/network/request_id.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
-import '../application/group_sync_coordinator.dart';
+import '../../sync/application/automatic_sync_service.dart';
+import '../application/group_expense_conflict_service.dart';
+import '../application/local_first_group_expense_reader.dart';
+import '../application/offline_first_group_expense_mutator.dart';
 import '../application/offline_first_group_expense_writer.dart';
 import '../domain/group_models.dart';
 import 'api_group_repository.dart';
@@ -61,17 +65,60 @@ final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(
   (ref) => ref.watch(groupRepositoryProvider),
 );
 
+final groupExpenseLocalFirstListingEnabledProvider = Provider<bool>(
+  (ref) =>
+      !ref.watch(groupMockModeProvider) &&
+      ref.watch(groupExpenseRepositoryProvider) is ApiGroupRepository,
+);
+
+final localFirstGroupExpenseReaderProvider =
+    Provider<LocalFirstGroupExpenseReader>(
+      (ref) => LocalFirstGroupExpenseReader(
+        ref.watch(groupExpenseOfflineRepositoryProvider),
+        ref.watch(groupExpenseRepositoryProvider),
+      ),
+    );
+
 final offlineFirstGroupExpenseWriterProvider =
     Provider<OfflineFirstGroupExpenseWriter>(
       (ref) => OfflineFirstGroupExpenseWriter(
         ref.watch(groupExpenseOfflineRepositoryProvider),
         triggerSynchronization: () {
           unawaited(
-            ref.read(groupSyncCoordinatorProvider.notifier).syncAfterSave(),
+            ref.read(automaticSyncServiceProvider).syncGroupAfterSave(),
           );
         },
       ),
     );
+
+final offlineFirstGroupExpenseMutatorProvider =
+    Provider<OfflineFirstGroupExpenseMutator>(
+      (ref) => OfflineFirstGroupExpenseMutator(
+        ref.watch(groupExpenseOfflineRepositoryProvider),
+        ref.watch(offlineFirstGroupExpenseWriterProvider),
+      ),
+    );
+
+final groupExpenseConflictServiceProvider =
+    Provider<GroupExpenseConflictResolver>(
+      (ref) => GroupExpenseConflictService(
+        ref.watch(groupExpenseOfflineRepositoryProvider),
+        ref.watch(groupExpenseRepositoryProvider),
+        newUuidV4,
+        () => ref.read(automaticSyncServiceProvider).syncGroupAfterSave(),
+      ),
+    );
+
+final groupExpenseConflictsProvider =
+    StreamProvider<List<GroupExpenseConflict>>((ref) {
+      final userId = ref.watch(currentGroupUserIdProvider);
+      if (userId == null) {
+        return Stream.value(const <GroupExpenseConflict>[]);
+      }
+      return ref
+          .watch(groupExpenseConflictServiceProvider)
+          .watch(ownerKey: 'user:$userId');
+    });
 
 final debtSummaryRepositoryProvider = Provider<DebtSummaryRepository>(
   (ref) => ref.watch(groupRepositoryProvider),
@@ -85,9 +132,25 @@ final groupDetailProvider = FutureProvider.family<GroupDetail, String>(
   (ref, groupId) => ref.watch(groupRepositoryProvider).getGroup(groupId),
 );
 
-final groupExpensesProvider = FutureProvider.family<List<GroupExpense>, String>(
-  (ref, groupId) =>
-      ref.watch(groupExpenseRepositoryProvider).listExpenses(groupId),
+final groupExpensesProvider = StreamProvider.family<List<GroupExpense>, String>(
+  (ref, groupId) {
+    final remote = ref.watch(groupExpenseRepositoryProvider);
+    final userId = ref.watch(currentGroupUserIdProvider);
+    if (!ref.watch(groupExpenseLocalFirstListingEnabledProvider) ||
+        userId == null) {
+      return Stream.fromFuture(remote.listExpenses(groupId));
+    }
+
+    final ownerKey = 'user:$userId';
+    final reader = ref.watch(localFirstGroupExpenseReaderProvider);
+    unawaited(
+      reader
+          .refresh(groupId: groupId, ownerKey: ownerKey)
+          .then<void>((_) {})
+          .catchError((Object _) {}),
+    );
+    return reader.watch(groupId: groupId, ownerKey: ownerKey);
+  },
 );
 
 final groupDebtSummaryProvider = FutureProvider.family<DebtSummary, String>(

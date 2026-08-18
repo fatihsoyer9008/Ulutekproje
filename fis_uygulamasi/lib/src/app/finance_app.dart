@@ -7,15 +7,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/network_connectivity_monitor.dart';
 import '../../core/theme/theme_mode_provider.dart';
 import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
 import '../../features/ai_assistant/data/ai_assistant_client.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
 import '../../features/backup/data/transaction_json_import_service.dart';
-import '../../features/groups/application/group_sync_coordinator.dart';
 import '../../features/groups/data/group_providers.dart';
 import '../../features/groups/domain/group_models.dart';
 import '../../features/notifications/notification_navigation_controller.dart';
+import '../../features/sync/application/automatic_sync_service.dart';
 import '../../features/sync/application/sync_coordinator.dart';
 import '../../features/sync/domain/sync_state.dart';
 import '../screens/expense_screen.dart';
@@ -62,20 +63,34 @@ class FinanceApp extends ConsumerStatefulWidget {
   ConsumerState<FinanceApp> createState() => _FinanceAppState();
 }
 
-class _FinanceAppState extends ConsumerState<FinanceApp> {
+class _FinanceAppState extends ConsumerState<FinanceApp>
+    with WidgetsBindingObserver {
   GoRouter? _router;
   ProviderSubscription<AuthSessionState>? _authSubscription;
   StreamSubscription<Uri>? _deepLinkSubscription;
+  StreamSubscription<bool>? _connectivitySubscription;
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
   String? _pendingGroupInvitationToken;
   final Set<String> _handledDeepLinkKeys = <String>{};
   bool _acceptingGroupInvitation = false;
   bool _invitationLoginMessageShown = false;
+  bool? _lastKnownOnline;
+  int _connectivityObservationVersion = 0;
 
   @override
   void initState() {
     super.initState();
+
+    if (widget.enableStartupSync) {
+      WidgetsBinding.instance.addObserver(this);
+      final connectivity = ref.read(networkConnectivityMonitorProvider);
+      _connectivitySubscription = connectivity.onOnlineStatusChanged.listen(
+        _handleConnectivityStatus,
+        onError: (Object _, StackTrace _) {},
+      );
+      unawaited(_refreshConnectivityStatus());
+    }
 
     if (widget.enableAuth || widget.enableStartupSync) {
       _authSubscription = ref.listenManual(authSessionControllerProvider, (
@@ -86,12 +101,9 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
             next.status == AuthStatus.authenticated &&
             previous?.status != AuthStatus.authenticated) {
           unawaited(
-            ref.read(syncCoordinatorProvider.notifier).syncPendingTasks(),
-          );
-          unawaited(
             ref
-                .read(groupSyncCoordinatorProvider.notifier)
-                .syncPendingAndPull(),
+                .read(automaticSyncServiceProvider)
+                .syncAllAfterConnectivityRestored(),
           );
         }
         if (widget.enableAuth && previous?.status != next.status) {
@@ -141,14 +153,60 @@ class _FinanceAppState extends ConsumerState<FinanceApp> {
 
   @override
   void dispose() {
+    if (widget.enableStartupSync) {
+      WidgetsBinding.instance.removeObserver(this);
+    }
     _authSubscription?.close();
     final deepLinkSubscription = _deepLinkSubscription;
     if (deepLinkSubscription != null) {
       unawaited(deepLinkSubscription.cancel());
     }
+    final connectivitySubscription = _connectivitySubscription;
+    if (connectivitySubscription != null) {
+      unawaited(connectivitySubscription.cancel());
+    }
     widget.notificationNavigationController?.detachNavigator();
     _router?.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && widget.enableStartupSync) {
+      unawaited(_refreshConnectivityStatus(syncWhenOnline: true));
+    }
+  }
+
+  Future<void> _refreshConnectivityStatus({bool syncWhenOnline = false}) async {
+    final observationVersion = ++_connectivityObservationVersion;
+    try {
+      final online = await ref
+          .read(networkConnectivityMonitorProvider)
+          .isOnline();
+      if (observationVersion != _connectivityObservationVersion) return;
+      _lastKnownOnline = online;
+      if (syncWhenOnline && online) _syncAfterConnectivityRestored();
+    } on Object {
+      // Platform bağlantı bilgisi geçici olarak okunamıyorsa stream dinlenmeye
+      // devam eder; sync kuyruğu olduğu gibi korunur.
+    }
+  }
+
+  void _handleConnectivityStatus(bool online) {
+    _connectivityObservationVersion += 1;
+    final wasOnline = _lastKnownOnline;
+    _lastKnownOnline = online;
+    if (online && wasOnline == false) _syncAfterConnectivityRestored();
+  }
+
+  void _syncAfterConnectivityRestored() {
+    if (ref.read(authSessionControllerProvider).status !=
+        AuthStatus.authenticated) {
+      return;
+    }
+    unawaited(
+      ref.read(automaticSyncServiceProvider).syncAllAfterConnectivityRestored(),
+    );
   }
 
   Future<void> _loadInitialDeepLink(InitialDeepLinkLoader loader) async {

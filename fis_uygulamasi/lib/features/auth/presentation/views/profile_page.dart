@@ -98,6 +98,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                         .read(groupSyncCoordinatorProvider.notifier)
                         .retryFailedAndConflicted(),
                   ]),
+            onResolveConflicts: isGuest
+                ? null
+                : () => context.push('/sync-conflicts'),
           ),
           if (!isGuest && widget.aiAssistantClient != null) ...[
             const SizedBox(height: 20),

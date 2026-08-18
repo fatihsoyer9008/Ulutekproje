@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:isar/isar.dart';
 
+import '../models/expense_share_entity.dart';
 import '../models/group_expense_entity.dart';
+import '../models/group_settlement_entity.dart';
 import '../models/offline_task.dart';
 import '../models/transaction_entity.dart';
 
@@ -110,6 +112,139 @@ class GroupExpenseOfflineRepository {
       .sortByExpenseDateDesc()
       .findAll();
 
+  /// UI için aktif masrafları yerel veritabanından canlı olarak yayınlar.
+  /// Tombstone kayıtları sync/audit amacıyla saklanır fakat listede gösterilmez.
+  Stream<List<GroupExpenseEntity>> watchActiveByGroup({
+    required String groupId,
+    required String ownerKey,
+  }) => _isar.groupExpenseEntitys
+      .filter()
+      .groupIdEqualTo(groupId)
+      .ownerKeyEqualTo(ownerKey)
+      .deletedAtIsNull()
+      .sortByExpenseDateDesc()
+      .watch(fireImmediately: true);
+
+  /// Pull ile gelen ExpenseShare snapshot'ını idempotent biçimde saklar.
+  /// Daha yeni bir snapshot veya tombstone eski pull verisiyle ezilmez.
+  Future<bool> saveExpenseShareFromPull(ExpenseShareEntity share) {
+    _validatePulledShare(share);
+    return _isar.writeTxn(() async {
+      final existing = await _isar.expenseShareEntitys.getByRecordKey(
+        share.recordKey,
+      );
+      if (existing != null) {
+        if (existing.serverUpdatedAt.toUtc().isAfter(
+          share.serverUpdatedAt.toUtc(),
+        )) {
+          return false;
+        }
+        if (_sameShareSnapshot(existing, share)) return false;
+        share.id = existing.id;
+      }
+      await _isar.expenseShareEntitys.put(share);
+      return true;
+    });
+  }
+
+  /// Pull ile gelen ExpenseShare silmesini kayıt yoksa bile tombstone olarak
+  /// saklar. Böylece daha eski create/update snapshot'ları diriltilemez.
+  Future<bool> applyExpenseShareTombstoneFromPull({
+    required String expenseId,
+    required String userId,
+    required String groupId,
+    required String ownerKey,
+    required DateTime deletedAt,
+  }) {
+    _requirePulledOwner(ownerKey);
+    final tombstoneAt = deletedAt.toUtc();
+    final recordKey = _expenseShareRecordKey(ownerKey, expenseId, userId);
+    return _isar.writeTxn(() async {
+      final existing = await _isar.expenseShareEntitys.getByRecordKey(
+        recordKey,
+      );
+      if (existing != null) {
+        if (existing.groupId != groupId ||
+            existing.expenseId != expenseId ||
+            existing.userId != userId ||
+            existing.ownerKey != ownerKey) {
+          throw StateError('ExpenseShare tombstone kapsamı eşleşmiyor.');
+        }
+        if (existing.serverUpdatedAt.toUtc().isAfter(tombstoneAt) ||
+            (_sameInstant(existing.serverUpdatedAt, tombstoneAt) &&
+                existing.deletedAt != null)) {
+          return false;
+        }
+        existing
+          ..serverUpdatedAt = tombstoneAt
+          ..deletedAt = tombstoneAt;
+        await _isar.expenseShareEntitys.put(existing);
+        return true;
+      }
+
+      await _isar.expenseShareEntitys.put(
+        ExpenseShareEntity()
+          ..recordKey = recordKey
+          ..expenseId = expenseId
+          ..userId = userId
+          ..groupId = groupId
+          ..ownerKey = ownerKey
+          ..serverUpdatedAt = tombstoneAt
+          ..deletedAt = tombstoneAt,
+      );
+      return true;
+    });
+  }
+
+  Future<ExpenseShareEntity?> getExpenseShare({
+    required String expenseId,
+    required String userId,
+    required String ownerKey,
+  }) => _isar.expenseShareEntitys.getByRecordKey(
+    _expenseShareRecordKey(ownerKey, expenseId, userId),
+  );
+
+  Future<List<ExpenseShareEntity>> getActiveExpenseShares({
+    required String expenseId,
+    required String ownerKey,
+  }) => _isar.expenseShareEntitys
+      .filter()
+      .expenseIdEqualTo(expenseId)
+      .ownerKeyEqualTo(ownerKey)
+      .deletedAtIsNull()
+      .findAll();
+
+  /// Immutable settlement snapshot'ını kullanıcı kapsamında idempotent saklar.
+  Future<bool> saveSettlementFromPull(GroupSettlementEntity settlement) {
+    _validatePulledSettlement(settlement);
+    return _isar.writeTxn(() async {
+      final existing = await _isar.groupSettlementEntitys.getByRecordKey(
+        settlement.recordKey,
+      );
+      if (existing != null) {
+        if (existing.serverUpdatedAt.toUtc().isAfter(
+          settlement.serverUpdatedAt.toUtc(),
+        )) {
+          return false;
+        }
+        if (_sameSettlementSnapshot(existing, settlement)) return false;
+        settlement.id = existing.id;
+      }
+      await _isar.groupSettlementEntitys.put(settlement);
+      return true;
+    });
+  }
+
+  Future<List<GroupSettlementEntity>> getSettlementsByGroup({
+    required String groupId,
+    required String ownerKey,
+  }) => _isar.groupSettlementEntitys
+      .filter()
+      .groupIdEqualTo(groupId)
+      .ownerKeyEqualTo(ownerKey)
+      .sortByCreatedAtDesc()
+      .findAll();
+
   /// Yalnız grup operasyonlarını oluşturulma sırasıyla döndürür.
   Future<List<OfflineTask>> getPendingSyncTasks({
     required String ownerKey,
@@ -133,6 +268,36 @@ class GroupExpenseOfflineRepository {
         .take(limit)
         .toList(growable: false);
   }
+
+  Future<List<OfflineTask>> getConflictSyncTasks({
+    required String ownerKey,
+  }) async {
+    final tasks = await _isar.offlineTasks
+        .filter()
+        .statusEqualTo(OfflineTaskStatus.conflict)
+        .sortByUpdatedAtDesc()
+        .findAll();
+    return tasks
+        .where((task) {
+          if (task.type != OfflineTaskType.groupExpenseCreate &&
+              task.type != OfflineTaskType.groupExpenseUpdate &&
+              task.type != OfflineTaskType.groupExpenseDelete) {
+            return false;
+          }
+          try {
+            return _decodePayload(task.payloadJson)['owner_key'] == ownerKey;
+          } on StateError {
+            return false;
+          }
+        })
+        .toList(growable: false);
+  }
+
+  Stream<List<OfflineTask>> watchConflictSyncTasks({
+    required String ownerKey,
+  }) => _isar.offlineTasks
+      .watchLazy(fireImmediately: true)
+      .asyncMap((_) => getConflictSyncTasks(ownerKey: ownerKey));
 
   /// Expense dışındaki immutable grup operasyonlarını (örn. settlement)
   /// owner scope'u doğrulandıktan sonra kalıcı kuyruğa ekler.
@@ -168,6 +333,37 @@ class GroupExpenseOfflineRepository {
                     task.status == OfflineTaskStatus.conflict),
           )
           .toList();
+      if (retryable.isEmpty) return const <Id>{};
+
+      final now = DateTime.now().toUtc();
+      for (final task in retryable) {
+        task
+          ..status = OfflineTaskStatus.pending
+          ..updatedAt = now;
+        await _updateExpenseSyncState(task, _pendingSyncState(task));
+      }
+      await _isar.offlineTasks.putAll(retryable);
+      return retryable.map((task) => task.id).toSet();
+    });
+  }
+
+  /// Bağlantı geri geldiğinde yalnız geçici hata denemesi bulunan ve aktif
+  /// kullanıcıya ait failed grup görevlerini yeniden kuyruğa alır.
+  Future<Set<Id>> requeueRetryableFailedSyncTasks({required String ownerKey}) {
+    return _isar.writeTxn(() async {
+      final tasks = await _isar.offlineTasks.where().findAll();
+      final retryable = tasks.where((task) {
+        if (!task.type.isGroupOperation ||
+            task.status != OfflineTaskStatus.failed ||
+            task.retryCount <= 0) {
+          return false;
+        }
+        try {
+          return _decodePayload(task.payloadJson)['owner_key'] == ownerKey;
+        } on StateError {
+          return false;
+        }
+      }).toList();
       if (retryable.isEmpty) return const <Id>{};
 
       final now = DateTime.now().toUtc();
@@ -226,6 +422,91 @@ class GroupExpenseOfflineRepository {
         await _updateExpenseSyncState(task, SyncState.failed);
       });
 
+  /// Kullanıcı sunucu sürümünü seçtiğinde conflict taskını kapatır ve yerel
+  /// masrafı aynı transaction içinde server snapshotı/tombstone ile değiştirir.
+  Future<void> resolveConflictUsingServer({
+    required Id conflictTaskId,
+    required String ownerKey,
+    GroupExpenseEntity? serverExpense,
+    DateTime? serverDeletedAt,
+  }) {
+    if ((serverExpense == null) == (serverDeletedAt == null)) {
+      throw ArgumentError(
+        'Server snapshotı veya tombstone zamanı seçeneklerinden biri verilmeli.',
+      );
+    }
+    return _isar.writeTxn(() async {
+      final task = await _requireConflictTask(conflictTaskId, ownerKey);
+      final expenseId = await _expenseIdForTask(task);
+      if (expenseId == null) {
+        throw StateError('Conflict görevi bir grup masrafına bağlanamadı.');
+      }
+      final existing = await _isar.groupExpenseEntitys.getByExpenseId(
+        expenseId,
+      );
+      if (serverExpense != null) {
+        if (serverExpense.ownerKey != ownerKey ||
+            serverExpense.expenseId != expenseId ||
+            serverExpense.syncState != SyncState.synced) {
+          throw StateError(
+            'Server masraf snapshotı conflict kapsamıyla eşleşmiyor.',
+          );
+        }
+        if (existing != null) serverExpense.id = existing.id;
+        await _isar.groupExpenseEntitys.put(serverExpense);
+      } else {
+        if (existing == null || existing.ownerKey != ownerKey) {
+          throw StateError('Silinen server masrafının yerel kaydı bulunamadı.');
+        }
+        final deletedAt = serverDeletedAt!.toUtc();
+        existing
+          ..syncState = SyncState.synced
+          ..deletedAt = deletedAt
+          ..updatedAt = deletedAt
+          ..payloadJson = _withTombstone(existing.payloadJson, deletedAt);
+        await _isar.groupExpenseEntitys.put(existing);
+      }
+      final now = DateTime.now().toUtc();
+      task
+        ..status = OfflineTaskStatus.synced
+        ..lastAttemptAt = now
+        ..updatedAt = now;
+      await _isar.offlineTasks.put(task);
+    });
+  }
+
+  /// Kullanıcı yerel sürümü seçtiğinde eski conflict taskını audit için
+  /// kapatır; yeni idempotency anahtarlı task ve pending snapshotı atomik yazar.
+  Future<Id> replaceConflictWithPending({
+    required Id conflictTaskId,
+    required String ownerKey,
+    required GroupExpenseEntity replacementExpense,
+    required OfflineTask replacementTask,
+  }) async {
+    _validatePendingPair(replacementExpense, replacementTask);
+    final now = DateTime.now().toUtc();
+    replacementTask
+      ..createdAt = now
+      ..updatedAt = now;
+    return _isar.writeTxn(() async {
+      final conflict = await _requireConflictTask(conflictTaskId, ownerKey);
+      final conflictPayload = _decodePayload(conflict.payloadJson);
+      final replacementPayload = _decodePayload(replacementTask.payloadJson);
+      if (conflictPayload['group_id'] != replacementPayload['group_id'] ||
+          replacementPayload['owner_key'] != ownerKey ||
+          conflict.clientTaskId == replacementTask.clientTaskId) {
+        throw StateError('Replacement task conflict kapsamıyla eşleşmiyor.');
+      }
+      conflict
+        ..status = OfflineTaskStatus.synced
+        ..lastAttemptAt = now
+        ..updatedAt = now;
+      await _isar.offlineTasks.put(conflict);
+      await _putExpense(replacementExpense);
+      return _isar.offlineTasks.put(replacementTask);
+    });
+  }
+
   /// Pull ile gelen server snapshot'ını yalnız yerelde bekleyen değişiklik yoksa
   /// uygular. Pending/failed kayıtların sessizce ezilmesini engeller.
   Future<bool> saveSyncedFromPull(GroupExpenseEntity expense) {
@@ -237,11 +518,32 @@ class GroupExpenseOfflineRepository {
     }
 
     return _isar.writeTxn(() async {
-      final existing = await _isar.groupExpenseEntitys.getByExpenseId(
-        expense.expenseId,
-      );
-      if (existing != null && existing.syncState != SyncState.synced) {
+      final existingByExpenseId = await _isar.groupExpenseEntitys
+          .getByExpenseId(expense.expenseId);
+      final existingByClientRecordId = await _isar.groupExpenseEntitys
+          .getByClientRecordId(expense.clientRecordId);
+      final existingRecords = <GroupExpenseEntity>{
+        // ignore: use_null_aware_elements, analyzer sürümü Isar generator'dan yeni
+        if (existingByExpenseId != null) existingByExpenseId,
+        // ignore: use_null_aware_elements, analyzer sürümü Isar generator'dan yeni
+        if (existingByClientRecordId != null) existingByClientRecordId,
+      };
+      if (existingRecords.any(
+        (existing) => existing.syncState != SyncState.synced,
+      )) {
         return false;
+      }
+      if (existingRecords.any(
+        (existing) =>
+            existing.updatedAt.toUtc().isAfter(expense.updatedAt.toUtc()),
+      )) {
+        return false;
+      }
+      final existing = existingByClientRecordId ?? existingByExpenseId;
+      if (existingByExpenseId != null &&
+          existingByClientRecordId != null &&
+          existingByExpenseId.id != existingByClientRecordId.id) {
+        await _isar.groupExpenseEntitys.delete(existingByExpenseId.id);
       }
       if (existing != null) expense.id = existing.id;
       await _isar.groupExpenseEntitys.put(expense);
@@ -306,6 +608,20 @@ class GroupExpenseOfflineRepository {
       await mutate(task, now);
       await _isar.offlineTasks.put(task);
     });
+  }
+
+  Future<OfflineTask> _requireConflictTask(Id taskId, String ownerKey) async {
+    final task = await _isar.offlineTasks.get(taskId);
+    if (task == null ||
+        task.status != OfflineTaskStatus.conflict ||
+        !task.type.isGroupOperation) {
+      throw StateError('Çözülecek conflict görevi bulunamadı.');
+    }
+    final payload = _decodePayload(task.payloadJson);
+    if (payload['owner_key'] != ownerKey) {
+      throw StateError('Conflict görevi aktif kullanıcıya ait değil.');
+    }
+    return task;
   }
 
   Future<void> _updateExpenseSyncState(
@@ -396,4 +712,80 @@ class GroupExpenseOfflineRepository {
       ..['updated_at'] = timestamp;
     return jsonEncode(payload);
   }
+
+  void _validatePulledShare(ExpenseShareEntity share) {
+    _requirePulledOwner(share.ownerKey);
+    if (share.recordKey !=
+            _expenseShareRecordKey(
+              share.ownerKey,
+              share.expenseId,
+              share.userId,
+            ) ||
+        share.deletedAt != null ||
+        share.payloadJson == null ||
+        share.displayName == null ||
+        share.amountInMinor == null ||
+        share.status == null) {
+      throw StateError('Geçersiz ExpenseShare pull snapshotı.');
+    }
+  }
+
+  void _validatePulledSettlement(GroupSettlementEntity settlement) {
+    _requirePulledOwner(settlement.ownerKey);
+    if (settlement.recordKey !=
+        _settlementRecordKey(settlement.ownerKey, settlement.settlementId)) {
+      throw StateError('Geçersiz Settlement pull snapshotı.');
+    }
+  }
+
+  void _requirePulledOwner(String ownerKey) {
+    if (!ownerKey.startsWith('user:')) {
+      throw StateError('Pull snapshotı kayıtlı kullanıcıya ait olmalıdır.');
+    }
+  }
+
+  bool _sameShareSnapshot(ExpenseShareEntity left, ExpenseShareEntity right) =>
+      _sameInstant(left.serverUpdatedAt, right.serverUpdatedAt) &&
+      left.groupId == right.groupId &&
+      left.ownerKey == right.ownerKey &&
+      left.expenseId == right.expenseId &&
+      left.userId == right.userId &&
+      left.displayName == right.displayName &&
+      left.amountInMinor == right.amountInMinor &&
+      left.status == right.status &&
+      _sameNullableInstant(left.settledAt, right.settledAt) &&
+      left.payloadJson == right.payloadJson &&
+      _sameNullableInstant(left.deletedAt, right.deletedAt);
+
+  bool _sameSettlementSnapshot(
+    GroupSettlementEntity left,
+    GroupSettlementEntity right,
+  ) =>
+      _sameInstant(left.serverUpdatedAt, right.serverUpdatedAt) &&
+      left.groupId == right.groupId &&
+      left.ownerKey == right.ownerKey &&
+      left.settlementId == right.settlementId &&
+      left.fromUserId == right.fromUserId &&
+      left.toUserId == right.toUserId &&
+      left.amountInMinor == right.amountInMinor &&
+      left.currency == right.currency &&
+      _sameInstant(left.settledAt, right.settledAt) &&
+      left.note == right.note &&
+      _sameInstant(left.createdAt, right.createdAt) &&
+      left.payloadJson == right.payloadJson;
+
+  bool _sameInstant(DateTime left, DateTime right) =>
+      left.toUtc() == right.toUtc();
+
+  bool _sameNullableInstant(DateTime? left, DateTime? right) =>
+      left == null || right == null ? left == right : _sameInstant(left, right);
+
+  String _expenseShareRecordKey(
+    String ownerKey,
+    String expenseId,
+    String userId,
+  ) => '$ownerKey|$expenseId|$userId';
+
+  String _settlementRecordKey(String ownerKey, String settlementId) =>
+      '$ownerKey|$settlementId';
 }
