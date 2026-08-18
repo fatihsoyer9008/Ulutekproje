@@ -17,3 +17,8 @@ Desktop.ini
 /.dart-localappdata/
 
 strix_runs
+
+# Root-level env files (e.g. docker-compose variable substitution secrets
+# such as N8N_ENCRYPTION_KEY) must never be committed.
+/.env
+/.env.*

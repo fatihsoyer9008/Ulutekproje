@@ -70,5 +70,35 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    environment:
+      N8N_HOST: ${N8N_HOST:?N8N_HOST must be set}
+      N8N_PROTOCOL: https
+      N8N_PORT: "5678"
+      N8N_PATH: /n8n/
+      WEBHOOK_URL: https://${N8N_HOST:?N8N_HOST must be set}/n8n/
+      N8N_EDITOR_BASE_URL: https://${N8N_HOST:?N8N_HOST must be set}/n8n/
+      # Encrypts credentials stored inside n8n. Losing this key makes every
+      # saved credential permanently undecryptable, even with the volume
+      # intact — back it up outside this server (e.g. a password manager).
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY must be set}
+      N8N_SECURE_COOKIE: "true"
+      GENERIC_TIMEZONE: Europe/Istanbul
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O- http://127.0.0.1:5678/healthz || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 volumes:
   postgres_data:
+  n8n_data:
