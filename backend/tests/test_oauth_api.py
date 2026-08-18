@@ -181,7 +181,9 @@ async def test_google_endpoint_returns_actionable_validation_error(
 
 
 @pytest.mark.asyncio
-async def test_oauth_never_silently_links_existing_email(oauth_context) -> None:
+async def test_oauth_never_silently_links_unverified_existing_email(
+    oauth_context,
+) -> None:
     client, _, google, _, _ = oauth_context
     register = await client.post(
         "/api/v1/auth/register",
@@ -192,6 +194,10 @@ async def test_oauth_never_silently_links_existing_email(oauth_context) -> None:
     )
     assert register.status_code == 202
 
+    # The registered account never completed FişKon's own email verification,
+    # so we can't be sure the Google sign-in and the password account belong
+    # to the same person — an attacker could have squatted the email without
+    # ever proving they control the inbox.
     response = await client.post(
         "/api/v1/auth/google",
         json={"id_token": "g" * 32, "nonce": "n" * 16},
@@ -204,6 +210,81 @@ async def test_oauth_never_silently_links_existing_email(oauth_context) -> None:
             "önce e-posta ve şifrenizle giriş yapın."
         ),
     }
+
+
+@pytest.mark.asyncio
+async def test_oauth_links_to_verified_existing_account_and_logs_in(
+    oauth_context,
+) -> None:
+    client, session_factory, google, _, _ = oauth_context
+    register = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": google.identity.email,
+            "password": "A-strong-existing-password-123",
+        },
+    )
+    assert register.status_code == 202
+
+    async with session_factory() as session:
+        user = await session.scalar(
+            select(User).where(User.email == google.identity.email)
+        )
+        assert user is not None
+        existing_user_id = user.id
+        user.is_email_verified = True
+        await session.commit()
+
+    # Both sides now have independently proven mailbox ownership (FişKon's
+    # own email verification, plus Google asserting email_verified=True), so
+    # the Google sign-in should link straight into the existing account
+    # instead of demanding a password login first.
+    response = await client.post(
+        "/api/v1/auth/google",
+        json={"id_token": "g" * 32, "nonce": "n" * 16},
+    )
+    assert response.status_code == 200
+    assert response.json()["user"]["id"] == str(existing_user_id)
+
+    async with session_factory() as session:
+        account = await session.scalar(
+            select(OAuthAccount).where(
+                OAuthAccount.provider_subject == google.identity.subject
+            )
+        )
+        assert account is not None
+        assert account.user_id == existing_user_id
+        assert account.provider is OAuthProvider.google
+
+
+@pytest.mark.asyncio
+async def test_oauth_does_not_link_to_a_suspended_existing_account(
+    oauth_context,
+) -> None:
+    client, session_factory, google, _, _ = oauth_context
+    register = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": google.identity.email,
+            "password": "A-strong-existing-password-123",
+        },
+    )
+    assert register.status_code == 202
+
+    async with session_factory() as session:
+        user = await session.scalar(
+            select(User).where(User.email == google.identity.email)
+        )
+        assert user is not None
+        user.is_email_verified = True
+        user.status = UserStatus.suspended
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/auth/google",
+        json={"id_token": "g" * 32, "nonce": "n" * 16},
+    )
+    assert response.status_code == 409
 
 
 @pytest.mark.asyncio

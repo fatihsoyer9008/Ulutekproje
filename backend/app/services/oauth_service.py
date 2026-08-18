@@ -59,12 +59,47 @@ class OAuthLoginService:
         normalized_email = normalize_email(identity.email)
         existing_user = await self.users.get_by_email(normalized_email)
         if existing_user is not None:
-            # Never use provider email alone to attach a new login method. The
-            # user must first authenticate to the existing account and use an
-            # explicit account-linking flow.
-            raise AccountLinkingRequired(
-                "Sign in to the existing account before linking this provider"
+            # Only auto-link when BOTH sides have independently proven mailbox
+            # ownership: the provider says email_verified=True (checked above)
+            # AND our own account already completed FişKon's email
+            # verification. That second condition is what makes this safe —
+            # an attacker who merely registers a password account with a
+            # victim's email cannot complete FişKon's verification (it's sent
+            # to the real inbox), so an unverified existing account can never
+            # silently receive someone else's OAuth login. If either side
+            # can't prove ownership, fall back to requiring an explicit
+            # password login first.
+            if (
+                existing_user.status is not UserStatus.active
+                or not existing_user.is_email_verified
+            ):
+                raise AccountLinkingRequired(
+                    "Sign in to the existing account before linking this provider"
+                )
+            new_account = OAuthAccount(
+                id=uuid.uuid4(),
+                user_id=existing_user.id,
+                provider=identity.provider,
+                provider_subject=identity.subject,
+                provider_email=normalized_email,
+                provider_refresh_token_encrypted=self._encrypted_refresh_token(
+                    identity
+                ),
             )
+            existing_user.last_login_at = utc_now()
+            try:
+                await self.oauth_accounts.add(new_account)
+                issued = await SessionService(self.db).issue(
+                    user=existing_user,
+                    metadata=metadata,
+                )
+                await self.db.commit()
+                return issued
+            except IntegrityError as exc:
+                await self.db.rollback()
+                raise AccountLinkingRequired(
+                    "OAuth account could not be linked safely"
+                ) from exc
 
         user = User(
             id=uuid.uuid4(),
