@@ -72,7 +72,7 @@ void main() {
       };
       await tester.pumpWidget(
         FinanceApp(
-          transactionStream: repository.watchAllTransactions(),
+          transactionStream: repository.watchAllTransactions(ownerKey: null),
           saveTransaction: repository.addTransaction,
           scanReceipt: (_) async => rawOcrText,
           parseReceipt: (text, {cancelToken}) {
@@ -101,7 +101,9 @@ void main() {
       expect(sentOcrText, rawOcrText);
       expect(find.text('Fişiniz inceleniyor...'), findsOneWidget);
       // Kullanıcı onaylamadan Isar'a yeni gider kaydı yazılmamalıdır.
-      final beforeConfirmation = await repository.getAllTransactions();
+      final beforeConfirmation = await repository.getAllTransactions(
+        ownerKey: null,
+      );
       expect(beforeConfirmation, hasLength(1));
 
       // Sahte backend cevabı döndürülür.
@@ -157,7 +159,9 @@ void main() {
       expect(_textOf(tester, const Key('total_balance')), contains('74,50'));
 
       // Isar kaydının alanları doğrulanır.
-      final allTransactions = await repository.getAllTransactions();
+      final allTransactions = await repository.getAllTransactions(
+        ownerKey: null,
+      );
       final expenses = allTransactions
           .where(
             (transaction) =>

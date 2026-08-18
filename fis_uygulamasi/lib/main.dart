@@ -116,7 +116,11 @@ class _AppBootstrap extends ConsumerWidget {
       },
     );
     final transactionImportService = TransactionJsonImportService(
-      importTransactions: transactionRepository.importTransactions,
+      importTransactions: (transactions) =>
+          transactionRepository.importTransactions(
+            transactions,
+            ownerKey: _currentOwnerKey(ref),
+          ),
     );
 
     return FinanceApp(
@@ -124,7 +128,9 @@ class _AppBootstrap extends ConsumerWidget {
       enableStartupSync: true,
       enableDatabaseFeatures: true,
       notificationNavigationController: notificationNavigationController,
-      transactionStreamFactory: transactionRepository.watchAllTransactions,
+      transactionStreamFactory: () => transactionRepository.watchAllTransactions(
+        ownerKey: _currentOwnerKey(ref),
+      ),
       saveTransaction: (transaction) async {
         final auth = ref.read(authSessionControllerProvider);
         await offlineFirstWriter.save(
@@ -136,5 +142,15 @@ class _AppBootstrap extends ConsumerWidget {
       },
       transactionImportService: transactionImportService,
     );
+  }
+
+  /// Oturumdaki kullanıcıya göre kişisel işlemleri ayıran anahtar — misafirde
+  /// `null`, giriş yapılmışsa `offline_first_transaction_writer.dart`'taki
+  /// yazma mantığıyla aynı `'user:<id>'` biçimi.
+  String? _currentOwnerKey(WidgetRef ref) {
+    final auth = ref.read(authSessionControllerProvider);
+    if (auth.status != AuthStatus.authenticated) return null;
+    final userId = auth.user?.id;
+    return userId == null ? null : 'user:$userId';
   }
 }

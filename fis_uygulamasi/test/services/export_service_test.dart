@@ -25,7 +25,7 @@ void main() {
       directory: tempDirectory.path,
       name: 'export_service_test',
     );
-    databaseExporter = TransactionExportService(isar);
+    databaseExporter = TransactionExportService(isar, ownerKey: null);
   });
 
   tearDownAll(() async {

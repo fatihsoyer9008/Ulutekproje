@@ -330,8 +330,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     if (_exportingFormat != null) return;
     setState(() => _exportingFormat = format);
     try {
+      final auth = ref.read(authSessionControllerProvider);
       final service = TransactionExportFileService.fromIsar(
         ref.read(isarProvider),
+        ownerKey: auth.status == AuthStatus.authenticated && auth.user != null
+            ? 'user:${auth.user!.id}'
+            : null,
       );
       final saveResult = await service.exportAndSave(format);
       if (!context.mounted) return;

@@ -129,8 +129,11 @@ class TransactionExportFileService {
   final DirectoryLister _listDirectory;
   final DateTime Function() _now;
 
-  factory TransactionExportFileService.fromIsar(Isar isar) {
-    final exporter = TransactionExportService(isar);
+  factory TransactionExportFileService.fromIsar(
+    Isar isar, {
+    required String? ownerKey,
+  }) {
+    final exporter = TransactionExportService(isar, ownerKey: ownerKey);
     return TransactionExportFileService(
       exportJson: exporter.exportJsonString,
       exportCsv: exporter.exportCsvString,
