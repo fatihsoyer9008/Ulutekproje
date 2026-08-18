@@ -32,3 +32,16 @@ def test_production_compose_binds_ports_to_loopback_only() -> None:
         assert binding in content, (
             f"docker-compose.prod.yml must contain the loopback binding {binding}"
         )
+
+
+def test_api_service_declares_a_healthcheck() -> None:
+    for config_file in ("docker-compose.yml", "docker-compose.prod.yml"):
+        content = (_REPOSITORY_ROOT / config_file).read_text(encoding="utf-8")
+        api_block = content.split("\n  api:", 1)[1]
+
+        assert "healthcheck:" in api_block, (
+            f"{config_file} api service must declare a healthcheck"
+        )
+        assert "/health" in api_block, (
+            f"{config_file} api healthcheck must probe the /health endpoint"
+        )
