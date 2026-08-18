@@ -18,7 +18,18 @@ class GroupsPage extends ConsumerWidget {
     final currentUserId = ref.watch(authSessionControllerProvider).user?.id;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Gruplarım')),
+      appBar: AppBar(
+        title: const Text('Gruplarım'),
+        leading: BackButton(
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/home');
+            }
+          },
+        ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         key: const Key('create_group_button'),
         onPressed: () => _showCreateGroupSheet(context),
