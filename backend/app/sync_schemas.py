@@ -152,7 +152,28 @@ class SyncedTransaction(BaseModel):
     deleted_at: datetime | None
 
 
+class SyncedCloudReceipt(BaseModel):
+    id: uuid.UUID
+    client_record_id: uuid.UUID
+    merchant_name: str | None
+    total_amount_in_minor: int | None
+    currency: str
+    receipt_date: datetime | None
+    category: str | None
+    normalized_ocr_text: str | None
+    raw_ocr_text: str | None
+    is_parse_successful: bool
+    confidence_score: float | None
+    client_created_at: datetime
+    client_updated_at: datetime
+    server_updated_at: datetime
+    deleted_at: datetime | None
+
+
 class PullResponse(BaseModel):
     transactions: list[SyncedTransaction]
     next_cursor: str | None
     has_more: bool
+    cloud_receipts: list[SyncedCloudReceipt] = Field(default_factory=list)
+    cloud_receipts_next_cursor: str | None = None
+    cloud_receipts_has_more: bool = False

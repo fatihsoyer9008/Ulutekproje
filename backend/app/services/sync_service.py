@@ -10,8 +10,10 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import privacy_hash, utc_now
+from app.models.cloud_receipt import CloudReceipt
 from app.models.cloud_transaction import CloudTransaction
 from app.models.user import User
+from app.repositories.cloud_receipts import CloudReceiptRepository
 from app.repositories.cloud_transactions import CloudTransactionRepository
 from app.repositories.sync_claim_requests import SyncClaimRequestRepository
 from app.sync_schemas import (
@@ -20,6 +22,7 @@ from app.sync_schemas import (
     PullResponse,
     PushOperation,
     PushResponse,
+    SyncedCloudReceipt,
     SyncedTransaction,
     SyncResult,
     TransactionSyncPayload,
@@ -38,6 +41,7 @@ class SyncService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
         self.transactions = CloudTransactionRepository(db)
+        self.receipts = CloudReceiptRepository(db)
         self.claim_requests = SyncClaimRequestRepository(db)
 
     async def claim(
@@ -143,6 +147,8 @@ class SyncService:
         user: User,
         cursor: str | None,
         limit: int,
+        receipts_cursor: str | None = None,
+        receipts_limit: int = 100,
     ) -> PullResponse:
         after_updated_at, after_id = decode_cursor(cursor)
         records = await self.transactions.list_changes(
@@ -156,10 +162,31 @@ class SyncService:
         next_cursor = (
             encode_cursor(page[-1].updated_at, page[-1].id) if page else cursor
         )
+
+        receipts_after_updated_at, receipts_after_id = decode_cursor(receipts_cursor)
+        receipt_records = await self.receipts.list_changes(
+            user_id=user.id,
+            limit=receipts_limit + 1,
+            after_updated_at=receipts_after_updated_at,
+            after_id=receipts_after_id,
+        )
+        receipts_has_more = len(receipt_records) > receipts_limit
+        receipts_page = receipt_records[:receipts_limit]
+        receipts_next_cursor = (
+            encode_cursor(receipts_page[-1].updated_at, receipts_page[-1].id)
+            if receipts_page
+            else receipts_cursor
+        )
+
         return PullResponse(
             transactions=[_serialize_transaction(item) for item in page],
             next_cursor=next_cursor,
             has_more=has_more,
+            cloud_receipts=[
+                _serialize_cloud_receipt(item) for item in receipts_page
+            ],
+            cloud_receipts_next_cursor=receipts_next_cursor,
+            cloud_receipts_has_more=receipts_has_more,
         )
 
     async def _upsert(
@@ -361,6 +388,34 @@ def _serialize_transaction(transaction: CloudTransaction) -> SyncedTransaction:
             _as_utc(transaction.deleted_at)
             if transaction.deleted_at is not None
             else None
+        ),
+    )
+
+
+def _serialize_cloud_receipt(receipt: CloudReceipt) -> SyncedCloudReceipt:
+    return SyncedCloudReceipt(
+        id=receipt.id,
+        client_record_id=receipt.client_record_id,
+        merchant_name=receipt.merchant_name,
+        total_amount_in_minor=receipt.total_amount_in_minor,
+        currency=receipt.currency,
+        receipt_date=(
+            _as_utc(receipt.receipt_date) if receipt.receipt_date is not None else None
+        ),
+        category=receipt.category,
+        normalized_ocr_text=receipt.normalized_ocr_text,
+        raw_ocr_text=receipt.raw_ocr_text,
+        is_parse_successful=receipt.is_parse_successful,
+        confidence_score=(
+            float(receipt.confidence_score)
+            if receipt.confidence_score is not None
+            else None
+        ),
+        client_created_at=_as_utc(receipt.client_created_at),
+        client_updated_at=_as_utc(receipt.client_updated_at),
+        server_updated_at=_as_utc(receipt.updated_at),
+        deleted_at=(
+            _as_utc(receipt.deleted_at) if receipt.deleted_at is not None else None
         ),
     )
 

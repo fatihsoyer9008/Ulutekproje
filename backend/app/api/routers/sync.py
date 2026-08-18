@@ -862,6 +862,8 @@ async def push_transactions(
 async def pull_transactions(
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    receipts_cursor: str | None = None,
+    receipts_limit: Annotated[int, Query(ge=1, le=500)] = 100,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> PullResponse:
@@ -870,6 +872,8 @@ async def pull_transactions(
             user=user,
             cursor=cursor,
             limit=limit,
+            receipts_cursor=receipts_cursor,
+            receipts_limit=receipts_limit,
         )
     except InvalidSyncCursor:
         raise HTTPException(

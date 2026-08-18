@@ -42,8 +42,7 @@ services:
     build:
       context: ./backend
     env_file:
-      - path: ./backend/.env
-        required: false
+      - ./backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-receipt_app}:${POSTGRES_PASSWORD:-local-postgres-password}@postgres:5432/${POSTGRES_DB:-receipt_app}
       REDIS_URL: redis://:${REDIS_PASSWORD:-local-redis-password}@redis:6379/0
@@ -51,7 +50,7 @@ services:
       SECURITY_HMAC_SECRET: ${SECURITY_HMAC_SECRET:-local-development-hmac-secret-change-me}
       APP_DEEP_LINK_BASE_URL: fiskon://auth
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,5 +70,43 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    environment:
+      # A dedicated (sub)domain, not a path prefix: n8n's static asset
+      # server does not correctly honor N8N_PATH for the editor UI's own
+      # JS/CSS bundles (verified — requests under /<path>/assets/* come
+      # back as text/html instead of the actual file, even hitting n8n
+      # directly and bypassing the reverse proxy), so path-based hosting
+      # breaks the editor. A dedicated hostname avoids the bug entirely.
+      N8N_HOST: ${N8N_HOST:?N8N_HOST must be set}
+      N8N_PROTOCOL: https
+      N8N_PORT: "5678"
+      WEBHOOK_URL: https://${N8N_HOST:?N8N_HOST must be set}/
+      N8N_EDITOR_BASE_URL: https://${N8N_HOST:?N8N_HOST must be set}/
+      # Encrypts credentials stored inside n8n. Losing this key makes every
+      # saved credential permanently undecryptable, even with the volume
+      # intact — back it up outside this server (e.g. a password manager).
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY must be set}
+      N8N_SECURE_COOKIE: "true"
+      GENERIC_TIMEZONE: Europe/Istanbul
+      # Code nodes are sandboxed and block Node built-ins by default; the
+      # HMAC signing step in the receipt-parsing workflow needs `crypto`.
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O- http://127.0.0.1:5678/healthz || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 volumes:
   postgres_data:
+  n8n_data:
