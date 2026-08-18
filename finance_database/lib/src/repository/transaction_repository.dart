@@ -100,9 +100,14 @@ class TransactionRepository {
     });
   }
 
-  /// Veritabanındaki tüm işlemleri getirir.
-  Future<List<TransactionEntity>> getAllTransactions() async {
-    final transactions = await _isar.transactionEntitys.where().findAll();
+  /// Verilen sahibe (`null` = misafir) ait tüm işlemleri getirir.
+  Future<List<TransactionEntity>> getAllTransactions({
+    required String? ownerKey,
+  }) async {
+    final transactions = await _isar.transactionEntitys
+        .filter()
+        .ownerKeyEqualTo(ownerKey)
+        .findAll();
     return _hydrateReceiptLineItems(transactions);
   }
 
@@ -110,10 +115,14 @@ class TransactionRepository {
   ///
   /// İçe aktarılan ID'ler kullanılmaz; böylece mevcut kayıtların üzerine
   /// yazılmaz. Aynı finansal işlem veritabanında veya seçilen dosyada birden
-  /// fazla kez bulunuyorsa yalnızca ilk kayıt eklenir.
+  /// fazla kez bulunuyorsa yalnızca ilk kayıt eklenir. Tekrar kontrolü ve
+  /// kayıt sahipliği her zaman [ownerKey]'e (içe aktarımı yapan oturuma)
+  /// göredir — yedek dosyasındaki `ownerKey` alanı (başka bir cihaz/hesaba
+  /// ait olabilir) yok sayılıp üzerine yazılır.
   Future<TransactionImportResult> importTransactions(
-    List<TransactionEntity> transactions,
-  ) async {
+    List<TransactionEntity> transactions, {
+    required String? ownerKey,
+  }) async {
     if (transactions.isEmpty) {
       return const TransactionImportResult(
         selectedCount: 0,
@@ -123,7 +132,10 @@ class TransactionRepository {
     }
 
     return await _isar.writeTxn(() async {
-      final existing = await _isar.transactionEntitys.where().findAll();
+      final existing = await _isar.transactionEntitys
+          .filter()
+          .ownerKeyEqualTo(ownerKey)
+          .findAll();
       final fingerprints = existing.map(_fingerprint).toSet();
       final insertions = <TransactionEntity>[];
       var skippedDuplicateCount = 0;
@@ -134,6 +146,7 @@ class TransactionRepository {
           continue;
         }
         transaction.id = Isar.autoIncrement;
+        transaction.ownerKey = ownerKey;
         insertions.add(transaction);
       }
 
@@ -165,8 +178,9 @@ class TransactionRepository {
   /// sağlar.
   Future<List<TransactionEntity>> getTransactionsBetween(
     DateTime startDate,
-    DateTime endDate,
-  ) async {
+    DateTime endDate, {
+    required String? ownerKey,
+  }) async {
     final startOfDay = _startOfDay(startDate);
     final endOfDay = _startOfDay(endDate);
 
@@ -176,6 +190,8 @@ class TransactionRepository {
 
     final transactions = await _isar.transactionEntitys
         .filter()
+        .ownerKeyEqualTo(ownerKey)
+        .and()
         .dateBetween(startOfDay, _nextDayStart(endOfDay), includeUpper: false)
         .sortByDateDesc()
         .findAll();
@@ -188,8 +204,9 @@ class TransactionRepository {
   /// bütünüyle sorguya dahil edilir.
   Future<List<TransactionEntity>> getExpensesBetween(
     DateTime startDate,
-    DateTime endDate,
-  ) async {
+    DateTime endDate, {
+    required String? ownerKey,
+  }) async {
     final startOfDay = _startOfDay(startDate);
     final endOfDay = _startOfDay(endDate);
 
@@ -199,6 +216,8 @@ class TransactionRepository {
 
     final transactions = await _isar.transactionEntitys
         .filter()
+        .ownerKeyEqualTo(ownerKey)
+        .and()
         .dateBetween(startOfDay, _nextDayStart(endOfDay), includeUpper: false)
         .and()
         .transactionTypeEqualTo(TransactionType.expense)
@@ -214,6 +233,7 @@ class TransactionRepository {
   /// bir tarih anahtarı içerir. Tutarlar yalnızca [int] ile toplanır.
   Future<Map<DateTime, int>> getWeeklyDailyTotals({
     DateTime? referenceDate,
+    required String? ownerKey,
   }) async {
     final referenceDay = _startOfDay(referenceDate ?? DateTime.now());
     final startDay = DateTime(
@@ -221,7 +241,11 @@ class TransactionRepository {
       referenceDay.month,
       referenceDay.day - 6,
     );
-    final transactions = await getExpensesBetween(startDay, referenceDay);
+    final transactions = await getExpensesBetween(
+      startDay,
+      referenceDay,
+      ownerKey: ownerKey,
+    );
     final totals = <DateTime, int>{
       for (
         var day = startDay;
@@ -247,10 +271,15 @@ class TransactionRepository {
   /// enumun [TransactionCategory.name] değeriyle üretilir.
   Future<Map<TransactionCategory, int>> getCurrentMonthCategoryTotals({
     DateTime? referenceDate,
+    required String? ownerKey,
   }) async {
     final referenceDay = _startOfDay(referenceDate ?? DateTime.now());
     final startOfMonth = DateTime(referenceDay.year, referenceDay.month);
-    final transactions = await getExpensesBetween(startOfMonth, referenceDay);
+    final transactions = await getExpensesBetween(
+      startOfMonth,
+      referenceDay,
+      ownerKey: ownerKey,
+    );
     final totals = <TransactionCategory, int>{};
 
     for (final transaction in transactions) {
@@ -261,10 +290,14 @@ class TransactionRepository {
     return totals;
   }
 
-  /// Mevcut işlemleri ve veritabanındaki sonraki değişiklikleri yayınlar.
-  Stream<List<TransactionEntity>> watchAllTransactions() {
+  /// Verilen sahibe (`null` = misafir) ait işlemleri ve veritabanındaki
+  /// sonraki değişiklikleri yayınlar.
+  Stream<List<TransactionEntity>> watchAllTransactions({
+    required String? ownerKey,
+  }) {
     return _isar.transactionEntitys
-        .where()
+        .filter()
+        .ownerKeyEqualTo(ownerKey)
         .watch(fireImmediately: true)
         .asyncMap(_hydrateReceiptLineItems);
   }

@@ -201,13 +201,15 @@ void main() {
       await repository.addTransaction(t1);
       await repository.addTransaction(t2);
 
-      final list = await repository.getAllTransactions();
+      final list = await repository.getAllTransactions(ownerKey: null);
 
       expect(list.length, equals(2));
     });
 
     test('Yeni kayıtları stream üzerinden anlık yayınlar', () async {
-      final transactions = StreamIterator(repository.watchAllTransactions());
+      final transactions = StreamIterator(
+        repository.watchAllTransactions(ownerKey: null),
+      );
 
       expect(await transactions.moveNext(), isTrue);
       expect(transactions.current, isEmpty);
@@ -432,6 +434,7 @@ void main() {
         final results = await repository.getTransactionsBetween(
           DateTime(2026, 7, 10, 14),
           DateTime(2026, 7, 11, 8),
+          ownerKey: null,
         );
 
         expect(
@@ -442,6 +445,7 @@ void main() {
         final expenses = await repository.getExpensesBetween(
           DateTime(2026, 7, 10, 14),
           DateTime(2026, 7, 11, 8),
+          ownerKey: null,
         );
 
         expect(
@@ -484,6 +488,7 @@ void main() {
 
       final totals = await repository.getWeeklyDailyTotals(
         referenceDate: DateTime(2026, 7, 29, 12),
+        ownerKey: null,
       );
 
       expect(totals, hasLength(7));
@@ -534,6 +539,7 @@ void main() {
 
         final totals = await repository.getCurrentMonthCategoryTotals(
           referenceDate: DateTime(2026, 7, 29),
+          ownerKey: null,
         );
 
         expect(
@@ -560,6 +566,7 @@ void main() {
         final results = await repository.getTransactionsBetween(
           DateTime(2026, 7, 29), // Start > End
           DateTime(2026, 7, 1),
+          ownerKey: null,
         );
 
         expect(results, isEmpty);
@@ -571,10 +578,49 @@ void main() {
       () async {
         final totals = await repository.getWeeklyDailyTotals(
           referenceDate: DateTime(2026, 7, 29),
+          ownerKey: null,
         );
 
         expect(totals, hasLength(7));
         expect(totals.values.every((amount) => amount == 0), isTrue);
+      },
+    );
+
+    test(
+      "okuma metodları ownerKey'e göre misafir/hesap kayıtlarını birbirinden izole eder",
+      () async {
+        TransactionEntity ownedBy(String? ownerKey, int amountInMinor) =>
+            TransactionEntity()
+              ..amountInMinor = amountInMinor
+              ..category = TransactionCategory.market
+              ..date = DateTime(2026, 7, 15)
+              ..source = TransactionSource.manual
+              ..ownerKey = ownerKey;
+
+        await repository.addTransaction(ownedBy(null, 100));
+        await repository.addTransaction(ownedBy('user:a', 200));
+        await repository.addTransaction(ownedBy('user:b', 300));
+
+        final guestOnly = await repository.getAllTransactions(
+          ownerKey: null,
+        );
+        final userAOnly = await repository.getAllTransactions(
+          ownerKey: 'user:a',
+        );
+        final userBOnly = await repository.getAllTransactions(
+          ownerKey: 'user:b',
+        );
+
+        expect(guestOnly.map((t) => t.amountInMinor), [100]);
+        expect(userAOnly.map((t) => t.amountInMinor), [200]);
+        expect(userBOnly.map((t) => t.amountInMinor), [300]);
+
+        final userAStream = StreamIterator(
+          repository.watchAllTransactions(ownerKey: 'user:a'),
+        );
+        expect(await userAStream.moveNext(), isTrue);
+        expect(userAStream.current.map((t) => t.amountInMinor), [200]);
+        await userAStream.cancel();
       },
     );
   });

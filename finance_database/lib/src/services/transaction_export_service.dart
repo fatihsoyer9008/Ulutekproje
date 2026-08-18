@@ -7,8 +7,10 @@ import '../repository/transaction_repository.dart';
 
 class TransactionExportService {
   final Isar _isar;
+  final String? _ownerKey;
 
-  TransactionExportService(this._isar);
+  TransactionExportService(this._isar, {required String? ownerKey})
+    : _ownerKey = ownerKey;
 
   /// Isar veritabanındaki tüm işlem kayıtlarını JSON dizisine dönüştürür.
   ///
@@ -44,7 +46,7 @@ class TransactionExportService {
   Future<List<Map<String, dynamic>>> _transactionMaps() async {
     final transactions = await TransactionRepository(
       _isar,
-    ).getAllTransactions();
+    ).getAllTransactions(ownerKey: _ownerKey);
     return transactions.map((transaction) => transaction.toJson()).toList();
   }
 

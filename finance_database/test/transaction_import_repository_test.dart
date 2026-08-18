@@ -62,16 +62,19 @@ void main() {
           ..priceInMinor = 1250,
       ]
       ..receiptLineItemsLoaded = true;
-    final result = await repository.importTransactions([
-      transaction(merchantName: 'Mevcut'),
-      imported,
-      transaction(merchantName: 'Yeni'),
-    ]);
+    final result = await repository.importTransactions(
+      [
+        transaction(merchantName: 'Mevcut'),
+        imported,
+        transaction(merchantName: 'Yeni'),
+      ],
+      ownerKey: null,
+    );
 
     expect(result.selectedCount, 3);
     expect(result.importedCount, 1);
     expect(result.skippedDuplicateCount, 2);
-    final stored = await repository.getAllTransactions();
+    final stored = await repository.getAllTransactions(ownerKey: null);
     expect(stored, hasLength(2));
     expect(
       stored.map((item) => item.merchantName),
@@ -84,4 +87,58 @@ void main() {
       hasLength(1),
     );
   });
+
+  test(
+    'içe aktarma ownerKey\'i içe aktaran oturuma göre üzerine yazar ve '
+    'tekrar kontrolü sadece o kapsamda çalışır',
+    () async {
+      TransactionEntity transaction({
+        required String merchantName,
+        String? ownerKey,
+      }) {
+        final timestamp = DateTime(2026, 7, 30, 12);
+        return TransactionEntity()
+          ..transactionType = TransactionType.expense
+          ..amountInMinor = 1250
+          ..category = TransactionCategory.market
+          ..date = timestamp
+          ..merchantName = merchantName
+          ..source = TransactionSource.manual
+          ..createdAt = timestamp
+          ..updatedAt = timestamp
+          ..ownerKey = ownerKey;
+      }
+
+      // user:a'da zaten aynı işlem var; user:b bunu içe aktarınca tekrar
+      // sayılmamalı (izole tekrar kontrolü) ve kaydın owner'ı user:b olmalı
+      // (yedek dosyasındaki eski ownerKey yok sayılmalı).
+      await repository.addTransaction(
+        transaction(merchantName: 'Ortak Market', ownerKey: 'user:a'),
+      );
+
+      final backupFromAnotherDevice = transaction(
+        merchantName: 'Ortak Market',
+        ownerKey: 'user:a',
+      );
+
+      final result = await repository.importTransactions(
+        [backupFromAnotherDevice],
+        ownerKey: 'user:b',
+      );
+
+      expect(result.importedCount, 1);
+      expect(result.skippedDuplicateCount, 0);
+
+      final userBTransactions = await repository.getAllTransactions(
+        ownerKey: 'user:b',
+      );
+      expect(userBTransactions, hasLength(1));
+      expect(userBTransactions.single.ownerKey, 'user:b');
+
+      final userATransactions = await repository.getAllTransactions(
+        ownerKey: 'user:a',
+      );
+      expect(userATransactions, hasLength(1));
+    },
+  );
 }

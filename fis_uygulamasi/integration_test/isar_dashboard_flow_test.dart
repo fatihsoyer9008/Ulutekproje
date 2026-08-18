@@ -54,7 +54,7 @@ void main() {
 
       await tester.pumpWidget(
         FinanceApp(
-          transactionStream: repository.watchAllTransactions(),
+          transactionStream: repository.watchAllTransactions(ownerKey: null),
           saveTransaction: (transaction) async {
             await repository.addTransaction(transaction);
           },
@@ -108,7 +108,9 @@ void main() {
       expect(find.text('-₺25,00'), findsOneWidget);
 
       // Veritabanında yalnızca bir gider kaydı bulunmalı.
-      final allTransactions = await repository.getAllTransactions();
+      final allTransactions = await repository.getAllTransactions(
+        ownerKey: null,
+      );
       final expenses = allTransactions
           .where(
             (transaction) =>
