@@ -150,6 +150,33 @@ class OfflineTaskRepository {
     });
   }
 
+  /// Bağlantı geri geldiğinde yalnız daha önce geçici hata almış kişisel
+  /// görevleri yeniden kuyruğa alır. Conflict ve ilk denemede kalıcı hata
+  /// alan görevler kullanıcı müdahalesine bırakılır.
+  Future<Set<Id>> requeueRetryableFailedPersonalTasks() async {
+    return _isar.writeTxn(() async {
+      final tasks = await _isar.offlineTasks.where().findAll();
+      final retryable = tasks
+          .where(
+            (task) =>
+                !task.type.isGroupOperation &&
+                task.status == OfflineTaskStatus.failed &&
+                task.retryCount > 0,
+          )
+          .toList();
+      if (retryable.isEmpty) return const <Id>{};
+
+      final now = DateTime.now();
+      for (final task in retryable) {
+        task
+          ..status = OfflineTaskStatus.pending
+          ..updatedAt = now;
+      }
+      await _isar.offlineTasks.putAll(retryable);
+      return retryable.map((task) => task.id).toSet();
+    });
+  }
+
   Future<void> update(OfflineTask task) async {
     task.updatedAt = DateTime.now();
     await _isar.writeTxn(() => _isar.offlineTasks.put(task));

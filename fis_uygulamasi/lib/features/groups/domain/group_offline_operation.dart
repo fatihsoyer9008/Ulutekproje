@@ -187,6 +187,7 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
     required String clientRecordId,
     required String ownerKey,
     SyncState syncState = SyncState.pending,
+    String? expectedUpdatedAt,
   }) => GroupExpenseOfflineOperation._(
     type: GroupOfflineOperationType.groupExpenseUpdate,
     groupId: expense.groupId,
@@ -195,6 +196,12 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
     ownerKey: ownerKey,
     syncState: syncState,
     expenseSnapshot: expense.toJson(),
+    syncPayload: expectedUpdatedAt == null
+        ? null
+        : <String, Object?>{
+            ...expense.toJson(),
+            'expected_updated_at': expectedUpdatedAt,
+          },
   );
 
   factory GroupExpenseOfflineOperation.delete({
@@ -203,6 +210,7 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
     required String clientRecordId,
     required String ownerKey,
     SyncState syncState = SyncState.pendingDelete,
+    String? expectedUpdatedAt,
   }) => GroupExpenseOfflineOperation._(
     type: GroupOfflineOperationType.groupExpenseDelete,
     groupId: groupId,
@@ -211,6 +219,13 @@ final class GroupExpenseOfflineOperation extends GroupOfflineOperation {
     ownerKey: ownerKey,
     syncState: syncState,
     expenseSnapshot: null,
+    syncPayload: expectedUpdatedAt == null
+        ? null
+        : <String, Object?>{
+            'group_id': groupId,
+            'expense_id': expenseId,
+            'expected_updated_at': expectedUpdatedAt,
+          },
   );
 
   final String expenseId;

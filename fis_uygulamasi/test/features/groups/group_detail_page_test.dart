@@ -407,6 +407,128 @@ void main() {
     expect(find.byKey(const Key('retry_group_expenses_button')), findsNothing);
     expect(find.text('Henüz masraf yok'), findsOneWidget);
   });
+
+  testWidgets('masraf sahibi başlık ve notu düzenleyebilir', (tester) async {
+    await _pumpDetailPage(
+      tester,
+      repository: FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+        expensesByGroup: const <String, List<GroupExpense>>{
+          twoMemberGroupId: <GroupExpense>[fastSplitTransferExpense],
+        },
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(Key('group_expense_actions_${fastSplitTransferExpense.id}')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(Key('edit_group_expense_${fastSplitTransferExpense.id}')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('edit_group_expense_title_field')),
+      'Güncellenen market',
+    );
+    await tester.enterText(
+      find.byKey(const Key('edit_group_expense_note_field')),
+      'Yeni not',
+    );
+    await tester.tap(find.byKey(const Key('save_group_expense_update_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Güncellenen market'), findsOneWidget);
+    expect(find.text('Masraf güncellemesi kaydedildi.'), findsOneWidget);
+  });
+
+  testWidgets('masraf sahibi onay sonrasında masrafı silebilir', (
+    tester,
+  ) async {
+    await _pumpDetailPage(
+      tester,
+      repository: FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+        expensesByGroup: const <String, List<GroupExpense>>{
+          twoMemberGroupId: <GroupExpense>[fastSplitTransferExpense],
+        },
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(Key('group_expense_actions_${fastSplitTransferExpense.id}')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(Key('delete_group_expense_${fastSplitTransferExpense.id}')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('delete_group_expense_confirmation_dialog')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const Key('confirm_delete_group_expense_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(fastSplitTransferExpense.title), findsNothing);
+    expect(find.text('Henüz masraf yok'), findsOneWidget);
+    expect(find.text('Masraf silme kuyruğuna eklendi.'), findsOneWidget);
+  });
+
+  testWidgets(
+    'masraf sahibi olmayan member update delete aksiyonlarını görmez',
+    (tester) async {
+      await _pumpDetailPage(
+        tester,
+        repository: FakeGroupRepository(
+          currentUserId: secondUserId,
+          groups: const <GroupDetail>[twoMemberGroup],
+          expensesByGroup: const <String, List<GroupExpense>>{
+            twoMemberGroupId: <GroupExpense>[fastSplitTransferExpense],
+          },
+        ),
+        userId: secondUserId,
+      );
+
+      expect(
+        find.byKey(Key('group_expense_actions_${fastSplitTransferExpense.id}')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'finansal olarak kilitli masrafın delete aksiyonu devre dışıdır',
+    (tester) async {
+      final locked = GroupExpense.fromJson(<String, Object?>{
+        ...fastSplitTransferExpense.toJson(),
+        'is_financially_locked': true,
+      });
+      await _pumpDetailPage(
+        tester,
+        repository: FakeGroupRepository(
+          groups: const <GroupDetail>[twoMemberGroup],
+          expensesByGroup: <String, List<GroupExpense>>{
+            twoMemberGroupId: <GroupExpense>[locked],
+          },
+        ),
+      );
+
+      await tester.tap(
+        find.byKey(Key('group_expense_actions_${fastSplitTransferExpense.id}')),
+      );
+      await tester.pumpAndSettle();
+      final deleteItem = tester.widget<PopupMenuItem>(
+        find.byKey(Key('delete_group_expense_${fastSplitTransferExpense.id}')),
+      );
+      expect(deleteItem.enabled, isFalse);
+      expect(find.text('Sil (finansal olarak kilitli)'), findsOneWidget);
+    },
+  );
 }
 
 Future<void> _pumpDetailPage(

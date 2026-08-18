@@ -14,8 +14,8 @@ import 'features/notifications/daily_budget_reminder_service.dart';
 import 'features/notifications/notification_navigation_controller.dart';
 import 'features/notifications/notification_preferences.dart';
 import 'features/notifications/notification_providers.dart';
+import 'features/sync/application/automatic_sync_service.dart';
 import 'features/sync/application/offline_first_transaction_writer.dart';
-import 'features/sync/application/sync_coordinator.dart';
 import 'src/app/finance_app.dart';
 
 Future<void> main() async {
@@ -110,7 +110,9 @@ class _AppBootstrap extends ConsumerWidget {
         );
       },
       triggerSynchronization: () {
-        unawaited(ref.read(syncCoordinatorProvider.notifier).syncAfterSave());
+        unawaited(
+          ref.read(automaticSyncServiceProvider).syncPersonalAfterSave(),
+        );
       },
     );
     final transactionImportService = TransactionJsonImportService(

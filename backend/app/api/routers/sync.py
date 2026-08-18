@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
@@ -14,7 +14,7 @@ from app.api.dependencies import (
     get_debt_summary_cache,
     require_group_member,
 )
-from app.api.routers.groups import create_group_expense
+from app.api.routers.groups import _expense_response, create_group_expense
 from app.api.routers.settlements import create_settlement
 from app.core.database import get_db_session
 from app.group_schemas import GroupExpenseCreateRequest, ItemizedExpenseCreateRequest
@@ -25,6 +25,7 @@ from app.models.group_expense import (
     ExpenseSplitType,
     GroupExpense,
 )
+from app.models.group_sync_change import GroupSyncChange
 from app.models.group_sync_operation import GroupSyncOperation
 from app.models.user import User
 from app.repositories.group_expenses import GroupExpenseRepository
@@ -83,6 +84,18 @@ class GroupPushRequest(BaseModel):
 class GroupPushResponse(BaseModel):
     operation_id: uuid.UUID
     status: Literal["accepted", "duplicate"]
+
+
+class GroupPullChangeResponse(BaseModel):
+    cursor: str
+    operation: dict[str, Any]
+    server_updated_at: datetime
+
+
+class GroupPullResponse(BaseModel):
+    changes: list[GroupPullChangeResponse]
+    next_cursor: str | None
+    has_more: bool
 
 
 class ExpenseSharePushPayload(BaseModel):
@@ -163,6 +176,59 @@ def _as_utc(value: datetime) -> datetime:
 
 def _timestamps_match(left: datetime, right: datetime) -> bool:
     return _as_utc(left) == _as_utc(right)
+
+
+def _json_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return _as_utc(value).isoformat().replace("+00:00", "Z")
+
+
+def _pulled_operation(
+    *,
+    operation_type: str,
+    group_id: uuid.UUID,
+    client_record_id: uuid.UUID,
+    owner_user_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "operation_type": operation_type,
+        "group_id": str(group_id),
+        "client_record_id": str(client_record_id),
+        "owner_key": f"user:{owner_user_id}",
+        "sync_state": "synced",
+        "payload": payload,
+    }
+
+
+async def _append_group_change(
+    *,
+    operation: GroupPushRequest,
+    operation_data: dict[str, Any],
+    server_updated_at: datetime,
+    user: User,
+    db: AsyncSession,
+) -> bool:
+    existing = await db.scalar(
+        select(GroupSyncChange.sequence_id).where(
+            GroupSyncChange.actor_user_id == user.id,
+            GroupSyncChange.client_record_id == operation.client_record_id,
+        )
+    )
+    if existing is not None:
+        return False
+    db.add(
+        GroupSyncChange(
+            group_id=operation.group_id,
+            actor_user_id=user.id,
+            client_record_id=operation.client_record_id,
+            operation_type=operation.operation_type,
+            operation_data=operation_data,
+            server_updated_at=_as_utc(server_updated_at),
+        )
+    )
+    return True
 
 
 def _require_expense_mutation_permission(
@@ -281,6 +347,10 @@ async def _push_group_expense_mutation(
         now = datetime.now(UTC)
         expense.deleted_at = now
         expense.updated_at = now
+        pull_payload = {
+            "group_id": str(operation.group_id),
+            "expense_id": str(expense.id),
+        }
     else:
         assert isinstance(payload, GroupExpenseUpdatePushPayload)
         normalized_currency = payload.currency.strip().upper()
@@ -386,6 +456,18 @@ async def _push_group_expense_mutation(
             expense.line_item_assignments = []
             expense.extra_amounts = []
         expense.updated_at = datetime.now(UTC)
+        await db.flush()
+        pull_payload = (
+            await _expense_response(expense, db)
+        ).expense.model_dump(mode="json")
+
+    operation_data = _pulled_operation(
+        operation_type=operation.operation_type,
+        group_id=operation.group_id,
+        client_record_id=operation.client_record_id,
+        owner_user_id=user.id,
+        payload=pull_payload,
+    )
 
     db.add(
         GroupSyncOperation(
@@ -395,6 +477,13 @@ async def _push_group_expense_mutation(
             operation_type=operation.operation_type,
             request_hash=request_hash,
         )
+    )
+    await _append_group_change(
+        operation=operation,
+        operation_data=operation_data,
+        server_updated_at=expense.updated_at,
+        user=user,
+        db=db,
     )
     await db.commit()
     return False
@@ -505,6 +594,36 @@ async def _push_expense_share(
             )
         await db.delete(share)
 
+    expense.updated_at = datetime.now(UTC)
+    if operation.operation_type == "expenseShareDelete":
+        pull_payload = {
+            "expense_id": str(payload.expense_id),
+            "user_id": str(payload.user_id),
+        }
+    else:
+        assert share is not None
+        share_user = await db.get(User, payload.user_id)
+        pull_payload = {
+            "expense_id": str(payload.expense_id),
+            "user_id": str(payload.user_id),
+            "display_name": (
+                share_user.display_name
+                if share_user is not None and share_user.display_name
+                else "Kullanıcı"
+            ),
+            "amount_in_minor": share.amount_in_minor,
+            "status": share.status.value,
+            "settled_at": _json_datetime(share.settled_at),
+        }
+
+    operation_data = _pulled_operation(
+        operation_type=operation.operation_type,
+        group_id=operation.group_id,
+        client_record_id=operation.client_record_id,
+        owner_user_id=user.id,
+        payload=pull_payload,
+    )
+
     db.add(
         GroupSyncOperation(
             group_id=operation.group_id,
@@ -513,6 +632,13 @@ async def _push_expense_share(
             operation_type=operation.operation_type,
             request_hash=request_hash,
         )
+    )
+    await _append_group_change(
+        operation=operation,
+        operation_data=operation_data,
+        server_updated_at=expense.updated_at,
+        user=user,
+        db=db,
     )
     await db.commit()
     return False
@@ -557,7 +683,7 @@ async def push_group_operation(
             if isinstance(split, dict) and split.get("type") == "itemized"
             else GroupExpenseCreateRequest.model_validate(body)
         )
-        await create_group_expense(
+        expense_envelope = await create_group_expense(
             group_id=payload.group_id,
             payload=request,
             response=resource_response,
@@ -566,6 +692,8 @@ async def push_group_operation(
             db=db,
             debt_cache=debt_cache,
         )
+        change_payload = expense_envelope.expense.model_dump(mode="json")
+        change_updated_at = expense_envelope.expense.updated_at
     elif payload.operation_type in {"groupExpenseUpdate", "groupExpenseDelete"}:
         replayed = await _push_group_expense_mutation(
             operation=payload,
@@ -583,7 +711,7 @@ async def push_group_operation(
         )
     elif payload.operation_type == "settlementCreate":
         request = SettlementCreateRequest.model_validate(body)
-        await create_settlement(
+        settlement_envelope = await create_settlement(
             group_id=payload.group_id,
             payload=request,
             response=resource_response,
@@ -592,6 +720,8 @@ async def push_group_operation(
             db=db,
             debt_cache=debt_cache,
         )
+        change_payload = settlement_envelope.settlement.model_dump(mode="json")
+        change_updated_at = settlement_envelope.settlement.created_at
     else:
         replayed = await _push_expense_share(
             operation=payload,
@@ -606,12 +736,88 @@ async def push_group_operation(
             status="duplicate" if replayed else "accepted",
         )
 
+    operation_data = _pulled_operation(
+        operation_type=payload.operation_type,
+        group_id=payload.group_id,
+        client_record_id=payload.client_record_id,
+        owner_user_id=user.id,
+        payload=change_payload,
+    )
+    change_added = await _append_group_change(
+        operation=payload,
+        operation_data=operation_data,
+        server_updated_at=change_updated_at,
+        user=user,
+        db=db,
+    )
+    if change_added:
+        await db.commit()
+
     replayed = resource_response.headers.get("Idempotency-Replayed") == "true"
     if replayed:
         response.headers["Idempotency-Replayed"] = "true"
     return GroupPushResponse(
         operation_id=payload.client_record_id,
         status="duplicate" if replayed else "accepted",
+    )
+
+
+@router.get("/groups/pull", response_model=GroupPullResponse)
+async def pull_group_operations(
+    cursor: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> GroupPullResponse:
+    after_sequence = 0
+    if cursor is not None:
+        try:
+            after_sequence = int(cursor)
+        except ValueError:
+            after_sequence = -1
+        if after_sequence < 0 or str(after_sequence) != cursor:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "invalid_cursor",
+                    "message": "Group sync cursor geçersiz.",
+                },
+            )
+
+    statement = (
+        select(GroupSyncChange)
+        .join(
+            GroupMember,
+            and_(
+                GroupMember.group_id == GroupSyncChange.group_id,
+                GroupMember.user_id == user.id,
+                GroupMember.left_at.is_(None),
+            ),
+        )
+        .where(GroupSyncChange.sequence_id > after_sequence)
+        .order_by(GroupSyncChange.sequence_id)
+        .limit(limit + 1)
+    )
+    rows = list((await db.scalars(statement)).all())
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    changes: list[GroupPullChangeResponse] = []
+    for change in page:
+        operation = dict(change.operation_data)
+        operation["owner_key"] = f"user:{user.id}"
+        changes.append(
+            GroupPullChangeResponse(
+                cursor=str(change.sequence_id),
+                operation=operation,
+                server_updated_at=_as_utc(change.server_updated_at),
+            )
+        )
+
+    next_cursor = str(page[-1].sequence_id) if page else cursor
+    return GroupPullResponse(
+        changes=changes,
+        next_cursor=next_cursor,
+        has_more=has_more,
     )
 
 

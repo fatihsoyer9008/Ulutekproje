@@ -18,6 +18,8 @@ class IsarService {
       CategoryEntitySchema,
       SavingsGoalEntitySchema,
       GroupExpenseEntitySchema,
+      ExpenseShareEntitySchema,
+      GroupSettlementEntitySchema,
     ], directory: directory.path);
     await TransactionRepository(isar).backfillReceiptLinks();
     _instance = isar;

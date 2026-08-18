@@ -172,6 +172,44 @@ void main() {
     },
   );
 
+  test(
+    'otomatik retry yalnız geçici hatalı kişisel failed görevini kuyruğa alır',
+    () async {
+      final retryableId = await repository.add(task('retryable-personal'));
+      final permanentId = await repository.add(task('permanent-personal'));
+      final conflictId = await repository.add(task('conflict-personal'));
+      final groupId = await repository.add(
+        task('retryable-group')..type = OfflineTaskType.groupExpenseCreate,
+      );
+      await repository.updateTaskError(retryableId, 'offline');
+      await repository.markPermanentlyFailed(retryableId, 'offline');
+      await repository.markPermanentlyFailed(permanentId, 'invalid payload');
+      await repository.markConflict(conflictId, 'newer server value');
+      await repository.updateTaskError(groupId, 'offline');
+      await repository.markPermanentlyFailed(groupId, 'offline');
+
+      final requeued = await repository.requeueRetryableFailedPersonalTasks();
+
+      expect(requeued, <Id>{retryableId});
+      expect(
+        (await repository.getById(retryableId))?.status,
+        OfflineTaskStatus.pending,
+      );
+      expect(
+        (await repository.getById(permanentId))?.status,
+        OfflineTaskStatus.failed,
+      );
+      expect(
+        (await repository.getById(conflictId))?.status,
+        OfflineTaskStatus.conflict,
+      );
+      expect(
+        (await repository.getById(groupId))?.status,
+        OfflineTaskStatus.failed,
+      );
+    },
+  );
+
   test('yalnızca cutoff öncesindeki synced görevleri temizler', () async {
     final oldId = await repository.add(task('task-old'));
     final recentId = await repository.add(task('task-recent'));

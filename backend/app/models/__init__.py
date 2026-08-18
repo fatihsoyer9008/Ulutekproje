@@ -13,6 +13,7 @@ from app.models.group_expense import (
     GroupExpense,
 )
 from app.models.group_invitation import GroupInvitation
+from app.models.group_sync_change import GroupSyncChange
 from app.models.group_sync_operation import GroupSyncOperation
 from app.models.n8n_webhook_event import N8nWebhookEvent
 from app.models.oauth_account import OAuthAccount, OAuthProvider
@@ -38,6 +39,7 @@ __all__ = [
     "GroupExpense",
     "GroupInvitation",
     "GroupSyncOperation",
+    "GroupSyncChange",
     "GroupMember",
     "GroupRole",
     "N8nWebhookEvent",

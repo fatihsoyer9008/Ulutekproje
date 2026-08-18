@@ -31,6 +31,7 @@ import '../../features/groups/presentation/itemized_split_page.dart';
 import '../../features/groups/presentation/groups_page.dart';
 import '../../features/groups/presentation/group_detail_page.dart';
 import '../../features/groups/presentation/group_ocr_page.dart';
+import '../../features/groups/presentation/group_expense_conflicts_page.dart';
 
 import 'finance_home.dart';
 
@@ -64,6 +65,7 @@ GoRouter createAppRouter({
           {
             '/home',
             '/profile',
+            '/sync-conflicts',
             '/categories',
             NotificationNavigationController.expenseReceiptRoute,
           }.contains(location);
@@ -170,6 +172,10 @@ GoRouter createAppRouter({
               profileAiAssistantClient ??
               AiAssistantClient(ref.read(apiClientProvider)),
         ),
+      ),
+      GoRoute(
+        path: '/sync-conflicts',
+        builder: (_, _) => const GroupExpenseConflictsPage(),
       ),
       GoRoute(
         path: '/categories',
