@@ -27,6 +27,7 @@ def test_production_compose_binds_ports_to_loopback_only() -> None:
         '"127.0.0.1:${POSTGRES_PORT:-5432}:5432"',
         '"127.0.0.1:${REDIS_PORT:-6379}:6379"',
         '"127.0.0.1:8000:8000"',
+        '"127.0.0.1:5678:5678"',
     )
     for binding in expected_bindings:
         assert binding in content, (
