@@ -16,6 +16,7 @@ from app.api.routers.assistant import router as assistant_router
 from app.api.routers.auth import router as auth_router
 from app.api.routers.group_invitations import router as group_invitations_router
 from app.api.routers.groups import router as groups_router
+from app.api.routers.n8n_webhook import router as n8n_webhook_router
 from app.api.routers.receipts import router as receipt_router
 from app.api.routers.settlements import router as settlements_router
 from app.api.routers.sync import router as sync_router
@@ -158,6 +159,7 @@ app.include_router(assistant_router)
 app.include_router(auth_router)
 app.include_router(groups_router)
 app.include_router(group_invitations_router)
+app.include_router(n8n_webhook_router)
 app.include_router(receipt_router)
 app.include_router(settlements_router)
 app.include_router(sync_router)
