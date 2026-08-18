@@ -29,7 +29,18 @@ class GroupDetailPage extends ConsumerWidget {
     final groupAsync = ref.watch(groupDetailProvider(groupId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Grup Detayı')),
+      appBar: AppBar(
+        title: const Text('Grup Detayı'),
+        leading: BackButton(
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/groups');
+            }
+          },
+        ),
+      ),
       body: groupAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _DetailErrorState(

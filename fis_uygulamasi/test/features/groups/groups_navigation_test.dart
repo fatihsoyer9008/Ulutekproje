@@ -296,6 +296,37 @@ void main() {
     expect(find.byType(GroupsPage), findsOneWidget);
   });
 
+  testWidgets(
+    'guest redirected to groups after login can still navigate back home',
+    (tester) async {
+      final controller = AuthSessionController(_NavigationAuthRepository())
+        ..continueAsGuest();
+
+      await _pumpApp(
+        tester,
+        controller,
+        transactionStream: Stream<List<TransactionEntity>>.multi(
+          (controller) => controller.add(const <TransactionEntity>[]),
+        ),
+      );
+      await _openGroupsFromDrawer(tester);
+      final googleLoginButton = find.byKey(const Key('google_login_button'));
+      await tester.ensureVisible(googleLoginButton);
+      await tester.pumpAndSettle();
+      await tester.tap(googleLoginButton);
+      await tester.pumpAndSettle();
+
+      // Login redirects straight to /groups with an empty navigation stack
+      // (no /home beneath it), so the screen must offer its own way out
+      // instead of leaving the user stuck.
+      expect(find.byType(GroupsPage), findsOneWidget);
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GroupsPage), findsNothing);
+    },
+  );
+
   testWidgets('expired API session redirects protected group route to login', (
     tester,
   ) async {
@@ -342,6 +373,7 @@ Future<void> _pumpApp(
   GroupExpenseRepository? expenseRepository,
   ReceiptScanLauncher? scanReceipt,
   ReceiptParseHandler? parseReceipt,
+  Stream<List<TransactionEntity>>? transactionStream,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -362,7 +394,8 @@ Future<void> _pumpApp(
       ],
       child: FinanceApp(
         enableAuth: true,
-        transactionStream: Stream.value(const <TransactionEntity>[]),
+        transactionStream:
+            transactionStream ?? Stream.value(const <TransactionEntity>[]),
         profileAiAssistantClient: _FakeAssistantClient(),
         scanReceipt: scanReceipt,
         parseReceipt: parseReceipt,
