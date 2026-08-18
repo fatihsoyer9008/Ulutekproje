@@ -18,7 +18,7 @@ from app.core.config import settings
 from app.core.database import Base, get_db_session
 from app.core.rate_limit import NoOpRateLimiter
 from app.main import app
-from app.models.cloud_receipt import CloudReceipt
+from app.models.cloud_receipt import CloudReceipt, CloudReceiptStatus
 from app.models.n8n_webhook_event import N8nWebhookEvent
 from app.models.user import User, UserStatus
 
@@ -251,6 +251,7 @@ async def test_receipt_parsed_creates_a_receipt_for_the_matched_user(
     assert receipt.currency == "TRY"
     assert receipt.category == "market"
     assert receipt.is_parse_successful is True
+    assert receipt.status == CloudReceiptStatus.draft
 
 
 @pytest.mark.asyncio

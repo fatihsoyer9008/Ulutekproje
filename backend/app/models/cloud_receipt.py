@@ -1,3 +1,4 @@
+import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -7,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Enum,
     ForeignKey,
     Index,
     Integer,
@@ -19,6 +21,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+
+class CloudReceiptStatus(str, enum.Enum):
+    draft = "draft"
+    approved = "approved"
+    rejected = "rejected"
 
 
 class CloudReceipt(Base):
@@ -42,6 +50,11 @@ class CloudReceipt(Base):
             "ix_cloud_receipts_user_date",
             "user_id",
             "receipt_date",
+        ),
+        Index(
+            "ix_cloud_receipts_user_status",
+            "user_id",
+            "status",
         ),
     )
 
@@ -69,6 +82,12 @@ class CloudReceipt(Base):
         nullable=False,
         default=False,
         server_default="false",
+    )
+    status: Mapped[CloudReceiptStatus] = mapped_column(
+        Enum(CloudReceiptStatus, name="cloud_receipt_status", native_enum=False),
+        nullable=False,
+        default=CloudReceiptStatus.approved,
+        server_default=CloudReceiptStatus.approved.value,
     )
     confidence_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 4))
     client_created_at: Mapped[datetime] = mapped_column(
