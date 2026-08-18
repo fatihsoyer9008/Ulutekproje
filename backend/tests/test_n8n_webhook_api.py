@@ -17,11 +17,10 @@ from app.api.dependencies import get_rate_limiter
 from app.core.config import settings
 from app.core.database import Base, get_db_session
 from app.core.rate_limit import NoOpRateLimiter
-from app.core.security import privacy_hash
 from app.main import app
 from app.models.cloud_receipt import CloudReceipt
 from app.models.n8n_webhook_event import N8nWebhookEvent
-from app.models.user import User
+from app.models.user import User, UserStatus
 
 WEBHOOK_PATH = "/api/v1/integrations/n8n/events"
 
@@ -209,33 +208,27 @@ async def test_same_key_different_payload_conflicts(webhook_context) -> None:
 
 
 @pytest.mark.asyncio
-async def test_receipt_parsed_matches_user_and_receipt(webhook_context) -> None:
+async def test_receipt_parsed_creates_a_receipt_for_the_matched_user(
+    webhook_context,
+) -> None:
     client, session_factory = webhook_context
     user_id = uuid.uuid4()
-    client_record_id = uuid.uuid4()
-    installation_id = "installation-webhook-test-1234"
-    now = datetime.now(UTC)
 
     async with session_factory() as session:
-        session.add(User(id=user_id, email="webhook-match@example.com"))
-        session.add(
-            CloudReceipt(
-                id=uuid.uuid4(),
-                user_id=user_id,
-                client_record_id=client_record_id,
-                installation_id_hash=privacy_hash(f"installation:{installation_id}"),
-                client_created_at=now,
-                client_updated_at=now,
-            )
-        )
+        session.add(User(id=user_id, email="webhook-import@example.com"))
         await session.commit()
 
+    event_id = uuid.uuid4()
     body = _envelope_bytes(
         event_type="receipt.parsed",
+        event_id=event_id,
         data={
-            "user_id": str(user_id),
-            "client_record_id": str(client_record_id),
-            "installation_id": installation_id,
+            "email": "webhook-import@example.com",
+            "merchant_name": "Örnek Market",
+            "total_amount_in_minor": 12550,
+            "currency": "try",
+            "receipt_date": "2026-08-17T12:00:00Z",
+            "category": "market",
         },
     )
     key = str(uuid.uuid4())
@@ -244,20 +237,64 @@ async def test_receipt_parsed_matches_user_and_receipt(webhook_context) -> None:
         WEBHOOK_PATH, content=body, headers=_headers(raw_body=body, idempotency_key=key)
     )
 
-    assert response.status_code == 200
-    assert response.json() == {"event_id": json.loads(body)["event_id"], "status": "matched"}
+    assert response.status_code == 201
+    assert response.json() == {"event_id": str(event_id), "status": "created"}
+
+    async with session_factory() as session:
+        receipt = await session.scalar(
+            select(CloudReceipt).where(CloudReceipt.user_id == user_id)
+        )
+    assert receipt is not None
+    assert receipt.client_record_id == event_id
+    assert receipt.merchant_name == "Örnek Market"
+    assert receipt.total_amount_in_minor == 12550
+    assert receipt.currency == "TRY"
+    assert receipt.category == "market"
+    assert receipt.is_parse_successful is True
 
 
 @pytest.mark.asyncio
-async def test_receipt_parsed_without_match_is_rejected(webhook_context) -> None:
+async def test_receipt_parsed_replay_does_not_create_a_duplicate_receipt(
+    webhook_context,
+) -> None:
+    client, session_factory = webhook_context
+    user_id = uuid.uuid4()
+
+    async with session_factory() as session:
+        session.add(User(id=user_id, email="webhook-replay@example.com"))
+        await session.commit()
+
+    body = _envelope_bytes(
+        event_type="receipt.parsed",
+        data={"email": "webhook-replay@example.com", "total_amount_in_minor": 100},
+    )
+    key = str(uuid.uuid4())
+    headers = _headers(raw_body=body, idempotency_key=key)
+
+    first = await client.post(WEBHOOK_PATH, content=body, headers=headers)
+    second = await client.post(WEBHOOK_PATH, content=body, headers=headers)
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.headers["Idempotency-Replayed"] == "true"
+
+    async with session_factory() as session:
+        count = len(
+            (
+                await session.scalars(
+                    select(CloudReceipt).where(CloudReceipt.user_id == user_id)
+                )
+            ).all()
+        )
+    assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_receipt_parsed_for_unknown_email_is_rejected(webhook_context) -> None:
     client, _ = webhook_context
     body = _envelope_bytes(
         event_type="receipt.parsed",
-        data={
-            "user_id": str(uuid.uuid4()),
-            "client_record_id": str(uuid.uuid4()),
-            "installation_id": "installation-no-match-123456",
-        },
+        data={"email": "no-such-fiskon-user@example.com"},
     )
     key = str(uuid.uuid4())
 
@@ -266,7 +303,34 @@ async def test_receipt_parsed_without_match_is_rejected(webhook_context) -> None
     )
 
     assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "receipt_not_found"
+    assert response.json()["detail"]["code"] == "user_not_found"
+
+
+@pytest.mark.asyncio
+async def test_receipt_parsed_for_suspended_user_is_rejected(webhook_context) -> None:
+    client, session_factory = webhook_context
+
+    async with session_factory() as session:
+        session.add(
+            User(
+                email="webhook-suspended@example.com",
+                status=UserStatus.suspended,
+            )
+        )
+        await session.commit()
+
+    body = _envelope_bytes(
+        event_type="receipt.parsed",
+        data={"email": "webhook-suspended@example.com"},
+    )
+    key = str(uuid.uuid4())
+
+    response = await client.post(
+        WEBHOOK_PATH, content=body, headers=_headers(raw_body=body, idempotency_key=key)
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "user_not_found"
 
 
 @pytest.mark.asyncio

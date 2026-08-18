@@ -21,7 +21,9 @@ from app.core.rate_limit import RateLimiter, RateLimitRule
 from app.core.security import privacy_hash
 from app.models.cloud_receipt import CloudReceipt
 from app.models.n8n_webhook_event import N8nWebhookEvent
+from app.models.user import UserStatus
 from app.n8n_webhook_schemas import N8nWebhookEnvelope, ReceiptParsedEventData
+from app.repositories.users import UserRepository
 
 router = APIRouter(prefix="/api/v1/integrations/n8n", tags=["n8n-webhook"])
 logger = logging.getLogger("app.n8n_webhook")
@@ -58,42 +60,50 @@ def _log_webhook_outcome(
     )
 
 
-async def _match_receipt_event(
+async def _create_receipt_from_email_event(
     *,
-    data: dict,
+    envelope: N8nWebhookEnvelope,
     db: AsyncSession,
 ) -> tuple[int, dict]:
     try:
-        payload = ReceiptParsedEventData.model_validate(data)
+        payload = ReceiptParsedEventData.model_validate(envelope.data)
     except ValidationError as exc:
         raise _webhook_error(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "invalid_payload",
-            "receipt.parsed verisi kullanıcı/fiş eşleştirmesi için geçersiz.",
+            "receipt.parsed verisi geçersiz.",
         ) from exc
 
-    receipt = await db.scalar(
-        select(CloudReceipt).where(
-            CloudReceipt.user_id == payload.user_id,
-            CloudReceipt.client_record_id == payload.client_record_id,
+    user = await UserRepository(db).get_by_email(payload.email)
+    if user is None or user.status is not UserStatus.active:
+        raise _webhook_error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "user_not_found",
+            "Bu e-posta adresine ait aktif bir kullanıcı bulunamadı.",
         )
+
+    # `event_id` is already a globally unique, n8n-issued UUID, so reusing it
+    # as `client_record_id` gives a second, DB-level duplicate guard on top
+    # of the Idempotency-Key table (and needs no client-generated id, since
+    # this receipt did not come from a device).
+    receipt = CloudReceipt(
+        user_id=user.id,
+        client_record_id=envelope.event_id,
+        installation_id_hash=privacy_hash(f"n8n-import:{user.id}"),
+        merchant_name=payload.merchant_name,
+        total_amount_in_minor=payload.total_amount_in_minor,
+        currency=payload.currency,
+        receipt_date=payload.receipt_date,
+        category=payload.category,
+        normalized_ocr_text=payload.normalized_ocr_text,
+        is_parse_successful=True,
+        client_created_at=envelope.occurred_at,
+        client_updated_at=envelope.occurred_at,
     )
-    if receipt is None:
-        raise _webhook_error(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "receipt_not_found",
-            "Eşleşen kullanıcı/fiş kaydı bulunamadı.",
-        )
+    db.add(receipt)
+    await db.flush()
 
-    expected_installation_hash = privacy_hash(f"installation:{payload.installation_id}")
-    if receipt.installation_id_hash != expected_installation_hash:
-        raise _webhook_error(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "receipt_installation_mismatch",
-            "Fiş, belirtilen cihazdan oluşturulmamış.",
-        )
-
-    return status.HTTP_200_OK, {"status": "matched"}
+    return status.HTTP_201_CREATED, {"status": "created"}
 
 
 async def _process_event(
@@ -102,7 +112,9 @@ async def _process_event(
     db: AsyncSession,
 ) -> tuple[int, dict]:
     if envelope.event_type == "receipt.parsed":
-        status_code, body = await _match_receipt_event(data=envelope.data, db=db)
+        status_code, body = await _create_receipt_from_email_event(
+            envelope=envelope, db=db
+        )
         body["event_id"] = str(envelope.event_id)
         return status_code, body
 
