@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:finance_database/finance_database.dart';
 
 import '../data/group_offline_operation_mapper.dart';
@@ -20,7 +18,9 @@ class LocalFirstGroupExpenseReader {
   }) => _local
       .watchActiveByGroup(groupId: groupId, ownerKey: ownerKey)
       .map(
-        (entities) => List<GroupExpense>.unmodifiable(entities.map(_toDomain)),
+        (entities) => List<GroupExpense>.unmodifiable(
+          entities.map((entity) => entity.toGroupExpense()),
+        ),
       );
 
   /// Sunucudaki güncel snapshot'ları yerel cache'e yazar.
@@ -47,13 +47,5 @@ class LocalFirstGroupExpenseReader {
       if (await _local.saveSyncedFromPull(entity)) applied += 1;
     }
     return applied;
-  }
-
-  static GroupExpense _toDomain(GroupExpenseEntity entity) {
-    final decoded = jsonDecode(entity.payloadJson);
-    if (decoded is! Map) {
-      throw const FormatException('Yerel grup masrafı snapshotı geçersiz.');
-    }
-    return GroupExpense.fromJson(Map<String, Object?>.from(decoded));
   }
 }

@@ -298,6 +298,99 @@ void main() {
     },
   );
 
+  test(
+    'conflict sorgusu yalnız aktif ownerın grup masrafı görevlerini döndürür',
+    () async {
+      final own = _task(clientRecordId: '83000000-0000-4000-8000-000000000031')
+        ..status = OfflineTaskStatus.conflict;
+      final other = _task(
+        ownerKey: 'user:other',
+        clientRecordId: '83000000-0000-4000-8000-000000000032',
+      )..status = OfflineTaskStatus.conflict;
+      final share =
+          _task(clientRecordId: '83000000-0000-4000-8000-000000000033')
+            ..type = OfflineTaskType.expenseShareUpdate
+            ..status = OfflineTaskStatus.conflict;
+      final now = DateTime.utc(2026, 8, 18);
+      for (final task in <OfflineTask>[own, other, share]) {
+        task
+          ..createdAt = now
+          ..updatedAt = now;
+      }
+      await isar.writeTxn(
+        () => isar.offlineTasks.putAll(<OfflineTask>[own, other, share]),
+      );
+
+      final conflicts = await repository.getConflictSyncTasks(
+        ownerKey: 'user:test-user',
+      );
+
+      expect(conflicts.map((task) => task.id), <Id>[own.id]);
+    },
+  );
+
+  test(
+    'server sürümü conflict taskı ve yerel snapshotı atomik çözer',
+    () async {
+      final expense = _expense();
+      final task = _task();
+      await repository.savePendingWithOfflineTask(expense, task);
+      await repository.markSyncTaskConflict(task.id, 'version conflict');
+      final server = _expense()
+        ..clientRecordId = _expenseId
+        ..title = 'Sunucu başlığı'
+        ..syncState = SyncState.synced
+        ..updatedAt = DateTime.utc(2026, 8, 18);
+
+      await repository.resolveConflictUsingServer(
+        conflictTaskId: task.id,
+        ownerKey: 'user:test-user',
+        serverExpense: server,
+      );
+
+      expect(
+        (await isar.offlineTasks.get(task.id))?.status,
+        OfflineTaskStatus.synced,
+      );
+      final stored = await repository.getByExpenseId(_expenseId);
+      expect(stored?.title, 'Sunucu başlığı');
+      expect(stored?.syncState, SyncState.synced);
+    },
+  );
+
+  test('yerel sürüm conflict yerine yeni pending taskı atomik yazar', () async {
+    final expense = _expense();
+    final conflictTask = _task();
+    await repository.savePendingWithOfflineTask(expense, conflictTask);
+    await repository.markSyncTaskConflict(conflictTask.id, 'version conflict');
+    const replacementId = '83000000-0000-4000-8000-000000000034';
+    final replacementExpense = _expense()
+      ..clientRecordId = replacementId
+      ..title = 'Yerel başlık'
+      ..syncState = SyncState.pending;
+    final replacementTask = _task(clientRecordId: replacementId);
+
+    final replacementTaskId = await repository.replaceConflictWithPending(
+      conflictTaskId: conflictTask.id,
+      ownerKey: 'user:test-user',
+      replacementExpense: replacementExpense,
+      replacementTask: replacementTask,
+    );
+
+    expect(
+      (await isar.offlineTasks.get(conflictTask.id))?.status,
+      OfflineTaskStatus.synced,
+    );
+    expect(
+      (await isar.offlineTasks.get(replacementTaskId))?.status,
+      OfflineTaskStatus.pending,
+    );
+    final stored = await repository.getByExpenseId(_expenseId);
+    expect(stored?.title, 'Yerel başlık');
+    expect(stored?.clientRecordId, replacementId);
+    expect(stored?.syncState, SyncState.pending);
+  });
+
   test('pull snapshotı pending yerel masrafı ezmez', () async {
     final pending = _expense();
     await repository.savePendingWithOfflineTask(pending, _task());

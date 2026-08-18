@@ -12,6 +12,7 @@ class ProfileSyncStatusCard extends StatelessWidget {
     this.queueSummary = const OfflineQueueSummary(),
     this.onSyncPending,
     this.onRetry,
+    this.onResolveConflicts,
     super.key,
   });
 
@@ -20,12 +21,13 @@ class ProfileSyncStatusCard extends StatelessWidget {
   final OfflineQueueSummary queueSummary;
   final VoidCallback? onSyncPending;
   final VoidCallback? onRetry;
+  final VoidCallback? onResolveConflicts;
 
   bool get _hasPendingTasks => queueSummary.hasPending;
   bool get _hasRetryableTasks =>
-      queueSummary.retryableCount > 0 ||
-      state.status == SyncStatus.error ||
-      state.status == SyncStatus.conflict;
+      queueSummary.hasFailures || state.status == SyncStatus.error;
+  bool get _hasConflicts =>
+      queueSummary.hasConflicts || state.status == SyncStatus.conflict;
 
   @override
   Widget build(BuildContext context) {
@@ -77,17 +79,34 @@ class ProfileSyncStatusCard extends StatelessWidget {
             ),
           ],
           if (!isGuest &&
-              ((_hasRetryableTasks && onRetry != null) ||
+              ((_hasConflicts && onResolveConflicts != null) ||
+                  (_hasRetryableTasks && onRetry != null) ||
                   (_hasPendingTasks && onSyncPending != null))) ...[
             const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
-                key: const Key('profile_sync_retry_button'),
-                onPressed: _hasRetryableTasks ? onRetry : onSyncPending,
-                icon: const Icon(Icons.refresh_rounded),
+                key: Key(
+                  _hasConflicts
+                      ? 'profile_sync_conflicts_button'
+                      : 'profile_sync_retry_button',
+                ),
+                onPressed: _hasConflicts
+                    ? onResolveConflicts
+                    : _hasRetryableTasks
+                    ? onRetry
+                    : onSyncPending,
+                icon: Icon(
+                  _hasConflicts
+                      ? Icons.rule_folder_outlined
+                      : Icons.refresh_rounded,
+                ),
                 label: Text(
-                  _hasRetryableTasks ? 'Tekrar dene' : 'Şimdi senkronize et',
+                  _hasConflicts
+                      ? 'Çakışmaları çöz'
+                      : _hasRetryableTasks
+                      ? 'Tekrar dene'
+                      : 'Şimdi senkronize et',
                 ),
               ),
             ),
@@ -128,8 +147,8 @@ class ProfileSyncStatusCard extends StatelessWidget {
         color: AppColors.warning,
         title: 'Dikkat gereken kayıtlar var',
         description: conflictCount == 0
-            ? 'Bazı kayıtlar eşitlenemedi. Yeniden deneyebilirsin.'
-            : '$conflictCount kayıt çakışması yeniden denenmeyi bekliyor.',
+            ? 'Bazı kayıtlar için korunacak sürümü seçmen gerekiyor.'
+            : '$conflictCount kayıt çakışması çözüm bekliyor.',
       );
     }
 

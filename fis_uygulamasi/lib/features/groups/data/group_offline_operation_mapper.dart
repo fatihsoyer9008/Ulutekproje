@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:finance_database/finance_database.dart';
 
+import '../domain/group_models.dart';
 import '../domain/group_offline_operation.dart';
 
 extension GroupOfflineOperationPersistenceMapper on GroupOfflineOperation {
@@ -43,6 +44,16 @@ extension GroupExpenseOperationPersistenceMapper
       ..deletedAt = groupExpense.deletedAt == null
           ? null
           : DateTime.parse(groupExpense.deletedAt!).toUtc();
+  }
+}
+
+extension GroupExpenseEntityDomainMapper on GroupExpenseEntity {
+  GroupExpense toGroupExpense() {
+    final decoded = jsonDecode(payloadJson);
+    if (decoded is! Map) {
+      throw const FormatException('Yerel grup masrafı snapshotı geçersiz.');
+    }
+    return GroupExpense.fromJson(Map<String, Object?>.from(decoded));
   }
 }
 

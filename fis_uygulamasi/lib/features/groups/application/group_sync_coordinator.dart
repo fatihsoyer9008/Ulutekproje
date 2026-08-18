@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:finance_database/finance_database.dart';
@@ -350,7 +351,14 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
         }
         if (result.status == GroupPushStatus.conflict) {
           final message = result.message ?? 'Grup operasyonu çakıştı.';
-          await repository.markConflict(task.id, message);
+          await repository.markConflict(
+            task.id,
+            jsonEncode(<String, Object?>{
+              'kind': 'group_sync_conflict',
+              'code': result.conflictCode,
+              'message': message,
+            }),
+          );
           return const _GroupTaskConflict();
         }
         await repository.markAsSynced(task.id);

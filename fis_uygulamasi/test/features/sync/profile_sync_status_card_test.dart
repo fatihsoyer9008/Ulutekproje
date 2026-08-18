@@ -13,6 +13,7 @@ void main() {
     OfflineQueueSummary queueSummary = const OfflineQueueSummary(),
     VoidCallback? onSyncPending,
     VoidCallback? onRetry,
+    VoidCallback? onResolveConflicts,
   }) => tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
@@ -22,6 +23,7 @@ void main() {
           queueSummary: queueSummary,
           onSyncPending: onSyncPending,
           onRetry: onRetry,
+          onResolveConflicts: onResolveConflicts,
         ),
       ),
     ),
@@ -65,18 +67,20 @@ void main() {
   testWidgets('kalıcı conflict özeti controller idle olsa da görünür', (
     tester,
   ) async {
+    var resolveCount = 0;
     await pumpCard(
       tester,
       state: const SyncState(),
       queueSummary: const OfflineQueueSummary(conflictCount: 3),
-      onRetry: () {},
+      onRetry: () => fail('Conflict kör retry başlatmamalı.'),
+      onResolveConflicts: () => resolveCount += 1,
     );
 
     expect(find.text('Dikkat gereken kayıtlar var'), findsOneWidget);
-    expect(
-      find.text('3 kayıt çakışması yeniden denenmeyi bekliyor.'),
-      findsOneWidget,
-    );
+    expect(find.text('3 kayıt çakışması çözüm bekliyor.'), findsOneWidget);
+    expect(find.text('Çakışmaları çöz'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('profile_sync_conflicts_button')));
+    expect(resolveCount, 1);
   });
 
   testWidgets('pending görev için manuel senkronizasyon sunar', (tester) async {

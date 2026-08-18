@@ -147,6 +147,36 @@ class GroupExpenseOfflineRepository {
         .toList(growable: false);
   }
 
+  Future<List<OfflineTask>> getConflictSyncTasks({
+    required String ownerKey,
+  }) async {
+    final tasks = await _isar.offlineTasks
+        .filter()
+        .statusEqualTo(OfflineTaskStatus.conflict)
+        .sortByUpdatedAtDesc()
+        .findAll();
+    return tasks
+        .where((task) {
+          if (task.type != OfflineTaskType.groupExpenseCreate &&
+              task.type != OfflineTaskType.groupExpenseUpdate &&
+              task.type != OfflineTaskType.groupExpenseDelete) {
+            return false;
+          }
+          try {
+            return _decodePayload(task.payloadJson)['owner_key'] == ownerKey;
+          } on StateError {
+            return false;
+          }
+        })
+        .toList(growable: false);
+  }
+
+  Stream<List<OfflineTask>> watchConflictSyncTasks({
+    required String ownerKey,
+  }) => _isar.offlineTasks
+      .watchLazy(fireImmediately: true)
+      .asyncMap((_) => getConflictSyncTasks(ownerKey: ownerKey));
+
   /// Expense dışındaki immutable grup operasyonlarını (örn. settlement)
   /// owner scope'u doğrulandıktan sonra kalıcı kuyruğa ekler.
   Future<Id> enqueueGroupTask(OfflineTask task, {required String ownerKey}) {
@@ -270,6 +300,91 @@ class GroupExpenseOfflineRepository {
         await _updateExpenseSyncState(task, SyncState.failed);
       });
 
+  /// Kullanıcı sunucu sürümünü seçtiğinde conflict taskını kapatır ve yerel
+  /// masrafı aynı transaction içinde server snapshotı/tombstone ile değiştirir.
+  Future<void> resolveConflictUsingServer({
+    required Id conflictTaskId,
+    required String ownerKey,
+    GroupExpenseEntity? serverExpense,
+    DateTime? serverDeletedAt,
+  }) {
+    if ((serverExpense == null) == (serverDeletedAt == null)) {
+      throw ArgumentError(
+        'Server snapshotı veya tombstone zamanı seçeneklerinden biri verilmeli.',
+      );
+    }
+    return _isar.writeTxn(() async {
+      final task = await _requireConflictTask(conflictTaskId, ownerKey);
+      final expenseId = await _expenseIdForTask(task);
+      if (expenseId == null) {
+        throw StateError('Conflict görevi bir grup masrafına bağlanamadı.');
+      }
+      final existing = await _isar.groupExpenseEntitys.getByExpenseId(
+        expenseId,
+      );
+      if (serverExpense != null) {
+        if (serverExpense.ownerKey != ownerKey ||
+            serverExpense.expenseId != expenseId ||
+            serverExpense.syncState != SyncState.synced) {
+          throw StateError(
+            'Server masraf snapshotı conflict kapsamıyla eşleşmiyor.',
+          );
+        }
+        if (existing != null) serverExpense.id = existing.id;
+        await _isar.groupExpenseEntitys.put(serverExpense);
+      } else {
+        if (existing == null || existing.ownerKey != ownerKey) {
+          throw StateError('Silinen server masrafının yerel kaydı bulunamadı.');
+        }
+        final deletedAt = serverDeletedAt!.toUtc();
+        existing
+          ..syncState = SyncState.synced
+          ..deletedAt = deletedAt
+          ..updatedAt = deletedAt
+          ..payloadJson = _withTombstone(existing.payloadJson, deletedAt);
+        await _isar.groupExpenseEntitys.put(existing);
+      }
+      final now = DateTime.now().toUtc();
+      task
+        ..status = OfflineTaskStatus.synced
+        ..lastAttemptAt = now
+        ..updatedAt = now;
+      await _isar.offlineTasks.put(task);
+    });
+  }
+
+  /// Kullanıcı yerel sürümü seçtiğinde eski conflict taskını audit için
+  /// kapatır; yeni idempotency anahtarlı task ve pending snapshotı atomik yazar.
+  Future<Id> replaceConflictWithPending({
+    required Id conflictTaskId,
+    required String ownerKey,
+    required GroupExpenseEntity replacementExpense,
+    required OfflineTask replacementTask,
+  }) async {
+    _validatePendingPair(replacementExpense, replacementTask);
+    final now = DateTime.now().toUtc();
+    replacementTask
+      ..createdAt = now
+      ..updatedAt = now;
+    return _isar.writeTxn(() async {
+      final conflict = await _requireConflictTask(conflictTaskId, ownerKey);
+      final conflictPayload = _decodePayload(conflict.payloadJson);
+      final replacementPayload = _decodePayload(replacementTask.payloadJson);
+      if (conflictPayload['group_id'] != replacementPayload['group_id'] ||
+          replacementPayload['owner_key'] != ownerKey ||
+          conflict.clientTaskId == replacementTask.clientTaskId) {
+        throw StateError('Replacement task conflict kapsamıyla eşleşmiyor.');
+      }
+      conflict
+        ..status = OfflineTaskStatus.synced
+        ..lastAttemptAt = now
+        ..updatedAt = now;
+      await _isar.offlineTasks.put(conflict);
+      await _putExpense(replacementExpense);
+      return _isar.offlineTasks.put(replacementTask);
+    });
+  }
+
   /// Pull ile gelen server snapshot'ını yalnız yerelde bekleyen değişiklik yoksa
   /// uygular. Pending/failed kayıtların sessizce ezilmesini engeller.
   Future<bool> saveSyncedFromPull(GroupExpenseEntity expense) {
@@ -369,6 +484,20 @@ class GroupExpenseOfflineRepository {
       await mutate(task, now);
       await _isar.offlineTasks.put(task);
     });
+  }
+
+  Future<OfflineTask> _requireConflictTask(Id taskId, String ownerKey) async {
+    final task = await _isar.offlineTasks.get(taskId);
+    if (task == null ||
+        task.status != OfflineTaskStatus.conflict ||
+        !task.type.isGroupOperation) {
+      throw StateError('Çözülecek conflict görevi bulunamadı.');
+    }
+    final payload = _decodePayload(task.payloadJson);
+    if (payload['owner_key'] != ownerKey) {
+      throw StateError('Conflict görevi aktif kullanıcıya ait değil.');
+    }
+    return task;
   }
 
   Future<void> _updateExpenseSyncState(

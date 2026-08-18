@@ -376,6 +376,7 @@ class FakeGroupSyncServer {
           operationId: task.clientTaskId,
           status: GroupPushStatus.conflict,
           message: 'Fake sunucuda daha güncel grup kaydı bulunuyor.',
+          conflictCode: 'version_mismatch',
         );
       case FakeGroupPushOutcome.permanentFailure:
         throw const GroupSyncPermanentException(
@@ -398,6 +399,7 @@ class FakeGroupSyncServer {
         operationId: task.clientTaskId,
         status: GroupPushStatus.conflict,
         message: 'Aynı clientRecordId farklı payload ile tekrar kullanıldı.',
+        conflictCode: 'idempotency_conflict',
       );
     }
 

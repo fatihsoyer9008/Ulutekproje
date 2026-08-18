@@ -145,6 +145,9 @@ void main() {
     final state = scope.read(groupSyncCoordinatorProvider);
     expect(task.status, OfflineTaskStatus.conflict);
     expect(task.lastError, contains('güncel grup'));
+    final conflictAudit = jsonDecode(task.lastError!) as Map<String, dynamic>;
+    expect(conflictAudit['code'], 'version_mismatch');
+    expect(conflictAudit['kind'], 'group_sync_conflict');
     expect(delays, isEmpty);
     expect(state.status, GroupSyncStatus.conflict);
     expect(state.conflictCount, 1);

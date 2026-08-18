@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/database_providers.dart';
+import '../../../core/network/request_id.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../../sync/application/automatic_sync_service.dart';
+import '../application/group_expense_conflict_service.dart';
 import '../application/local_first_group_expense_reader.dart';
 import '../application/offline_first_group_expense_mutator.dart';
 import '../application/offline_first_group_expense_writer.dart';
@@ -96,6 +98,27 @@ final offlineFirstGroupExpenseMutatorProvider =
         ref.watch(offlineFirstGroupExpenseWriterProvider),
       ),
     );
+
+final groupExpenseConflictServiceProvider =
+    Provider<GroupExpenseConflictResolver>(
+      (ref) => GroupExpenseConflictService(
+        ref.watch(groupExpenseOfflineRepositoryProvider),
+        ref.watch(groupExpenseRepositoryProvider),
+        newUuidV4,
+        () => ref.read(automaticSyncServiceProvider).syncGroupAfterSave(),
+      ),
+    );
+
+final groupExpenseConflictsProvider =
+    StreamProvider<List<GroupExpenseConflict>>((ref) {
+      final userId = ref.watch(currentGroupUserIdProvider);
+      if (userId == null) {
+        return Stream.value(const <GroupExpenseConflict>[]);
+      }
+      return ref
+          .watch(groupExpenseConflictServiceProvider)
+          .watch(ownerKey: 'user:$userId');
+    });
 
 final debtSummaryRepositoryProvider = Provider<DebtSummaryRepository>(
   (ref) => ref.watch(groupRepositoryProvider),
