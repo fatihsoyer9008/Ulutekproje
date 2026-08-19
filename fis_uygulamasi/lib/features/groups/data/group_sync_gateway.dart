@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:finance_database/finance_database.dart';
 import 'package:dio/dio.dart';
 
+import '../../../core/errors/sync_error_category.dart';
+
 enum GroupPushStatus { accepted, duplicate, conflict }
 
 class GroupPushResult {
@@ -64,17 +66,21 @@ class DioGroupPushGateway implements GroupPushGateway {
     final envelope = _taskEnvelope(task);
     final ownerKey = envelope['owner_key'];
     if (ownerKey is! String || !ownerKey.startsWith('user:')) {
-      throw const GroupSyncPermanentException(
+      throw const GroupSyncPermanentException.invalidPayload(
         'Geçersiz grup sync owner scope.',
       );
     }
     if (envelope['client_record_id'] != task.clientTaskId) {
-      throw const GroupSyncPermanentException('Sync tracking ID uyuşmuyor.');
+      throw const GroupSyncPermanentException.invalidPayload(
+        'Sync tracking ID uyuşmuyor.',
+      );
     }
     final groupId = envelope['group_id'];
     final rawPayload = envelope['sync_payload'] ?? envelope['payload'];
     if (groupId is! String || rawPayload is! Map) {
-      throw const GroupSyncPermanentException('Grup sync payload geçersiz.');
+      throw const GroupSyncPermanentException.invalidPayload(
+        'Grup sync payload geçersiz.',
+      );
     }
     final payload = Map<String, Object?>.from(rawPayload);
     if (task.type == OfflineTaskType.settlementCreate) {
@@ -93,7 +99,7 @@ class DioGroupPushGateway implements GroupPushGateway {
       case OfflineTaskType.settlementCreate:
         break;
       default:
-        throw const GroupSyncPermanentException(
+        throw const GroupSyncPermanentException.invalidPayload(
           'Bu grup operasyonu production gateway tarafından desteklenmiyor.',
         );
     }
@@ -113,7 +119,7 @@ class DioGroupPushGateway implements GroupPushGateway {
           ? responseBody['operation_id']
           : null;
       if (operationId != null && operationId != task.clientTaskId) {
-        throw const GroupSyncPermanentException(
+        throw const GroupSyncPermanentException.invalidPayload(
           'Sync endpoint farklı bir operasyon kimliği döndürdü.',
         );
       }
@@ -137,6 +143,12 @@ class DioGroupPushGateway implements GroupPushGateway {
           conflictCode: code,
         );
       }
+      if (status == 408 || status == 429) {
+        throw GroupSyncTemporaryException(
+          message ?? 'Grup sync isteği geçici olarak tamamlanamadı.',
+          category: categorizeSyncError(error),
+        );
+      }
       if (status != null && status >= 400 && status < 500) {
         throw GroupSyncPermanentException(
           message ?? 'Grup sync isteği sunucu tarafından reddedildi ($status).',
@@ -144,6 +156,7 @@ class DioGroupPushGateway implements GroupPushGateway {
       }
       throw GroupSyncTemporaryException(
         message ?? 'Grup sync endpointine geçici olarak ulaşılamıyor.',
+        category: categorizeSyncError(error),
       );
     }
   }
@@ -155,7 +168,9 @@ class DioGroupPushGateway implements GroupPushGateway {
     } on FormatException {
       // Aşağıdaki kalıcı hata tek biçimli hata raporu üretir.
     }
-    throw const GroupSyncPermanentException('Grup sync zarfı geçersiz JSON.');
+    throw const GroupSyncPermanentException.invalidPayload(
+      'Grup sync zarfı geçersiz JSON.',
+    );
   }
 
   static String? _errorMessage(Object? data) {
@@ -224,6 +239,12 @@ class DioGroupPullGateway implements GroupPullGateway {
     } on DioException catch (error) {
       final status = error.response?.statusCode;
       final message = _errorMessage(error.response?.data);
+      if (status == 408 || status == 429) {
+        throw GroupSyncTemporaryException(
+          message ?? 'Group pull isteği geçici olarak tamamlanamadı.',
+          category: categorizeSyncError(error),
+        );
+      }
       if (status != null && status >= 400 && status < 500) {
         throw GroupSyncPermanentException(
           message ??
@@ -232,6 +253,7 @@ class DioGroupPullGateway implements GroupPullGateway {
       }
       throw GroupSyncTemporaryException(
         message ?? 'Group pull endpointine geçici olarak ulaşılamıyor.',
+        category: categorizeSyncError(error),
       );
     }
 
@@ -240,7 +262,9 @@ class DioGroupPullGateway implements GroupPullGateway {
 
   static GroupPullBatch _parseBatch(Object? data) {
     if (data is! Map) {
-      throw const GroupSyncPermanentException('Group pull yanıtı geçersiz.');
+      throw const GroupSyncPermanentException.invalidPayload(
+        'Group pull yanıtı geçersiz.',
+      );
     }
     final rawChanges = data['changes'];
     final rawNextCursor = data['next_cursor'];
@@ -248,7 +272,7 @@ class DioGroupPullGateway implements GroupPullGateway {
     if (rawChanges is! List ||
         (rawNextCursor != null && rawNextCursor is! String) ||
         rawHasMore is! bool) {
-      throw const GroupSyncPermanentException(
+      throw const GroupSyncPermanentException.invalidPayload(
         'Group pull sayfa bilgisi geçersiz.',
       );
     }
@@ -256,7 +280,7 @@ class DioGroupPullGateway implements GroupPullGateway {
     final changes = <GroupPullChange>[];
     for (final rawChange in rawChanges) {
       if (rawChange is! Map) {
-        throw const GroupSyncPermanentException(
+        throw const GroupSyncPermanentException.invalidPayload(
           'Group pull değişikliği geçersiz.',
         );
       }
@@ -269,7 +293,7 @@ class DioGroupPullGateway implements GroupPullGateway {
       if (changeCursor is! String ||
           rawOperation is! Map ||
           serverUpdatedAt == null) {
-        throw const GroupSyncPermanentException(
+        throw const GroupSyncPermanentException.invalidPayload(
           'Group pull değişiklik alanları geçersiz.',
         );
       }
@@ -303,19 +327,34 @@ class DioGroupPullGateway implements GroupPullGateway {
   }
 }
 
-class GroupSyncTemporaryException implements Exception {
-  const GroupSyncTemporaryException(this.message);
+class GroupSyncTemporaryException implements CategorizedSyncException {
+  const GroupSyncTemporaryException(
+    this.message, {
+    this.category = SyncErrorCategory.serverUnavailable,
+  });
 
   final String message;
+
+  @override
+  final SyncErrorCategory category;
 
   @override
   String toString() => message;
 }
 
-class GroupSyncPermanentException implements Exception {
-  const GroupSyncPermanentException(this.message);
+class GroupSyncPermanentException implements CategorizedSyncException {
+  const GroupSyncPermanentException(
+    this.message, {
+    this.category = SyncErrorCategory.permanentFailure,
+  });
+
+  const GroupSyncPermanentException.invalidPayload(this.message)
+    : category = SyncErrorCategory.invalidPayload;
 
   final String message;
+
+  @override
+  final SyncErrorCategory category;
 
   @override
   String toString() => message;
@@ -436,7 +475,7 @@ class FakeGroupSyncServer {
 
   Map<String, Object?> _decodeTask(OfflineTask task) {
     if (!task.type.isGroupOperation) {
-      throw const GroupSyncPermanentException(
+      throw const GroupSyncPermanentException.invalidPayload(
         'Kişisel transaction fake grup gateway üzerinden gönderilemez.',
       );
     }
@@ -448,7 +487,7 @@ class FakeGroupSyncServer {
     final validated = _validatedOperation(operation);
     if (validated['operation_type'] != task.type.name ||
         validated['client_record_id'] != task.clientTaskId) {
-      throw const GroupSyncPermanentException(
+      throw const GroupSyncPermanentException.invalidPayload(
         'OfflineTask alanları grup operation payload ile eşleşmiyor.',
       );
     }

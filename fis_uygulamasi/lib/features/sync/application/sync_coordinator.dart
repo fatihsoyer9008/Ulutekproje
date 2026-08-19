@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 
 import '../../../core/database/database_providers.dart';
+import '../../../core/errors/sync_error_category.dart';
 import '../../../core/storage/installation_id_provider.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../data/pending_task_sync_gateway.dart';
@@ -88,7 +89,8 @@ class SyncCoordinator extends Notifier<SyncState> {
     Random? random,
     Delay? delay,
     Clock? clock,
-  }) : _random = random ?? Random.secure(),
+  }) : assert(maxRetries > 0),
+       _random = random ?? Random.secure(),
        _delay = delay ?? Future<void>.delayed,
        _clock = clock ?? DateTime.now;
 
@@ -271,29 +273,31 @@ class SyncCoordinator extends Notifier<SyncState> {
         await repository.markAsSynced(task.id);
         return const _TaskSuccess();
       } on Object catch (error) {
-        final message = _safeError(error);
         if (error is SyncConflictException) {
-          await repository.markConflict(task.id, message);
+          await repository.markConflict(task.id, _syncFailureUserMessage);
           return const _TaskConflict();
         }
+        final auditCode = categorizeSyncError(error).code;
         if (isUnrecoverableSyncError(error)) {
-          await repository.markPermanentlyFailed(task.id, message);
-          return _TaskFailure(message);
+          await repository.markPermanentlyFailed(task.id, auditCode);
+          return const _TaskFailure(_syncFailureUserMessage);
         }
 
         attempt += 1;
-        await repository.updateTaskError(task.id, message);
+        await repository.updateTaskError(task.id, auditCode);
         if (attempt >= maxRetries) {
-          await repository.markPermanentlyFailed(task.id, message);
-          return _TaskFailure(message);
+          await repository.markPermanentlyFailed(task.id, auditCode);
+          return const _TaskFailure(_syncFailureUserMessage);
         }
         await _delay(_backoff(attempt));
       }
     }
 
-    const message = 'Maksimum yeniden deneme sayısına ulaşıldı.';
-    await repository.markPermanentlyFailed(task.id, message);
-    return const _TaskFailure(message);
+    await repository.markPermanentlyFailed(
+      task.id,
+      SyncErrorCategory.permanentFailure.code,
+    );
+    return const _TaskFailure(_syncFailureUserMessage);
   }
 
   Future<void> _cleanupSynced(SyncTaskRepository repository) async {
@@ -312,10 +316,10 @@ class SyncCoordinator extends Notifier<SyncState> {
     final jitterMs = _random.nextInt(max(1, initialDelay.inMilliseconds + 1));
     return Duration(milliseconds: exponentialMs.toInt() + jitterMs);
   }
-
-  String _safeError(Object _) =>
-      'İşlem senkronize edilemedi. Lütfen tekrar deneyin.';
 }
+
+const _syncFailureUserMessage =
+    'İşlem senkronize edilemedi. Lütfen tekrar deneyin.';
 
 sealed class _TaskOutcome {
   const _TaskOutcome();

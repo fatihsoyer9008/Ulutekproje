@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:math';
 
 import 'package:dio/dio.dart';
@@ -383,16 +384,30 @@ void validateGoogleIdTokenAudience(
         audience == expectedAudience ||
         (audience is List && audience.contains(expectedAudience));
     if (!matches) {
+      developer.log(
+        'Google ID token audience eşleşmedi. GOOGLE_SERVER_CLIENT_ID ile '
+        'backend GOOGLE_OAUTH_CLIENT_IDS OAuth Client ID yapılandırmasını '
+        'kontrol edin.',
+        name: 'app.auth.google_token_validation',
+      );
       throw const AuthException(
-        'Google Client ID eşleşmiyor. Flutter GOOGLE_SERVER_CLIENT_ID ile '
-        'backend GOOGLE_OAUTH_CLIENT_IDS aynı Web OAuth Client ID olmalıdır.',
+        'Google girişi doğrulanamadı. Lütfen tekrar deneyin.',
+        code: 'google_token_verification_failed',
       );
     }
   } on AuthException {
     rethrow;
-  } on FormatException {
+  } on FormatException catch (error, stackTrace) {
+    developer.log(
+      'Google ID token okunamadı. OAuth Client ID yapılandırmasını kontrol '
+      'edin.',
+      name: 'app.auth.google_token_validation',
+      error: error,
+      stackTrace: stackTrace,
+    );
     throw const AuthException(
-      'Google kimlik belirteci okunamadı. OAuth yapılandırmasını kontrol edin.',
+      'Google girişi doğrulanamadı. Lütfen tekrar deneyin.',
+      code: 'google_token_verification_failed',
     );
   }
 }

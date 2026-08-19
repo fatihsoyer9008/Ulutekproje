@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:app_main/features/groups/application/group_sync_coordinator.dart';
 import 'package:app_main/features/groups/data/group_sync_gateway.dart';
 import 'package:app_main/features/groups/domain/group_sync_state.dart';
+import 'package:dio/dio.dart';
 import 'package:finance_database/finance_database.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,11 +16,14 @@ void main() {
     required FakeGroupSyncServer server,
     int maxRetries = 3,
     List<Duration>? delays,
+    GroupPushGateway? pushGateway,
   }) {
     final scope = ProviderContainer(
       overrides: [
         groupSyncTaskRepositoryProvider.overrideWithValue(repository),
         fakeGroupSyncServerProvider.overrideWithValue(server),
+        if (pushGateway != null)
+          groupPushGatewayProvider.overrideWithValue(pushGateway),
         groupSyncCoordinatorProvider.overrideWith(
           () => GroupSyncCoordinator(
             maxRetries: maxRetries,
@@ -98,9 +102,10 @@ void main() {
       const Duration(milliseconds: 200),
     ]);
     expect(task.retryCount, 2);
+    expect(task.lastError, 'server_unavailable');
     expect(
-      task.lastError,
-      'Grup işlemi senkronize edilemedi. Lütfen tekrar deneyin.',
+      scope.read(groupSyncCoordinatorProvider).errorMessage,
+      isNot(contains('server_unavailable')),
     );
     expect(task.lastAttemptAt, isNotNull);
     expect(task.status, OfflineTaskStatus.synced);
@@ -125,9 +130,61 @@ void main() {
     final state = scope.read(groupSyncCoordinatorProvider);
     expect(task.retryCount, 3);
     expect(task.status, OfflineTaskStatus.failed);
+    expect(task.lastError, 'server_unavailable');
     expect(state.status, GroupSyncStatus.failed);
     expect(state.failedCount, 1);
   });
+
+  final categorizedErrors = <String, Object>{
+    'network_unavailable': DioException(
+      requestOptions: RequestOptions(path: '/api/v1/sync/groups/push'),
+      type: DioExceptionType.connectionError,
+      message: 'raw network details',
+    ),
+    'timeout': DioException(
+      requestOptions: RequestOptions(path: '/api/v1/sync/groups/push'),
+      type: DioExceptionType.connectionTimeout,
+      message: 'raw timeout details',
+    ),
+    'invalid_payload': const FormatException('raw payload details'),
+    'server_unavailable': const GroupSyncTemporaryException(
+      'raw server details',
+    ),
+    'permanent_failure': const GroupSyncPermanentException(
+      'raw permanent details',
+    ),
+  };
+
+  for (final MapEntry(key: expectedCategory, value: error)
+      in categorizedErrors.entries) {
+    test(
+      'grup $expectedCategory audit kodunu lastError alanında saklar',
+      () async {
+        final failedTask = _task(1);
+        final repository = _MemoryGroupSyncRepository([failedTask]);
+        final scope = container(
+          repository: repository,
+          server: FakeGroupSyncServer(),
+          maxRetries: 1,
+          pushGateway: _ThrowingGroupPushGateway(error),
+        );
+
+        await scope
+            .read(groupSyncCoordinatorProvider.notifier)
+            .syncPendingAndPull();
+
+        final state = scope.read(groupSyncCoordinatorProvider);
+        expect(failedTask.lastError, expectedCategory);
+        expect(failedTask.lastError, isNot(contains('raw')));
+        expect(
+          state.errorMessage,
+          '1 grup işlemi senkronize edilemedi: '
+          'Grup işlemi senkronize edilemedi. Lütfen tekrar deneyin.',
+        );
+        expect(state.errorMessage, isNot(contains(expectedCategory)));
+      },
+    );
+  }
 
   test('conflict retry yapmadan ayrı provider state olarak korunur', () async {
     final task = _task(1);
@@ -260,6 +317,15 @@ void main() {
     expect(server.pushCalls, 1);
     expect(repository.syncedIds, <Id>[task.id]);
   });
+}
+
+class _ThrowingGroupPushGateway implements GroupPushGateway {
+  const _ThrowingGroupPushGateway(this.error);
+
+  final Object error;
+
+  @override
+  Future<GroupPushResult> push(OfflineTask task) async => throw error;
 }
 
 class _BlockingFakeGroupSyncServer extends FakeGroupSyncServer {
