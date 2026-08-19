@@ -44,16 +44,16 @@ class SMTPEmailSender:
         verification_url = self._action_url("verify-email", token)
         await self._send(
             recipient=email,
-            subject="FisKon e-posta adresini doğrula",
+            subject="EconBuddy e-posta adresini doğrula",
             body=(
-                "FisKon hesabını kullanmaya başlamak için e-posta adresini "
+                "EconBuddy hesabını kullanmaya başlamak için e-posta adresini "
                 "doğrula:\n\n"
                 f"{verification_url}\n\n"
                 "Bu bağlantı 24 saat geçerlidir. Bu hesabı sen oluşturmadıysan "
                 "bu e-postayı yok sayabilirsin."
             ),
             html_body=(
-                "<p>FisKon hesabını kullanmaya başlamak için e-posta adresini "
+                "<p>EconBuddy hesabını kullanmaya başlamak için e-posta adresini "
                 "doğrula.</p>"
                 f'<p><a href="{verification_url}">E-posta adresimi doğrula</a></p>'
                 "<p>Bu bağlantı 24 saat geçerlidir. Bu hesabı sen "
@@ -88,7 +88,7 @@ class SMTPEmailSender:
         safe_invitation_url = html.escape(invitation_url, quote=True)
         await self._send(
             recipient=email,
-            subject="FisKon grup daveti",
+            subject="EconBuddy grup daveti",
             body=(
                 f"{group_name} grubuna davet edildin. Daveti kabul etmek için "
                 "bağlantıyı aç:\n\n"

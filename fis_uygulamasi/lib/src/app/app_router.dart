@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/notifications/notification_navigation_controller.dart';
+import '../../features/onboarding/presentation/onboarding_page.dart';
 import '../../features/ai_assistant/data/ai_assistant_client.dart';
 import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
 import '../../features/ai_assistant/presentation/assistant_access_gate.dart';
@@ -56,6 +57,7 @@ GoRouter createAppRouter({
       final location = state.matchedLocation;
       final groupsLocation = isGroupsRoute(location);
       final isAuthPage = {
+        '/onboarding',
         '/welcome',
         '/login',
         '/register',
@@ -99,13 +101,16 @@ GoRouter createAppRouter({
         return '/home';
       }
       if (auth.status == AuthStatus.guest &&
-          (location == '/welcome' || location == '/startup')) {
+          (location == '/onboarding' ||
+              location == '/welcome' ||
+              location == '/startup')) {
         return '/home';
       }
       return null;
     },
     routes: [
       GoRoute(path: '/startup', builder: (_, _) => const StartupPage()),
+      GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingPage()),
       GoRoute(path: '/welcome', builder: (_, _) => const WelcomePage()),
       GoRoute(
         path: '/login',

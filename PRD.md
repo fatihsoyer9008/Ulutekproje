@@ -1,4 +1,4 @@
-# FişKon Ürün Gereksinimleri Dokümanı (PRD)
+# EconBuddy Ürün Gereksinimleri Dokümanı (PRD)
 
 **Sürüm:** 1.0
 **Tarih:** 13 Ağustos 2026
@@ -8,7 +8,7 @@
 
 ## 1. Ürün Özeti
 
-FişKon; kullanıcıların fişlerini kamera veya galeriden taramasını, OCR ve yapay zekâ ile işlem bilgilerine dönüştürmesini, gelir-giderlerini çevrimdışı çalışabilen bir mobil uygulamada takip etmesini ve ortak harcamaları grup üyeleriyle bölüştürmesini sağlayan kişisel finans uygulamasıdır.
+EconBuddy; kullanıcıların fişlerini kamera veya galeriden taramasını, OCR ve yapay zekâ ile işlem bilgilerine dönüştürmesini, gelir-giderlerini çevrimdışı çalışabilen bir mobil uygulamada takip etmesini ve ortak harcamaları grup üyeleriyle bölüştürmesini sağlayan kişisel finans uygulamasıdır.
 
 Ürün iki birbirini tamamlayan çalışma alanına sahiptir:
 
@@ -19,7 +19,7 @@ Grup özellikleri Drawer içindeki **Gruplarım** alanında ayrı bir deneyim ol
 
 ## 2. Problem Tanımı
 
-Kullanıcılar fiş verilerini elle girmekte, ortak harcamaları ayrı uygulamalarda hesaplamakta ve kimin kime ne kadar borçlu olduğunu takip etmekte zorlanmaktadır. FişKon aşağıdaki sorunları tek akışta çözmeyi hedefler:
+Kullanıcılar fiş verilerini elle girmekte, ortak harcamaları ayrı uygulamalarda hesaplamakta ve kimin kime ne kadar borçlu olduğunu takip etmekte zorlanmaktadır. EconBuddy aşağıdaki sorunları tek akışta çözmeyi hedefler:
 
 - Fiş üzerindeki kurum, tarih, toplam ve ürünlerin otomatik okunması.
 - OCR sonucunun kullanıcı tarafından doğrulanıp düzeltilebilmesi.

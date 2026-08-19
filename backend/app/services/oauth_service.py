@@ -61,10 +61,10 @@ class OAuthLoginService:
         if existing_user is not None:
             # Only auto-link when BOTH sides have independently proven mailbox
             # ownership: the provider says email_verified=True (checked above)
-            # AND our own account already completed FişKon's email
+            # AND our own account already completed EconBuddy's email
             # verification. That second condition is what makes this safe —
             # an attacker who merely registers a password account with a
-            # victim's email cannot complete FişKon's verification (it's sent
+            # victim's email cannot complete EconBuddy's verification (it's sent
             # to the real inbox), so an unverified existing account can never
             # silently receive someone else's OAuth login. If either side
             # can't prove ownership, fall back to requiring an explicit

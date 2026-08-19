@@ -388,7 +388,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp>
 
     if (widget.enableAuth && router != null) {
       return MaterialApp.router(
-        title: 'Cüzdanım',
+        title: 'EconBuddy',
         debugShowCheckedModeBanner: false,
         scaffoldMessengerKey: _scaffoldMessengerKey,
         theme: AppTheme.light,
@@ -406,7 +406,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp>
     }
 
     return MaterialApp(
-      title: 'Cüzdanım',
+      title: 'EconBuddy',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
