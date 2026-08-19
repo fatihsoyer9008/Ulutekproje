@@ -55,6 +55,8 @@ class _LiveSavingsScreen extends ConsumerWidget {
             onUpdateAmount: (id, amount) => ref
                 .read(savingsGoalProvider(ownerKey).notifier)
                 .updateGoalAmount(id, amount),
+            onDelete: (id) =>
+                ref.read(savingsGoalProvider(ownerKey).notifier).deleteGoal(id),
           ),
         );
       },
@@ -63,11 +65,17 @@ class _LiveSavingsScreen extends ConsumerWidget {
 }
 
 class _SavingsContent extends StatelessWidget {
-  const _SavingsContent({required this.goals, this.onAdd, this.onUpdateAmount});
+  const _SavingsContent({
+    required this.goals,
+    this.onAdd,
+    this.onUpdateAmount,
+    this.onDelete,
+  });
 
   final List<_GoalView> goals;
   final Future<void> Function(SavingsGoalEntity goal)? onAdd;
   final Future<void> Function(int id, int amountInMinor)? onUpdateAmount;
+  final Future<void> Function(int id)? onDelete;
 
   Future<void> _showCreateSheet(BuildContext context) async {
     if (onAdd == null) return;
@@ -102,13 +110,18 @@ class _SavingsContent extends StatelessWidget {
               goal: ordered.first,
               featured: true,
               onUpdateAmount: onUpdateAmount,
+              onDelete: onDelete,
             ),
             if (ordered.length > 1) ...[
               const SizedBox(height: 26),
               _sectionTitle(context, null, 'Diğer Birikimlerim'),
               const SizedBox(height: 12),
               for (final goal in ordered.skip(1)) ...[
-                _GoalCard(goal: goal, onUpdateAmount: onUpdateAmount),
+                _GoalCard(
+                  goal: goal,
+                  onUpdateAmount: onUpdateAmount,
+                  onDelete: onDelete,
+                ),
                 const SizedBox(height: 12),
               ],
             ],
@@ -266,22 +279,29 @@ class _SavingsOnboardingIllustration extends StatelessWidget {
             right: 8,
             top: compact ? 104 : 126,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: const [
-                _OnboardingGoalCard(
-                  title: 'Haftalık Tatil\nFonu',
-                  icon: Icons.favorite_rounded,
-                  progress: .22,
+                Expanded(
+                  child: _OnboardingGoalCard(
+                    title: 'Haftalık Tatil\nFonu',
+                    icon: Icons.favorite_rounded,
+                    progress: .22,
+                  ),
                 ),
-                _OnboardingGoalCard(
-                  title: 'Kişisel Bilgisayar\nHedefi',
-                  icon: Icons.laptop_mac_rounded,
-                  progress: .35,
+                SizedBox(width: 8),
+                Expanded(
+                  child: _OnboardingGoalCard(
+                    title: 'Kişisel Bilgisayar\nHedefi',
+                    icon: Icons.laptop_mac_rounded,
+                    progress: .35,
+                  ),
                 ),
-                _OnboardingGoalCard(
-                  title: 'Otomatik\nBirikim',
-                  icon: Icons.savings_rounded,
-                  progress: .72,
+                SizedBox(width: 8),
+                Expanded(
+                  child: _OnboardingGoalCard(
+                    title: 'Otomatik\nBirikim',
+                    icon: Icons.savings_rounded,
+                    progress: .72,
+                  ),
                 ),
               ],
             ),
@@ -310,7 +330,6 @@ class _OnboardingGoalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    width: 98,
     height: 132,
     padding: const EdgeInsets.all(10),
     decoration: BoxDecoration(
@@ -507,11 +526,43 @@ class _GoalCard extends StatelessWidget {
     required this.goal,
     this.featured = false,
     this.onUpdateAmount,
+    this.onDelete,
   });
 
   final _GoalView goal;
   final bool featured;
   final Future<void> Function(int id, int amountInMinor)? onUpdateAmount;
+  final Future<void> Function(int id)? onDelete;
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    if (goal.id == null || onDelete == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Hedefi sil'),
+        content: Text(
+          '"${goal.title}" hedefini silmek istediğine emin misin? '
+          'Bu işlem geri alınamaz.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(
+              'Sil',
+              style: TextStyle(color: Theme.of(dialogContext).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await onDelete!(goal.id!);
+    }
+  }
   Future<int?> _showAddMoneySheet(BuildContext context) async {
     if (goal.id == null || onUpdateAmount == null) return null;
 
@@ -594,7 +645,22 @@ class _GoalCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _StatusBadge(goal: goal, progress: progress),
+          Row(
+            children: [
+              Expanded(child: _StatusBadge(goal: goal, progress: progress)),
+              if (onDelete != null && goal.id != null)
+                IconButton(
+                  key: ValueKey('delete_savings_goal_${goal.id}'),
+                  onPressed: () => _confirmDelete(context),
+                  icon: Icon(
+                    Icons.delete_outline_rounded,
+                    color: theme.colorScheme.error,
+                  ),
+                  tooltip: 'Hedefi sil',
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
