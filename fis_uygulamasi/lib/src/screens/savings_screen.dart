@@ -84,34 +84,8 @@ class _SavingsContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (goals.isEmpty) {
-      return Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: AppCard(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.savings_outlined, size: 48),
-                    const SizedBox(height: 12),
-                    const Text('Henüz birikim hedefi bulunmuyor.'),
-                    if (onAdd != null) ...[
-                      const SizedBox(height: 20),
-                      FilledButton.icon(
-                        key: const Key('create_first_savings_goal'),
-                        onPressed: () => _showCreateSheet(context),
-                        icon: const Icon(Icons.add),
-                        label: const Text('İlk Hedefini Oluştur'),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-          if (onAdd != null) _createFab(context),
-        ],
+      return _SavingsEmptyOnboarding(
+        onCreateGoal: onAdd == null ? null : () => _showCreateSheet(context),
       );
     }
 
@@ -173,6 +147,357 @@ class _SavingsContent extends StatelessWidget {
       foregroundColor: Colors.black,
       icon: const Icon(Icons.add_rounded),
       label: const Text('Yeni Hedef'),
+    ),
+  );
+}
+
+class _SavingsEmptyOnboarding extends StatelessWidget {
+  const _SavingsEmptyOnboarding({this.onCreateGoal});
+
+  final VoidCallback? onCreateGoal;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxHeight < 720;
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(28, compact ? 16 : 32, 28, 24),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight - 56),
+              child: Column(
+                children: [
+                  _SavingsOnboardingIllustration(compact: compact),
+                  SizedBox(height: compact ? 20 : 30),
+                  const Text(
+                    'BİRİKİM HEDEFLERİNİZİ YÖNETİN',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.15,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Birikim hedeflerinizi yönetin',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Mevcut hedeflerinizi takip edin, yeni hedefler belirleyin ve otomatik kuralları özelleştirin.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  SizedBox(height: compact ? 24 : 34),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      key: const Key('create_first_savings_goal'),
+                      onPressed: onCreateGoal,
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('HEDEF EKLE'),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Verilerin senin kontrolünde. Misafir olarak da başlayabilirsin.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SavingsOnboardingIllustration extends StatelessWidget {
+  const _SavingsOnboardingIllustration({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: compact ? 270 : 330,
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.mintLight,
+        borderRadius: BorderRadius.circular(42),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            top: 0,
+            right: 0,
+            child: Container(
+              width: 142,
+              height: 106,
+              decoration: const BoxDecoration(
+                color: Color(0xFF9DEFD8),
+                borderRadius: BorderRadius.only(topRight: Radius.circular(42)),
+              ),
+            ),
+          ),
+          const Positioned(
+            left: 22,
+            top: 36,
+            child: _OnboardingAvatar(initials: 'AY', color: Color(0xFFD5EBFC)),
+          ),
+          const Positioned(
+            right: 26,
+            top: 48,
+            child: _OnboardingAvatar(initials: 'MK', color: Color(0xFFBFE5D7)),
+          ),
+          Positioned(
+            left: 8,
+            right: 8,
+            top: compact ? 104 : 126,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [
+                _OnboardingGoalCard(
+                  title: 'Haftalık Tatil\nFonu',
+                  icon: Icons.favorite_rounded,
+                  progress: .22,
+                ),
+                _OnboardingGoalCard(
+                  title: 'Kişisel Bilgisayar\nHedefi',
+                  icon: Icons.laptop_mac_rounded,
+                  progress: .35,
+                ),
+                _OnboardingGoalCard(
+                  title: 'Otomatik\nBirikim',
+                  icon: Icons.savings_rounded,
+                  progress: .72,
+                ),
+              ],
+            ),
+          ),
+          const Positioned(
+            right: 34,
+            bottom: 18,
+            child: _OnboardingAvatar(initials: 'SE', color: Color(0xFF9DEFD8)),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _OnboardingGoalCard extends StatelessWidget {
+  const _OnboardingGoalCard({
+    required this.title,
+    required this.icon,
+    required this.progress,
+  });
+
+  final String title;
+  final IconData icon;
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 98,
+    height: 132,
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(19),
+      border: Border.all(color: AppColors.border),
+      boxShadow: const [
+        BoxShadow(color: Color(0x16000000), blurRadius: 12, offset: Offset(0, 5)),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 22, color: AppColors.primary),
+        const Spacer(),
+        Text(
+          title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 5,
+            color: AppColors.primary,
+            backgroundColor: AppColors.border,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _OnboardingAvatar extends StatelessWidget {
+  const _OnboardingAvatar({required this.initials, required this.color});
+
+  final String initials;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 58,
+    height: 58,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: color,
+      shape: BoxShape.circle,
+      border: Border.all(color: Colors.white, width: 4),
+    ),
+    child: Text(
+      initials,
+      style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primaryDark),
+    ),
+  );
+}
+
+class _SavingsManagementHero extends StatelessWidget {
+  const _SavingsManagementHero({required this.goals, this.onAddGoal});
+
+  final List<_GoalView> goals;
+  final VoidCallback? onAddGoal;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      container: true,
+      label: 'Birikim hedeflerinizi yönetin',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [AppColors.mintLight, AppColors.mint],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'BİRİKİM HEDEFLERİNİZİ YÖNETİN',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.1,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 132,
+              child: Stack(
+                children: [
+                  for (var index = 0; index < goals.length; index++)
+                    Positioned(
+                      left: index == 0 ? 4 : index == 1 ? 96 : 190,
+                      top: index == 1 ? 0 : 14,
+                      child: TweenAnimationBuilder<double>(
+                        duration: Duration(milliseconds: 420 + (index * 120)),
+                        curve: Curves.easeOutCubic,
+                        tween: Tween(begin: .88, end: 1),
+                        builder: (context, scale, child) => Transform.scale(
+                          scale: scale,
+                          child: Opacity(opacity: scale, child: child),
+                        ),
+                        child: _GoalPreviewCard(goal: goals[index]),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Birikim hedeflerinizi yönetin',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Mevcut hedeflerini takip et, yenilerini belirle.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            if (onAddGoal != null) ...[
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: onAddGoal,
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('HEDEF EKLE'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoalPreviewCard extends StatelessWidget {
+  const _GoalPreviewCard({required this.goal});
+
+  final _GoalView goal;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 108,
+    height: 118,
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: AppColors.border),
+      boxShadow: const [
+        BoxShadow(color: Color(0x18000000), blurRadius: 10, offset: Offset(0, 4)),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(goal.icon, color: goal.color, size: 20),
+        const Spacer(),
+        Text(
+          goal.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 5),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: LinearProgressIndicator(
+            value: goal.progress,
+            minHeight: 5,
+            color: goal.color,
+            backgroundColor: AppColors.mint,
+          ),
+        ),
+      ],
     ),
   );
 }

@@ -1,17 +1,18 @@
 import 'dart:math' as math;
 
+import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../domain/savings_goal_insights.dart';
-import 'package:flutter/services.dart';
 
-const journeyBackground = Color(0xFF081217);
-const journeySurface = Color(0xFF14242B);
-const journeySurfaceLight = Color(0xFF1B3038);
-const journeyAccent = Color(0xFF20D7D2);
+const journeyBackground = AppColors.canvas;
+const journeySurface = AppColors.surface;
+const journeySurfaceLight = AppColors.mint;
+const journeyAccent = AppColors.primary;
 const journeyGold = Color(0xFFFFC24B);
 
 class SavingsJourneyGoal {
@@ -56,6 +57,7 @@ class _SavingsJourneyScreenState extends ConsumerState<SavingsJourneyScreen>
     with TickerProviderStateMixin {
   late final AnimationController _capsuleController;
   late final AnimationController _coinController;
+  late final AnimationController _entranceController;
 
   late final Animation<double> _capsuleJump;
 
@@ -76,6 +78,10 @@ class _SavingsJourneyScreenState extends ConsumerState<SavingsJourneyScreen>
       vsync: this,
       duration: const Duration(milliseconds: 820),
     );
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 760),
+    );
 
     _capsuleJump = TweenSequence<double>([
       TweenSequenceItem(
@@ -93,12 +99,16 @@ class _SavingsJourneyScreenState extends ConsumerState<SavingsJourneyScreen>
         weight: 62,
       ),
     ]).animate(_capsuleController);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _entranceController.forward();
+    });
   }
 
   @override
   void dispose() {
     _capsuleController.dispose();
     _coinController.dispose();
+    _entranceController.dispose();
 
     super.dispose();
   }
@@ -186,32 +196,19 @@ class _SavingsJourneyScreenState extends ConsumerState<SavingsJourneyScreen>
       symbol: '₺',
       decimalDigits: 2,
     );
-    final currentAmount = goal.currentAmountInMinor / 100;
-    final targetAmount = goal.targetAmountInMinor / 100;
-    final remainingAmount = (targetAmount - currentAmount).clamp(
-      0.0,
-      targetAmount,
+    final remainingAmountInMinor = math.max(
+      0,
+      goal.targetAmountInMinor - goal.currentAmountInMinor,
     );
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Theme(
-      data: ThemeData(
-        brightness: Brightness.dark,
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: journeyAccent,
-          brightness: Brightness.dark,
-        ),
-        scaffoldBackgroundColor: journeyBackground,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: journeyBackground,
-          foregroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-        ),
-      ),
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Column(
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF061216) : journeyBackground,
+      appBar: AppBar(
+        backgroundColor: isDark ? const Color(0xFF061216) : journeyBackground,
+        foregroundColor: isDark ? const Color(0xFFF4FBFA) : AppColors.ink,
+          title: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text('Kumbara'),
@@ -221,7 +218,7 @@ class _SavingsJourneyScreenState extends ConsumerState<SavingsJourneyScreen>
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w400,
-                  color: Color(0xFFB8CED1),
+                  color: isDark ? const Color(0xFFB8CED1) : AppColors.muted,
                 ),
               ),
             ],
@@ -229,19 +226,46 @@ class _SavingsJourneyScreenState extends ConsumerState<SavingsJourneyScreen>
           centerTitle: true,
         ),
         body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-            child: Column(
-              children: [
+          child: Stack(
+            children: [
+              FadeTransition(
+            opacity: reduceMotion
+                ? const AlwaysStoppedAnimation(1)
+                : CurvedAnimation(
+                    parent: _entranceController,
+                    curve: Curves.easeOutCubic,
+                  ),
+            child: SlideTransition(
+              position: reduceMotion
+                  ? const AlwaysStoppedAnimation(Offset.zero)
+                  : Tween<Offset>(
+                      begin: const Offset(0, .035),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: _entranceController,
+                        curve: Curves.easeOutCubic,
+                      ),
+                    ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                child: Column(
+                  children: [
                 _GoalSummaryCard(
                   goal: goal,
-                  currentAmount: currentAmount,
-                  targetAmount: targetAmount,
-                  remainingAmount: remainingAmount,
+                  currentAmountInMinor: goal.currentAmountInMinor,
+                  targetAmountInMinor: goal.targetAmountInMinor,
+                  remainingAmountInMinor: remainingAmountInMinor,
                   currency: currency,
+                  isDark: isDark,
                 ),
                 const SizedBox(height: 20),
-                _SavingsCapsule(jump: _capsuleJump, coinDrop: _coinController),
+                _SavingsCapsule(
+                  progress: goal.progress,
+                  jump: _capsuleJump,
+                  coinDrop: _coinController,
+                  isDark: isDark,
+                ),
                 const SizedBox(height: 18),
                 _MilestonePath(
                   progress: goal.progress,
@@ -249,7 +273,7 @@ class _SavingsJourneyScreenState extends ConsumerState<SavingsJourneyScreen>
                   celebrationId: _levelCelebrationId,
                 ),
                 const SizedBox(height: 28),
-                _JourneyTipCard(),
+                _JourneyTipCard(isDark: isDark),
                 const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
@@ -257,37 +281,65 @@ class _SavingsJourneyScreenState extends ConsumerState<SavingsJourneyScreen>
                     onPressed: widget.onAddMoney == null
                         ? null
                         : _handleAddMoney,
+                    style: isDark
+                        ? FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF78EFE5),
+                            foregroundColor: const Color(0xFF062020),
+                          )
+                        : null,
                     icon: const Icon(Icons.add_rounded),
                     label: const Text('Birikim Ekle'),
                   ),
                 ),
-              ],
-            ),
+                  ],
+                ),
+              ),
+              ),
+              ),
+              Positioned.fill(
+                child: Center(
+                  child: _CenterConfettiBurst(
+                    celebrationId: _levelCelebrationId,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-      ),
     );
   }
 }
 
 class _JourneyTipCard extends StatelessWidget {
+  const _JourneyTipCard({required this.isDark});
+
+  final bool isDark;
+
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: journeySurface,
+        color: isDark ? const Color(0xFF10272D) : AppColors.mintLight,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: journeyAccent.withValues(alpha: .22)),
+        border: Border.all(
+          color: (isDark ? const Color(0xFF20D7D2) : journeyAccent).withValues(alpha: .34),
+        ),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.trending_up_rounded, color: journeyAccent),
+          Icon(
+            Icons.trending_up_rounded,
+            color: isDark ? const Color(0xFF20D7D2) : journeyAccent,
+          ),
           SizedBox(width: 12),
           Expanded(
             child: Text(
               'Düzenli küçük birikimler, büyük hedefleri gerçeğe dönüştürür.',
-              style: TextStyle(color: Color(0xFFE6F4F5), height: 1.35),
+              style: TextStyle(
+                color: isDark ? const Color(0xFFE6F4F5) : AppColors.ink,
+                height: 1.35,
+              ),
             ),
           ),
         ],
@@ -299,35 +351,43 @@ class _JourneyTipCard extends StatelessWidget {
 class _GoalSummaryCard extends StatelessWidget {
   const _GoalSummaryCard({
     required this.goal,
-    required this.currentAmount,
-    required this.targetAmount,
-    required this.remainingAmount,
+    required this.currentAmountInMinor,
+    required this.targetAmountInMinor,
+    required this.remainingAmountInMinor,
     required this.currency,
+    required this.isDark,
   });
 
   final SavingsJourneyGoal goal;
-  final double currentAmount;
-  final double targetAmount;
-  final double remainingAmount;
+  final int currentAmountInMinor;
+  final int targetAmountInMinor;
+  final int remainingAmountInMinor;
   final NumberFormat currency;
+  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF193038), Color(0xFF101D24)],
+        gradient: LinearGradient(
+          colors: isDark
+              ? const [Color(0xFF163139), Color(0xFF0B1A20)]
+              : const [AppColors.surface, AppColors.mintLight],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: journeyAccent.withValues(alpha: .38)),
+        border: Border.all(
+          color: isDark ? const Color(0xFF20D7D2).withValues(alpha: .65) : AppColors.border,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: .28),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            color: isDark
+                ? const Color(0xFF000000).withValues(alpha: .35)
+                : AppColors.primary.withValues(alpha: .10),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -340,12 +400,12 @@ class _GoalSummaryCard extends StatelessWidget {
                 height: 62,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: journeyAccent.withValues(alpha: .12),
+                    color: goal.color.withValues(alpha: .16),
                   border: Border.all(
-                    color: journeyAccent.withValues(alpha: .65),
+                    color: goal.color.withValues(alpha: .40),
                   ),
                 ),
-                child: Icon(goal.icon, color: journeyAccent, size: 30),
+                child: Icon(goal.icon, color: goal.color, size: 30),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -354,7 +414,7 @@ class _GoalSummaryCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
+                    color: isDark ? Colors.white : AppColors.ink,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -365,16 +425,20 @@ class _GoalSummaryCard extends StatelessWidget {
                   vertical: 7,
                 ),
                 decoration: BoxDecoration(
-                  color: journeyAccent.withValues(alpha: .14),
+                  color: isDark
+                      ? const Color(0xFF20D7D2).withValues(alpha: .14)
+                      : AppColors.mint,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: journeyAccent.withValues(alpha: .60),
+                    color: isDark
+                        ? const Color(0xFF20D7D2).withValues(alpha: .7)
+                        : AppColors.primary.withValues(alpha: .25),
                   ),
                 ),
                 child: Text(
                   '%${(goal.progress * 100).round()}',
-                  style: const TextStyle(
-                    color: journeyAccent,
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF20D7D2) : AppColors.primaryDark,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -385,29 +449,40 @@ class _GoalSummaryCard extends StatelessWidget {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              '${currency.format(currentAmount)} / ${currency.format(targetAmount)}',
+              '${currency.format(currentAmountInMinor / 100)} / ${currency.format(targetAmountInMinor / 100)}',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: Colors.white,
+                color: isDark ? Colors.white : AppColors.ink,
                 fontWeight: FontWeight.w900,
               ),
             ),
           ),
           const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              value: goal.progress,
-              minHeight: 10,
-              color: journeyAccent,
-              backgroundColor: journeySurfaceLight,
+          TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 900),
+            curve: Curves.easeOutCubic,
+            tween: Tween(end: goal.progress),
+            builder: (context, progress, _) => ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 10,
+                color: isDark ? const Color(0xFF20D7D2) : AppColors.primary,
+                backgroundColor: isDark
+                    ? const Color(0xFF1B3038)
+                    : journeySurfaceLight,
+                semanticsLabel: 'Hedef ilerlemesi',
+                semanticsValue: '%${(progress * 100).round()}',
+              ),
             ),
           ),
           const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              '${currency.format(remainingAmount)} kaldı',
-              style: const TextStyle(color: Color(0xFFB8CED1)),
+              '${currency.format(remainingAmountInMinor / 100)} kaldı',
+              style: TextStyle(
+                color: isDark ? const Color(0xFFB8CED1) : AppColors.muted,
+              ),
             ),
           ),
         ],
@@ -417,51 +492,65 @@ class _GoalSummaryCard extends StatelessWidget {
 }
 
 class _SavingsCapsule extends StatelessWidget {
-  const _SavingsCapsule({required this.jump, required this.coinDrop});
+  const _SavingsCapsule({
+    required this.progress,
+    required this.jump,
+    required this.coinDrop,
+    required this.isDark,
+  });
 
+  final double progress;
   final Animation<double> jump;
   final Animation<double> coinDrop;
+  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 292,
+      height: 246,
       width: double.infinity,
       child: AnimatedBuilder(
         animation: Listenable.merge([jump, coinDrop]),
         builder: (context, child) {
-          final progress = coinDrop.value;
-          final fallProgress = Curves.easeInCubic.transform(progress);
+          final coinAnimationProgress = coinDrop.value;
+          final fallProgress = Curves.easeInCubic.transform(coinAnimationProgress);
           final coinTop = -42 + (fallProgress * 115);
 
-          final fadeProgress = ((progress - .78) / .22)
+          final fadeProgress = ((coinAnimationProgress - .78) / .22)
               .clamp(0.0, 1.0)
               .toDouble();
           final opacity = 1 - Curves.easeOut.transform(fadeProgress);
 
-          return Stack(
+          return RepaintBoundary(
+            child: Stack(
             alignment: Alignment.center,
             clipBehavior: Clip.none,
             children: [
               Transform.translate(
                 offset: Offset(0, jump.value),
-                child: Image.asset(
-                  'assets/images/savings/journey_savings_vault.png',
-                  height: 270,
-                  fit: BoxFit.contain,
-                  filterQuality: FilterQuality.high,
+                child: Semantics(
+                    label: 'Birikim kavanozu, %${(this.progress * 100).round()} dolu',
+                    image: true,
+                    child: Image.asset(
+                      isDark
+                          ? 'assets/images/savings/journey_savings_vault.png'
+                          : 'assets/images/savings/journey_savings_vault_light.png',
+                      height: isDark ? 246 : 238,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                    ),
                 ),
               ),
 
               for (var index = 0; index < 3; index++)
                 _DroppingCoin(progress: coinDrop.value, index: index),
-              if (progress > 0 && progress < 1)
+              if (coinAnimationProgress > 0 && coinAnimationProgress < 1)
                 Positioned(
                   top: coinTop,
                   child: Opacity(
                     opacity: opacity,
                     child: Transform.rotate(
-                      angle: .12 * (1 - progress),
+                      angle: .12 * (1 - coinAnimationProgress),
                       child: Container(
                         width: 34,
                         height: 34,
@@ -494,6 +583,7 @@ class _SavingsCapsule extends StatelessWidget {
                   ),
                 ),
             ],
+            ),
           );
         },
       ),
@@ -536,38 +626,28 @@ class _MilestonePath extends StatelessWidget {
                 .toDouble();
 
             return SizedBox(
-              height: 82,
+              height: 106,
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Row(
-                    children: [
-                      for (
-                        var index = 0;
-                        index < milestones.length;
-                        index++
-                      ) ...[
-                        Expanded(
-                          child: _Milestone(
-                            percentage: milestones[index],
-                            isCompleted:
-                                safeProgress >= milestones[index] / 100,
-                          ),
-                        ),
-                        if (index < milestones.length - 1)
-                          Expanded(
-                            child: _ProgressSegment(
-                              progress:
-                                  ((safeProgress - milestones[index] / 100) /
-                                          .20)
-                                      .clamp(0.0, 1.0)
-                                      .toDouble(),
-                              inactiveColor: colors.outlineVariant,
-                            ),
-                          ),
-                      ],
-                    ],
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _MilestoneRoadPainter(
+                        progress: safeProgress,
+                        inactiveColor: colors.outlineVariant,
+                        activeColor: journeyAccent,
+                      ),
+                    ),
                   ),
+                  for (var index = 0; index < milestones.length; index++)
+                    Positioned(
+                      left: ((constraints.maxWidth - 40) * index / 4),
+                      top: _milestoneOffsets[index],
+                      child: _Milestone(
+                        percentage: milestones[index],
+                        isCompleted: safeProgress >= milestones[index] / 100,
+                      ),
+                    ),
 
                   Positioned(
                     top: -28,
@@ -576,7 +656,7 @@ class _MilestonePath extends StatelessWidget {
                   ),
 
                   Positioned(
-                    top: -4,
+                    top: 2,
                     left: avatarLeft,
                     child: _JourneyAvatar(
                       initial: avatarInitial,
@@ -593,33 +673,57 @@ class _MilestonePath extends StatelessWidget {
   }
 }
 
-class _ProgressSegment extends StatelessWidget {
-  const _ProgressSegment({required this.progress, required this.inactiveColor});
+const _milestoneOffsets = [20.0, 8.0, 25.0, 10.0, 20.0];
+
+class _MilestoneRoadPainter extends CustomPainter {
+  const _MilestoneRoadPainter({
+    required this.progress,
+    required this.inactiveColor,
+    required this.activeColor,
+  });
 
   final double progress;
   final Color inactiveColor;
+  final Color activeColor;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 4,
-      margin: const EdgeInsets.only(top: 18),
-      decoration: BoxDecoration(
-        color: inactiveColor,
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: FractionallySizedBox(
-        alignment: Alignment.centerLeft,
-        widthFactor: progress,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: journeyAccent,
-            borderRadius: BorderRadius.circular(99),
-          ),
-        ),
-      ),
-    );
+  void paint(Canvas canvas, Size size) {
+    const nodeRadius = 20.0;
+    final points = List<Offset>.generate(5, (index) {
+      final x = nodeRadius + ((size.width - nodeRadius * 2) * index / 4);
+      return Offset(x, _milestoneOffsets[index] + nodeRadius);
+    });
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (var index = 0; index < points.length - 1; index++) {
+      final start = points[index];
+      final end = points[index + 1];
+      final middleX = (start.dx + end.dx) / 2;
+      path.cubicTo(middleX, start.dy, middleX, end.dy, end.dx, end.dy);
+    }
+
+    final track = Paint()
+      ..color = inactiveColor
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    canvas.drawPath(path, track);
+
+    final metrics = path.computeMetrics().toList(growable: false);
+    if (metrics.isEmpty || progress <= 0) return;
+    final activePath = metrics.first.extractPath(0, metrics.first.length * progress);
+    final active = Paint()
+      ..color = activeColor
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    canvas.drawPath(activePath, active);
   }
+
+  @override
+  bool shouldRepaint(covariant _MilestoneRoadPainter oldDelegate) =>
+      oldDelegate.progress != progress ||
+      oldDelegate.inactiveColor != inactiveColor ||
+      oldDelegate.activeColor != activeColor;
 }
 
 class _Milestone extends StatelessWidget {
@@ -699,7 +803,6 @@ class _JourneyAvatarState extends State<_JourneyAvatar>
     ]).animate(_controller);
   }
 
-  @override
   @override
   void didUpdateWidget(covariant _JourneyAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -822,6 +925,99 @@ class _LevelConfettiBurst extends StatefulWidget {
 
   @override
   State<_LevelConfettiBurst> createState() => _LevelConfettiBurstState();
+}
+
+class _CenterConfettiBurst extends StatefulWidget {
+  const _CenterConfettiBurst({required this.celebrationId});
+
+  final int celebrationId;
+
+  @override
+  State<_CenterConfettiBurst> createState() => _CenterConfettiBurstState();
+}
+
+class _CenterConfettiBurstState extends State<_CenterConfettiBurst>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        setState(() => _visible = false);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _CenterConfettiBurst oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.celebrationId != widget.celebrationId) {
+      setState(() => _visible = true);
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_visible) return const SizedBox.shrink();
+
+    const colors = [
+      Color(0xFF20D7D2),
+      Color(0xFFFFC24B),
+      Color(0xFF6FD7F5),
+      Color(0xFFE84C88),
+      Color(0xFF9C6BFF),
+    ];
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final progress = Curves.easeOutCubic.transform(_controller.value);
+          final opacity = (1 - _controller.value).clamp(0.0, 1.0).toDouble();
+          return SizedBox(
+            width: 300,
+            height: 300,
+            child: Stack(
+              children: List.generate(36, (index) {
+                final angle = (math.pi * 2 * index) / 36;
+                final distance = 22 + (progress * (92 + (index % 5) * 12));
+                return Positioned(
+                  left: 146 + (math.cos(angle) * distance),
+                  top: 146 + (math.sin(angle) * distance),
+                  child: Opacity(
+                    opacity: opacity,
+                    child: Transform.rotate(
+                      angle: angle + progress * 3,
+                      child: Container(
+                        width: index.isEven ? 7 : 10,
+                        height: index.isEven ? 14 : 7,
+                        decoration: BoxDecoration(
+                          color: colors[index % colors.length],
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _LevelConfettiBurstState extends State<_LevelConfettiBurst>
