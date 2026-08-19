@@ -16,7 +16,7 @@ class AppLogo extends StatelessWidget {
     width: size,
     height: size,
     fit: BoxFit.contain,
-    semanticLabel: 'Uygulama logosu',
+    semanticLabel: 'EconBuddy logosu',
   );
 }
 

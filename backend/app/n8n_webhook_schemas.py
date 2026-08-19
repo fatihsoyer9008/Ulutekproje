@@ -27,7 +27,7 @@ class N8nWebhookEnvelope(BaseModel):
 class ReceiptParsedEventData(BaseModel):
     """n8n bir e-postadan (dekont/fiş/borç belgesi) çıkardığı veriyi taşır.
 
-    Belge kaynağı FişKon uygulaması değil (fiziksel cihaz/OCR akışı yok),
+    Belge kaynağı EconBuddy uygulaması değil (fiziksel cihaz/OCR akışı yok),
     bu yüzden kullanıcı `client_record_id`/`installation_id` yerine
     e-posta adresiyle eşleştirilir; kayıt bu veriyle yeniden oluşturulur,
     var olan bir kayıt aranmaz.

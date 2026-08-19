@@ -1,4 +1,4 @@
-# FişKon Takım Ortam ve Build Rehberi
+# EconBuddy Takım Ortam ve Build Rehberi
 
 Bu belge, yeni bir ekip üyesinin backend'i Docker ile çalıştırmasını ve Flutter
 uygulamasını emülatör ya da fiziksel Android cihazda güvenli biçimde açmasını

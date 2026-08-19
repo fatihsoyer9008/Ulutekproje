@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "fis_uygulamasi" "\0"
+            VALUE "FileDescription", "EconBuddy" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "fis_uygulamasi" "\0"
+            VALUE "InternalName", "EconBuddy" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "fis_uygulamasi.exe" "\0"
-            VALUE "ProductName", "fis_uygulamasi" "\0"
+            VALUE "OriginalFilename", "EconBuddy.exe" "\0"
+            VALUE "ProductName", "EconBuddy" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

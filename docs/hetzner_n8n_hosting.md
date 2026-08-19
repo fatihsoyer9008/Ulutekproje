@@ -64,9 +64,9 @@ n8n ilk açıldığında bir "owner" hesabı oluşturma ekranı gösterir
 basic-auth şifresi kullanılmadı). Bu adım tarayıcıdan, sunucuya erişimi
 olan kişi tarafından tamamlanmalı: `https://n8n.116-202-14-23.sslip.io/`
 
-## n8n → FişKon webhook otomasyonu
+## n8n → EconBuddy webhook otomasyonu
 
-n8n workflow'unun FişKon'a event göndermesi gereken sözleşme
+n8n workflow'unun EconBuddy'ye event göndermesi gereken sözleşme
 `docs/n8n_webhook_contract.md`'de. Özellikle `receipt.parsed` event'i
 için `docs/n8n_webhook_contract.md`'deki "Event-özel veri şemaları"
 bölümüne bakın — kullanıcı e-posta adresiyle eşleştirilir, yeni bir

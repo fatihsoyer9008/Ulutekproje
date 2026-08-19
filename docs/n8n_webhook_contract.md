@@ -2,7 +2,7 @@
 
 ## Amaç ve kapsam
 
-Bu sözleşme, FişKon ile n8n arasındaki otomasyon olaylarının güvenli ve
+Bu sözleşme, EconBuddy ile n8n arasındaki otomasyon olaylarının güvenli ve
 sürümlenebilir biçimde iletilmesini tanımlar.
 
 Webhook yalnızca bildirim ve operasyon otomasyonları için kullanılır. Ham OCR
@@ -141,7 +141,7 @@ dead-letter/alarm akışına yönlendirilmelidir.
 ### `receipt.parsed`
 
 n8n'in bir e-postadan (dekont/fiş/borç belgesi) çıkardığı veriyi taşır.
-Belgenin kaynağı FişKon uygulaması değildir (fiziksel cihaz/OCR akışı
+Belgenin kaynağı EconBuddy uygulaması değildir (fiziksel cihaz/OCR akışı
 yok) — bu yüzden kullanıcı `client_record_id`/`installation_id` yerine
 **e-posta adresiyle** eşleştirilir. Eşleşen aktif kullanıcı yoksa `422`
 `user_not_found` döner. Eşleşme başarılıysa yeni bir `CloudReceipt`
