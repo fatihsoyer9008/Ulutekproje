@@ -368,7 +368,7 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
           );
         }
         if (result.status == GroupPushStatus.conflict) {
-          final message = result.message ?? 'Grup operasyonu çakıştı.';
+          final message = safeGroupSyncConflictMessage(result.conflictCode);
           await repository.markConflict(
             task.id,
             jsonEncode(<String, Object?>{

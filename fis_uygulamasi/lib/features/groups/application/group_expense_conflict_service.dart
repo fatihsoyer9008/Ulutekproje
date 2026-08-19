@@ -5,6 +5,7 @@ import 'package:isar/isar.dart';
 
 import '../data/group_offline_operation_mapper.dart';
 import '../data/group_repository.dart';
+import '../data/group_sync_gateway.dart';
 import '../domain/group_models.dart';
 import '../domain/group_offline_operation.dart';
 
@@ -212,21 +213,19 @@ class GroupExpenseConflictService implements GroupExpenseConflictResolver {
 
   static _ConflictError _decodeError(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return const _ConflictError(null, 'Sunucu sürümüyle çakışma oluştu.');
+      return _ConflictError(null, safeGroupSyncConflictMessage(null));
     }
     try {
       final decoded = jsonDecode(value);
       if (decoded is Map) {
-        final message = decoded['message'];
-        return _ConflictError(
-          decoded['code'] as String?,
-          message is String && message.isNotEmpty ? message : value,
-        );
+        final rawCode = decoded['code'];
+        final code = rawCode is String ? rawCode : null;
+        return _ConflictError(code, safeGroupSyncConflictMessage(code));
       }
     } on FormatException {
-      // Eski kayıtların düz metin hata biçimi desteklenir.
+      // Eski düz metin kayıtlar güvenli genel mesaja dönüştürülür.
     }
-    return _ConflictError(null, value);
+    return _ConflictError(null, safeGroupSyncConflictMessage(null));
   }
 
   static GroupExpense _copyExpense(

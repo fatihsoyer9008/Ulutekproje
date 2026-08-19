@@ -30,6 +30,7 @@ SyncErrorCategory categorizeSyncError(Object error) {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
+      case DioExceptionType.transformTimeout:
         return SyncErrorCategory.timeout;
       case DioExceptionType.connectionError:
         return SyncErrorCategory.networkUnavailable;

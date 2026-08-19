@@ -397,13 +397,10 @@ void validateGoogleIdTokenAudience(
     }
   } on AuthException {
     rethrow;
-  } on FormatException catch (error, stackTrace) {
+  } on FormatException {
     developer.log(
-      'Google ID token okunamadı. OAuth Client ID yapılandırmasını kontrol '
-      'edin.',
+      'google_token_parse_failed',
       name: 'app.auth.google_token_validation',
-      error: error,
-      stackTrace: stackTrace,
     );
     throw const AuthException(
       'Google girişi doğrulanamadı. Lütfen tekrar deneyin.',

@@ -204,13 +204,41 @@ void main() {
 
     final state = scope.read(groupSyncCoordinatorProvider);
     expect(task.status, OfflineTaskStatus.conflict);
-    expect(task.lastError, contains('güncel grup'));
+    expect(task.lastError, contains('başka bir cihazda'));
     final conflictAudit = jsonDecode(task.lastError!) as Map<String, dynamic>;
     expect(conflictAudit['code'], 'version_mismatch');
     expect(conflictAudit['kind'], 'group_sync_conflict');
     expect(delays, isEmpty);
     expect(state.status, GroupSyncStatus.conflict);
     expect(state.conflictCount, 1);
+  });
+
+  test('bilinmeyen conflict mesajını lastError alanına taşımaz', () async {
+    const rawServerMessage =
+        'PostgreSQL connection failed at postgres://admin@example.test/db';
+    final task = _task(1);
+    final repository = _MemoryGroupSyncRepository([task]);
+    final scope = container(
+      repository: repository,
+      server: FakeGroupSyncServer(),
+      pushGateway: const _ConflictGroupPushGateway(
+        code: 'unknown_conflict',
+        message: rawServerMessage,
+      ),
+    );
+
+    await scope
+        .read(groupSyncCoordinatorProvider.notifier)
+        .syncPendingAndPull();
+
+    final conflictAudit = jsonDecode(task.lastError!) as Map<String, dynamic>;
+    expect(conflictAudit['code'], 'unknown_conflict');
+    expect(
+      conflictAudit['message'],
+      'Finansal kayıt sunucudaki sürümle çakıştı.',
+    );
+    expect(task.lastError, isNot(contains(rawServerMessage)));
+    expect(task.lastError, isNot(contains('postgres://')));
   });
 
   for (final status in <OfflineTaskStatus>[
@@ -326,6 +354,21 @@ class _ThrowingGroupPushGateway implements GroupPushGateway {
 
   @override
   Future<GroupPushResult> push(OfflineTask task) async => throw error;
+}
+
+class _ConflictGroupPushGateway implements GroupPushGateway {
+  const _ConflictGroupPushGateway({required this.code, required this.message});
+
+  final String code;
+  final String message;
+
+  @override
+  Future<GroupPushResult> push(OfflineTask task) async => GroupPushResult(
+    operationId: task.clientTaskId,
+    status: GroupPushStatus.conflict,
+    conflictCode: code,
+    message: message,
+  );
 }
 
 class _BlockingFakeGroupSyncServer extends FakeGroupSyncServer {

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:app_main/core/errors/sync_error_category.dart';
 import 'package:app_main/features/sync/application/sync_coordinator.dart';
 import 'package:app_main/features/sync/data/pending_task_sync_gateway.dart';
 import 'package:app_main/features/sync/domain/sync_state.dart';
@@ -147,6 +148,16 @@ void main() {
       ),
     ),
   };
+
+  test('Dio transformTimeout timeout audit kategorisine dönüşür', () {
+    final error = DioException(
+      requestOptions: RequestOptions(path: '/api/v1/sync/push'),
+      type: DioExceptionType.transformTimeout,
+      message: 'transform details must not persist',
+    );
+
+    expect(categorizeSyncError(error), SyncErrorCategory.timeout);
+  });
 
   for (final MapEntry(key: expectedCategory, value: error)
       in categorizedErrors.entries) {

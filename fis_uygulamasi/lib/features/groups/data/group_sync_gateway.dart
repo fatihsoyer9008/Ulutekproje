@@ -8,6 +8,18 @@ import '../../../core/errors/sync_error_category.dart';
 
 enum GroupPushStatus { accepted, duplicate, conflict }
 
+String safeGroupSyncConflictMessage(String? code) => switch (code) {
+  'expense_financially_locked' || 'expense_locked_by_settlement' =>
+    'Masraf borç kapatma işleminden sonra finansal olarak kilitlendi.',
+  'expense_soft_deleted' || 'record_soft_deleted' =>
+    'Bu kayıt sunucuda silinmiş olduğu için işlem uygulanamadı.',
+  'version_conflict' || 'version_mismatch' =>
+    'Kayıt başka bir cihazda güncellendi. Güncel veriyi yükleyip yeniden deneyin.',
+  'idempotency_conflict' =>
+    'Aynı işlem kimliği daha önce farklı bilgilerle kullanıldı.',
+  _ => 'Finansal kayıt sunucudaki sürümle çakıştı.',
+};
+
 class GroupPushResult {
   const GroupPushResult({
     required this.operationId,
@@ -133,16 +145,16 @@ class DioGroupPushGateway implements GroupPushGateway {
       );
     } on DioException catch (error) {
       final status = error.response?.statusCode;
-      final message = _errorMessage(error.response?.data);
       if (status == 409) {
         final code = _errorCode(error.response?.data);
         return GroupPushResult(
           operationId: task.clientTaskId,
           status: GroupPushStatus.conflict,
-          message: _conflictMessage(code, message),
+          message: safeGroupSyncConflictMessage(code),
           conflictCode: code,
         );
       }
+      final message = _errorMessage(error.response?.data);
       if (status == 408 || status == 429) {
         throw GroupSyncTemporaryException(
           message ?? 'Grup sync isteği geçici olarak tamamlanamadı.',
@@ -197,21 +209,6 @@ class DioGroupPushGateway implements GroupPushGateway {
     }
     return null;
   }
-
-  static String _conflictMessage(
-    String? code,
-    String? serverMessage,
-  ) => switch (code) {
-    'expense_financially_locked' || 'expense_locked_by_settlement' =>
-      'Masraf borç kapatma işleminden sonra finansal olarak kilitlendi.',
-    'expense_soft_deleted' || 'record_soft_deleted' =>
-      'Bu kayıt sunucuda silinmiş olduğu için işlem uygulanamadı.',
-    'version_conflict' || 'version_mismatch' =>
-      'Kayıt başka bir cihazda güncellendi. Güncel veriyi yükleyip yeniden deneyin.',
-    'idempotency_conflict' =>
-      'Aynı işlem kimliği daha önce farklı bilgilerle kullanıldı.',
-    _ => serverMessage ?? 'Finansal kayıt sunucudaki sürümle çakıştı.',
-  };
 }
 
 class NoopGroupPullGateway implements GroupPullGateway {
