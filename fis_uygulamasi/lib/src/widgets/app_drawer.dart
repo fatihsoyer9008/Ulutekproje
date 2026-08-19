@@ -1,9 +1,9 @@
-import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/theme_mode_provider.dart';
 import '../../features/auth/presentation/controllers/auth_session_controller.dart';
+import '../../features/avatar/presentation/widgets/avatar_badge.dart';
 
 const _themeChangeDelay = Duration(milliseconds: 300);
 
@@ -31,7 +31,6 @@ class AppDrawer extends ConsumerWidget {
         : (displayName?.isNotEmpty ?? false)
         ? displayName!
         : (email ?? 'Finans kullanıcısı');
-    final initial = identity.substring(0, 1).toUpperCase();
 
     return Drawer(
       child: SafeArea(
@@ -41,18 +40,7 @@ class AppDrawer extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 18),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: AppColors.mint,
-                    foregroundColor: AppColors.primary,
-                    child: Text(
-                      initial,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
+                  AvatarBadge(avatarId: auth.user?.avatarId, radius: 28),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
