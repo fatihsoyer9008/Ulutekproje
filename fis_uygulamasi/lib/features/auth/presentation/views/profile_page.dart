@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../ai_assistant/data/ai_assistant_client.dart';
 import '../../../ai_assistant/presentation/assistant_consent_card.dart';
+import '../../../avatar/presentation/widgets/avatar_badge.dart';
 import '../../../../application/service/transaction_export_file_service.dart';
 import '../../../../core/database/database_providers.dart';
 import '../../../backup/data/transaction_json_import_service.dart';
@@ -49,10 +50,35 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           AppCard(
             child: Row(
               children: [
-                const CircleAvatar(
-                  radius: 28,
-                  backgroundColor: AppColors.mint,
-                  child: Icon(Icons.person_rounded, color: AppColors.primary),
+                InkWell(
+                  key: const Key('change_avatar_button'),
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: isGuest
+                      ? null
+                      : () => context.push('/choose-avatar'),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      AvatarBadge(avatarId: user?.avatarId, radius: 28),
+                      if (!isGuest)
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: AppColors.primary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.edit_rounded,
+                              size: 12,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(

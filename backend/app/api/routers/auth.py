@@ -39,6 +39,7 @@ from app.auth_schemas import (
     RegisterRequest,
     ResetPasswordRequest,
     TokenPairResponse,
+    UpdateAvatarRequest,
     UserResponse,
     VerifyEmailRequest,
 )
@@ -390,6 +391,18 @@ async def logout(
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)) -> UserResponse:
+    return UserResponse.from_user(user)
+
+
+@router.patch("/me/avatar", response_model=UserResponse)
+async def update_avatar(
+    payload: UpdateAvatarRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> UserResponse:
+    user.avatar_id = payload.avatar_id
+    await db.commit()
+    await db.refresh(user)
     return UserResponse.from_user(user)
 
 

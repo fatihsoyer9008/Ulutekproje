@@ -150,6 +150,10 @@ class _FakeAuthRepository implements AuthRepositoryBase {
   Future<String> resendVerification(String email) async => '';
   @override
   Future<AuthUser?> silentRefresh() async => null;
+
+  @override
+  Future<AuthUser> updateAvatar(String avatarId) async =>
+      throw UnimplementedError();
   @override
   Future<AuthUser> signInWithGoogle() => throw UnimplementedError();
   @override

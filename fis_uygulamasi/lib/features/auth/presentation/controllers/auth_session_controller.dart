@@ -263,6 +263,18 @@ class AuthSessionController extends StateNotifier<AuthSessionState> {
     }
   }
 
+  Future<bool> updateAvatar(String avatarId) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final user = await _repository.updateAvatar(avatarId);
+      state = state.copyWith(user: user, isLoading: false);
+      return true;
+    } on AuthException catch (error) {
+      state = state.copyWith(isLoading: false, errorMessage: error.message);
+      return false;
+    }
+  }
+
   Future<void> logout() async {
     state = state.copyWith(isLoading: true, clearError: true);
     await _repository.logout();

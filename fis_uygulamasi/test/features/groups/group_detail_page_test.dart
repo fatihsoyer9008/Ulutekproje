@@ -627,6 +627,10 @@ class _DetailAuthRepository implements AuthRepositoryBase {
   Future<AuthUser?> silentRefresh() async => null;
 
   @override
+  Future<AuthUser> updateAvatar(String avatarId) async =>
+      throw UnimplementedError();
+
+  @override
   Future<void> deleteAccount({String? currentPassword}) async {}
 
   @override

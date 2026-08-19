@@ -184,6 +184,10 @@ class _SilentRefreshRepository implements AuthRepositoryBase {
   );
 
   @override
+  Future<AuthUser> updateAvatar(String avatarId) async =>
+      throw UnimplementedError();
+
+  @override
   Future<void> deleteAccount({String? currentPassword}) async {}
 
   @override

@@ -22,6 +22,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(512))
     display_name: Mapped[str | None] = mapped_column(String(120))
+    avatar_id: Mapped[str | None] = mapped_column(String(32))
     is_email_verified: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
