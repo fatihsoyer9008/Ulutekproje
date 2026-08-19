@@ -346,6 +346,21 @@ def _expect_cloud_receipt_status(
     }
 
 
+def _expect_avatar_id(snapshot: dict[str, object]) -> dict[str, object]:
+    """Legacy `users` rows gain a nullable `avatar_id` column at revision
+    20260819_0001. Snapshots taken before that migration ran naturally lack
+    the key, so upgraded-side comparisons must expect it.
+    """
+    users = snapshot["users"]
+    return {
+        **snapshot,
+        "users": {
+            **users,
+            "row": {**users["row"], "avatar_id": None},
+        },
+    }
+
+
 async def _seed_pre_assignment_group_data(
     database_url: URL,
     identifiers: dict[str, uuid.UUID],
@@ -1408,8 +1423,8 @@ async def test_group_migrations_preserve_legacy_data_on_postgresql() -> None:
             await _assert_group_expense_schema(migration_url)
             await _assert_group_relations_and_indexes(migration_url)
 
-            expected_after_upgrade = _expect_cloud_receipt_status(
-                before_upgrade, "approved"
+            expected_after_upgrade = _expect_avatar_id(
+                _expect_cloud_receipt_status(before_upgrade, "approved")
             )
             after_upgrade = await _legacy_snapshot(
                 migration_url,
@@ -1632,8 +1647,8 @@ async def test_assignment_migration_preserves_existing_group_data() -> None:
             await _seed_pre_assignment_group_data(migration_url, identifiers)
 
             legacy_before = await _legacy_snapshot(migration_url, identifiers)
-            legacy_after_upgrade = _expect_cloud_receipt_status(
-                legacy_before, "approved"
+            legacy_after_upgrade = _expect_avatar_id(
+                _expect_cloud_receipt_status(legacy_before, "approved")
             )
             group_before = await _pre_assignment_snapshot(
                 migration_url,
