@@ -79,6 +79,7 @@ flutter:
   assets:
     - assets/branding/econbuddy_logo.png
     - assets/images/savings/journey_savings_vault.png
+    - assets/images/savings/journey_savings_vault_light.png
 
 # path_provider_foundation 2.6.0, Windows'ta boşluk içeren kullanıcı yolu
 # altında objective_c native-asset hook'unun çalışmasını engelliyor.
