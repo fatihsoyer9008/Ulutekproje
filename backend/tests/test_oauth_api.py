@@ -194,7 +194,7 @@ async def test_oauth_never_silently_links_unverified_existing_email(
     )
     assert register.status_code == 202
 
-    # The registered account never completed FişKon's own email verification,
+    # The registered account never completed EconBuddy's own email verification,
     # so we can't be sure the Google sign-in and the password account belong
     # to the same person — an attacker could have squatted the email without
     # ever proving they control the inbox.
@@ -235,7 +235,7 @@ async def test_oauth_links_to_verified_existing_account_and_logs_in(
         user.is_email_verified = True
         await session.commit()
 
-    # Both sides now have independently proven mailbox ownership (FişKon's
+    # Both sides now have independently proven mailbox ownership (EconBuddy's
     # own email verification, plus Google asserting email_verified=True), so
     # the Google sign-in should link straight into the existing account
     # instead of demanding a password login first.

@@ -1,4 +1,4 @@
-# FişKon Flutter uygulaması
+# EconBuddy Flutter uygulaması
 
 ## OCR ve backend yapılandırması
 

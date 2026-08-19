@@ -87,7 +87,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         _OnboardingSlide(
                           illustration: _ReceiptScanIllustration(),
                           eyebrow: 'HIZLI KAYIT',
-                          title: 'Fişini tara, gerisini FişKon halletsin.',
+                          title: 'Fişini tara, gerisini EconBuddy halletsin.',
                           description:
                               'Kamera veya galeriden fişini ekle; kurum, tarih ve tutar bilgilerini saniyeler içinde hazırla.',
                         ),
@@ -130,7 +130,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                                 ? Icons.rocket_launch_rounded
                                 : Icons.arrow_forward_rounded,
                           ),
-                    label: Text(_isLastPage ? "FişKon'u Keşfet" : 'Devam Et'),
+                    label: Text(
+                      _isLastPage ? "EconBuddy'yi Keşfet" : 'Devam Et',
+                    ),
                   ),
                   const SizedBox(height: 10),
                   Text(
@@ -163,7 +165,7 @@ class _OnboardingHeader extends StatelessWidget {
       children: [
         const AppLogo(size: 40),
         const SizedBox(width: 10),
-        Text('FişKon', style: Theme.of(context).textTheme.titleLarge),
+        Text('EconBuddy', style: Theme.of(context).textTheme.titleLarge),
         const Spacer(),
         SizedBox(
           width: 64,

@@ -1,6 +1,6 @@
 {
-    "name": "fis_uygulamasi",
-    "short_name": "fis_uygulamasi",
+    "name": "EconBuddy",
+    "short_name": "EconBuddy",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

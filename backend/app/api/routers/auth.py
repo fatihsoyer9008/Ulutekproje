@@ -494,7 +494,7 @@ async def confirm_verify_email_link(
     return _verification_page(
         title="E-posta doğrulandı",
         message=(
-            "E-posta adresiniz başarıyla doğrulandı. FisKon uygulamasına "
+            "E-posta adresiniz başarıyla doğrulandı. EconBuddy uygulamasına "
             "dönüp “Doğrulandım / Devam Et” butonuna basabilirsiniz."
         ),
         successful=True,
@@ -508,7 +508,7 @@ def _verification_confirmation_page(token: str) -> HTMLResponse:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>E-posta doğrulama | FisKon</title>
+  <title>E-posta doğrulama | EconBuddy</title>
 </head>
 <body style="margin:0;background:#f3faf7;font-family:Arial,sans-serif;color:#17312b">
   <main style="max-width:560px;margin:64px auto;padding:24px">
@@ -552,7 +552,7 @@ def _verification_page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title} | FisKon</title>
+  <title>{title} | EconBuddy</title>
 </head>
 <body style="margin:0;background:#f3faf7;font-family:Arial,sans-serif;color:#17312b">
   <main style="max-width:560px;margin:64px auto;padding:24px">
@@ -643,7 +643,7 @@ def _password_reset_page(token: str) -> HTMLResponse:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Şifre sıfırlama | FisKon</title>
+  <title>Şifre sıfırlama | EconBuddy</title>
 </head>
 <body style="margin:0;background:#f3faf7;font-family:Arial,sans-serif;color:#17312b">
   <main style="max-width:560px;margin:64px auto;padding:24px">
