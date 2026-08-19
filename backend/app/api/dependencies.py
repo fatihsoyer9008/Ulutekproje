@@ -108,7 +108,7 @@ async def get_current_user(
 ) -> User:
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or expired access token.",
+        detail="Oturum geçersiz veya süresi dolmuş. Lütfen yeniden giriş yapın.",
         headers={"WWW-Authenticate": "Bearer"},
     )
     if credentials is None or credentials.scheme.casefold() != "bearer":

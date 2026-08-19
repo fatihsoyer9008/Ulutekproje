@@ -34,7 +34,7 @@ def get_assistant_model_service() -> AssistantModelService:
     if not settings.assistant_enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI assistant is not enabled.",
+            detail="Finans asistanı şu anda kullanılamıyor.",
         )
 
     api_key = (
@@ -45,7 +45,7 @@ def get_assistant_model_service() -> AssistantModelService:
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI assistant provider is not configured.",
+            detail="Finans asistanı şu anda kullanılamıyor.",
         )
 
     return GeminiAssistantModelService(
@@ -92,7 +92,7 @@ async def update_assistant_consent(
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Assistant consent text has changed.",
+            detail="Finans asistanının gizlilik metni güncellendi.",
         )
 
     now = datetime.now(UTC)
@@ -121,12 +121,12 @@ async def query_assistant(
     if not settings.assistant_enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI assistant is not enabled.",
+            detail="Finans asistanı şu anda kullanılamıyor.",
         )
     if not _has_current_assistant_consent(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Current AI data processing consent is required.",
+            detail="Finans asistanını kullanmak için veri işleme izni gereklidir.",
         )
     user_id = user.id
     await db.rollback()
@@ -154,19 +154,19 @@ async def query_assistant(
         outcome = "timeout"
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="AI assistant request timed out.",
+            detail="Finans asistanı zaman aşımına uğradı. Lütfen tekrar deneyin.",
         ) from exc
     except InvalidAssistantPeriod as exc:
         outcome = "invalid_period"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Requested financial period is not supported.",
+            detail="Seçilen finansal dönem desteklenmiyor.",
         ) from exc
     except AssistantProviderError as exc:
         outcome = "provider_error"
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI assistant could not generate an answer.",
+            detail="Finans asistanı yanıt oluşturamadı. Lütfen tekrar deneyin.",
         ) from exc
     except Exception:
         outcome = "unexpected_error"

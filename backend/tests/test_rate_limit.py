@@ -89,7 +89,7 @@ async def test_rate_limiter_rejects_request_above_limit() -> None:
 
     assert error.value.status_code == 429
     assert error.value.detail == (
-        "Too many requests. Please try again later."
+        "Çok fazla istek gönderildi. Lütfen daha sonra tekrar deneyin."
     )
     assert error.value.headers == {"Retry-After": "42"}
 
@@ -112,5 +112,5 @@ async def test_rate_limiter_fails_closed_when_redis_is_unavailable() -> None:
 
     assert error.value.status_code == 503
     assert error.value.detail == (
-        "Request protection is temporarily unavailable."
+        "İstek koruması geçici olarak kullanılamıyor. Lütfen daha sonra tekrar deneyin."
     )

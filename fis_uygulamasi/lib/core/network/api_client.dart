@@ -235,8 +235,7 @@ class _AuthDebugInterceptor extends Interceptor {
       debugPrint(
         '[AuthNetwork] RESPONSE '
         '${response.requestOptions.method} ${response.requestOptions.uri} '
-        'status=${response.statusCode}\n'
-        'body=${_sanitize(response.data)}',
+        'status=${response.statusCode}',
       );
     }
     handler.next(response);
@@ -249,9 +248,7 @@ class _AuthDebugInterceptor extends Interceptor {
         '[AuthNetwork] ERROR '
         '${error.requestOptions.method} ${error.requestOptions.uri} '
         'type=${error.type.name} '
-        'status=${error.response?.statusCode}\n'
-        'message=${error.message}\n'
-        'response=${_sanitize(error.response?.data)}',
+        'status=${error.response?.statusCode}',
       );
     }
     handler.next(error);

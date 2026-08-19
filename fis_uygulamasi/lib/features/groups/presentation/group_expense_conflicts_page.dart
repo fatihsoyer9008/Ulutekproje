@@ -254,7 +254,5 @@ String _operationLabel(GroupOfflineOperationType type) => switch (type) {
   _ => 'Grup işlemi',
 };
 
-String _resolutionError(Object error) => error
-    .toString()
-    .replaceFirst('Bad state: ', '')
-    .replaceFirst('Exception: ', '');
+String _resolutionError(Object _) =>
+    'Çakışma çözülemedi. Lütfen tekrar deneyin.';

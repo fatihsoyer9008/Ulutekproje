@@ -262,7 +262,9 @@ async def test_refresh_rotation_and_reuse_revokes_whole_family(
         json={"refresh_token": old_refresh},
     )
     assert reused.status_code == 401
-    assert "security violation" in reused.json()["detail"].lower()
+    assert reused.json()["detail"] == (
+        "Oturumunuz sonlandırıldı. Lütfen yeniden giriş yapın."
+    )
 
     family_token = await client.post(
         "/api/v1/auth/refresh",
@@ -348,7 +350,7 @@ async def test_registration_responses_do_not_enumerate_accounts(auth_context) ->
     assert (
         duplicate.json()
         == unknown.json()
-        == {"message": "If the address is eligible, a verification email will be sent."}
+        == {"message": "Adres uygunsa doğrulama e-postası gönderilecektir."}
     )
     assert len(sender.verification_tokens) == sent_before_duplicate + 1
 
@@ -375,7 +377,7 @@ async def test_registration_response_is_stable_when_email_delivery_fails(
 
     assert response.status_code == 202
     assert response.json() == {
-        "message": "If the address is eligible, a verification email will be sent."
+        "message": "Adres uygunsa doğrulama e-postası gönderilecektir."
     }
 
 
@@ -401,7 +403,7 @@ async def test_registration_response_is_stable_with_delayed_email_sender(
 
     assert response.status_code == 202
     assert response.json() == {
-        "message": "If the address is eligible, a verification email will be sent."
+        "message": "Adres uygunsa doğrulama e-postası gönderilecektir."
     }
     assert len(sender.verification_tokens) == 1
 

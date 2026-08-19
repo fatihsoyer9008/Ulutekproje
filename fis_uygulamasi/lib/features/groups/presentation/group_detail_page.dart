@@ -737,7 +737,6 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
 }
 
 String _expenseMutationMessage(Object error) {
-  if (error is StateError) return error.message.toString();
   return groupUserMessage(
     error,
     fallbackMessage: 'Masraf değişikliği kaydedilemedi. Lütfen tekrar deneyin.',

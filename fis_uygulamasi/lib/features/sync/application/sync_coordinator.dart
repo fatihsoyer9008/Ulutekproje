@@ -185,13 +185,14 @@ class SyncCoordinator extends Notifier<SyncState> {
           ? await repository.requeueRetryableFailures()
           : const <Id>{};
       await _sync(freshRetryTaskIds: freshRetryTaskIds);
-    } on Object catch (error) {
+    } on Object {
       state = SyncState(
         status: SyncStatus.error,
         completedCount: state.completedCount,
         totalCount: state.totalCount,
         conflictCount: state.conflictCount,
-        errorMessage: 'Senkronizasyon başlatılamadı: ${_safeError(error)}',
+        errorMessage:
+            'Senkronizasyon başlatılamadı. Bağlantınızı kontrol edip tekrar deneyin.',
       );
     }
   }
@@ -312,8 +313,8 @@ class SyncCoordinator extends Notifier<SyncState> {
     return Duration(milliseconds: exponentialMs.toInt() + jitterMs);
   }
 
-  String _safeError(Object error) =>
-      error.toString().replaceFirst('Exception: ', '');
+  String _safeError(Object _) =>
+      'İşlem senkronize edilemedi. Lütfen tekrar deneyin.';
 }
 
 sealed class _TaskOutcome {

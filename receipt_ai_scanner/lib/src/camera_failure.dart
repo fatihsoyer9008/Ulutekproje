@@ -45,10 +45,10 @@ CameraFailure cameraFailureFromException(CameraException error) {
           'tarafından kısıtlanmış.',
       canRetry: false,
     ),
-    _ => CameraFailure(
+    _ => const CameraFailure(
       type: CameraFailureType.other,
       title: 'Kamera kullanılamıyor',
-      message: error.description ?? 'Kamera kullanılırken bir hata oluştu.',
+      message: 'Kamera kullanılırken bir sorun oluştu. Lütfen tekrar deneyin.',
       canRetry: true,
     ),
   };

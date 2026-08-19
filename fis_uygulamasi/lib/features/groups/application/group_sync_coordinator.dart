@@ -237,7 +237,7 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
           ? await repository.requeueRetryableFailures()
           : const <Id>{};
       await _sync(repository, freshRetryIds: freshRetryIds);
-    } on Object catch (error) {
+    } on Object {
       state = GroupSyncState(
         status: GroupSyncStatus.failed,
         completedCount: state.completedCount,
@@ -245,7 +245,8 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
         failedCount: max(1, state.failedCount),
         conflictCount: state.conflictCount,
         pulledCount: state.pulledCount,
-        errorMessage: 'Grup senkronizasyonu başlatılamadı: ${_safe(error)}',
+        errorMessage:
+            'Grup senkronizasyonu başlatılamadı. Bağlantınızı kontrol edip tekrar deneyin.',
       );
     }
   }
@@ -407,8 +408,8 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
   bool _isPermanent(Object error) =>
       error is FormatException || error is GroupSyncPermanentException;
 
-  String _safe(Object error) =>
-      error.toString().replaceFirst('Exception: ', '');
+  String _safe(Object _) =>
+      'Grup işlemi senkronize edilemedi. Lütfen tekrar deneyin.';
 }
 
 sealed class _GroupTaskOutcome {

@@ -1,6 +1,7 @@
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/errors/user_facing_error.dart';
 import '../data/ai_assistant_client.dart';
 
 class AssistantConsentCard extends StatefulWidget {
@@ -255,13 +256,9 @@ class _AssistantConsentCardState extends State<AssistantConsentCard> {
   }
 
   String _safeError(Object error) {
-    final message = error.toString().trim();
-    if (message.isEmpty) {
-      return 'Beklenmeyen bir hata oluştu.';
-    }
-
-    return message
-        .replaceFirst('Exception: ', '')
-        .replaceFirst('FormatException: ', '');
+    return userFacingErrorMessage(
+      error,
+      fallbackMessage: 'İşlem tamamlanamadı. Lütfen tekrar deneyin.',
+    );
   }
 }

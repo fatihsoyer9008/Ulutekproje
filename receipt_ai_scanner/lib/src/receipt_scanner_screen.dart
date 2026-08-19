@@ -86,12 +86,12 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
       setState(() => _isInitializing = false);
     } on CameraException catch (error) {
       _showCameraError(cameraFailureFromException(error));
-    } catch (error) {
+    } catch (_) {
       _showCameraError(
-        CameraFailure(
+        const CameraFailure(
           type: CameraFailureType.other,
           title: 'Kamera başlatılamadı',
-          message: error.toString(),
+          message: 'Kamera şu anda başlatılamıyor. Lütfen tekrar deneyin.',
           canRetry: true,
         ),
       );
@@ -128,8 +128,8 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
       }
     } on CameraException catch (error) {
       _showMessage(_cameraErrorMessage(error));
-    } catch (error) {
-      _showMessage('Fiş okunurken bir hata oluştu: $error');
+    } catch (_) {
+      _showMessage('Fiş okunamadı. Lütfen tekrar deneyin.');
     } finally {
       if (mounted) setState(() => _isScanning = false);
     }

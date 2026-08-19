@@ -96,11 +96,15 @@ class IncomeScreen extends StatelessWidget {
         ..showSnackBar(
           const SnackBar(content: Text('Gelir başarıyla kaydedildi.')),
         );
-    } on Exception catch (error) {
+    } on Exception {
       if (!context.mounted) return;
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('Gelir kaydedilemedi: $error')));
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Gelir kaydedilemedi. Lütfen tekrar deneyin.'),
+          ),
+        );
     }
   }
 }

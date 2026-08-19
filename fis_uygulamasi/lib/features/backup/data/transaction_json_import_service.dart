@@ -71,8 +71,10 @@ class TransactionJsonImportService {
       );
     } on TransactionJsonImportException {
       rethrow;
-    } on Exception catch (error) {
-      throw TransactionJsonImportException('Yedek dosyası okunamadı: $error');
+    } on Exception {
+      throw const TransactionJsonImportException(
+        'Yedek dosyası okunamadı. Dosyanın geçerli ve erişilebilir olduğundan emin olun.',
+      );
     }
   }
 

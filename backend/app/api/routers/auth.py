@@ -87,11 +87,9 @@ TOKEN_ACTION_IP = RateLimitRule("token-action-ip", 20, 3600)
 EMAIL_IP = RateLimitRule("email-action-ip", 10, 3600)
 EMAIL_ADDRESS = RateLimitRule("email-action-address", 3, 3600)
 
-GENERIC_REGISTER_MESSAGE = (
-    "If the address is eligible, a verification email will be sent."
-)
+GENERIC_REGISTER_MESSAGE = "Adres uygunsa doğrulama e-postası gönderilecektir."
 GENERIC_EMAIL_MESSAGE = (
-    "If the address is eligible, an email with the next step will be sent."
+    "Adres uygunsa sonraki adımı içeren bir e-posta gönderilecektir."
 )
 
 
@@ -203,7 +201,7 @@ async def login(
     except InvalidCredentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password.",
+            detail="E-posta adresi veya şifre hatalı.",
         ) from None
     except EmailNotVerified:
         raise HTTPException(
@@ -259,18 +257,17 @@ async def google_login(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
                 "code": "google_oauth_not_configured",
-                "message": (
-                    "Google OAuth is not configured on the server. "
-                    "Set GOOGLE_OAUTH_CLIENT_IDS to the same web client ID "
-                    "used by Flutter."
-                ),
+                "message": "Google ile giriş şu anda kullanılamıyor.",
             },
         ) from None
     except OAuthValidationError as exc:
         logger.warning("Google OAuth validation rejected: code=%s", exc.code)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": exc.code, "message": str(exc)},
+            detail={
+                "code": exc.code,
+                "message": "Google girişi doğrulanamadı. Lütfen tekrar deneyin.",
+            },
         ) from None
     except SQLAlchemyError:
         await db.rollback()
@@ -279,10 +276,7 @@ async def google_login(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
                 "code": "google_account_persistence_failed",
-                "message": (
-                    "Google account could not be saved. "
-                    "Please try again after the database is available."
-                ),
+                "message": "Google girişi tamamlanamadı. Lütfen daha sonra tekrar deneyin.",
             },
         ) from None
     return _token_response(issued)
@@ -315,25 +309,25 @@ async def apple_login(
                 device_name=payload.device_name,
             ),
         )
-    except AccountLinkingRequired as exc:
+    except AccountLinkingRequired:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
+            detail="Bu hesap için önce mevcut giriş yönteminizi kullanın.",
         ) from None
     except (OAuthConfigurationError, OAuthTokenEncryptionError):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Apple OAuth is not configured.",
+            detail="Apple ile giriş şu anda kullanılamıyor.",
         ) from None
     except OAuthProviderError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Apple authentication service is unavailable.",
+            detail="Apple giriş servisine şu anda ulaşılamıyor.",
         ) from None
     except OAuthValidationError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Apple authentication failed.",
+            detail="Apple girişi doğrulanamadı. Lütfen tekrar deneyin.",
         ) from None
     return _token_response(issued)
 
@@ -361,12 +355,12 @@ async def refresh(
     except RefreshTokenReuseDetected:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session security violation detected. Sign in again.",
+            detail="Oturumunuz sonlandırıldı. Lütfen yeniden giriş yapın.",
         ) from None
     except InvalidRefreshToken:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token.",
+            detail="Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.",
         ) from None
     return _token_response(issued)
 
@@ -426,12 +420,12 @@ async def delete_me(
     except ReauthenticationRequired:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Reauthentication is required.",
+            detail="Bu işlem için yeniden giriş yapmanız gerekiyor.",
         ) from None
     except AccountDeletionFailed:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Provider revocation is pending; account access was disabled.",
+            detail="Hesap erişimi kapatıldı. Silme işlemi kısa süre içinde tamamlanacaktır.",
         ) from None
     for group_id in affected_group_ids:
         await debt_cache.invalidate_best_effort(group_id)
@@ -455,9 +449,9 @@ async def verify_email(
     except InvalidOneTimeToken:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired verification token.",
+            detail="Doğrulama bağlantısı geçersiz veya süresi dolmuş.",
         ) from None
-    return MessageResponse(message="Email address verified.")
+    return MessageResponse(message="E-posta adresiniz doğrulandı.")
 
 
 @router.get(
@@ -736,6 +730,6 @@ async def reset_password(
     except InvalidOneTimeToken:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token.",
+            detail="Şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş.",
         ) from None
-    return MessageResponse(message="Password has been reset.")
+    return MessageResponse(message="Şifreniz yenilendi.")

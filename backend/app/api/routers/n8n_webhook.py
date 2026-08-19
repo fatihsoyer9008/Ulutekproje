@@ -159,7 +159,9 @@ async def receive_n8n_webhook_event(
             duration_ms=duration_ms,
         )
         raise _webhook_error(
-            status.HTTP_400_BAD_REQUEST, "invalid_timestamp", str(exc)
+            status.HTTP_400_BAD_REQUEST,
+            "invalid_timestamp",
+            "Webhook zaman bilgisi geçersiz.",
         ) from exc
     except N8nWebhookSignatureError as exc:
         duration_ms = (perf_counter() - started_at) * 1000
@@ -170,7 +172,9 @@ async def receive_n8n_webhook_event(
             duration_ms=duration_ms,
         )
         raise _webhook_error(
-            status.HTTP_401_UNAUTHORIZED, "invalid_signature", str(exc)
+            status.HTTP_401_UNAUTHORIZED,
+            "invalid_signature",
+            "Webhook imzası doğrulanamadı.",
         ) from exc
 
     if idempotency_key is None or not (

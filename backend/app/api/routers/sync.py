@@ -271,7 +271,7 @@ async def _get_group_mutation_receipt(
     ):
         raise _group_sync_conflict(
             "idempotency_conflict",
-            "Aynı clientRecordId daha önce farklı bir işlem için kullanıldı.",
+            "İstek daha önce farklı bilgilerle gönderildi.",
         )
     return receipt
 
@@ -427,7 +427,7 @@ async def _push_group_expense_mutation(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": "itemized_update_not_supported",
-                    "message": "Itemized masrafın finansal alanları çevrimdışı güncellenemez.",
+                    "message": "Kalem bazlı masraf çevrimdışı güncellenemez.",
                 },
             )
 
@@ -457,9 +457,9 @@ async def _push_group_expense_mutation(
             expense.extra_amounts = []
         expense.updated_at = datetime.now(UTC)
         await db.flush()
-        pull_payload = (
-            await _expense_response(expense, db)
-        ).expense.model_dump(mode="json")
+        pull_payload = (await _expense_response(expense, db)).expense.model_dump(
+            mode="json"
+        )
 
     operation_data = _pulled_operation(
         operation_type=operation.operation_type,
@@ -511,7 +511,7 @@ async def _push_expense_share(
         ):
             raise _group_sync_conflict(
                 "idempotency_conflict",
-                "Aynı clientRecordId daha önce farklı bir işlem için kullanıldı.",
+                "İstek daha önce farklı bilgilerle gönderildi.",
             )
         return True
 
@@ -661,7 +661,7 @@ async def push_group_operation(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "code": "tracking_id_mismatch",
-                "message": "Sync tracking ID uyuşmuyor.",
+                "message": "Senkronizasyon isteği eşleşmiyor.",
             },
         )
     if payload.owner_key != f"user:{user.id}":
@@ -669,7 +669,7 @@ async def push_group_operation(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": "owner_scope_mismatch",
-                "message": "Sync kaydı aktif kullanıcıya ait değil.",
+                "message": "Senkronizasyon kaydı aktif kullanıcıya ait değil.",
             },
         )
 
@@ -780,7 +780,7 @@ async def pull_group_operations(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
                     "code": "invalid_cursor",
-                    "message": "Group sync cursor geçersiz.",
+                    "message": "Senkronizasyon bilgisi geçersiz.",
                 },
             )
 
@@ -841,7 +841,7 @@ async def claim_transactions(
     except ClaimIdempotencyConflict:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Idempotency-Key was already used for a different request.",
+            detail="İstek daha önce farklı bilgilerle gönderildi. Lütfen yeniden deneyin.",
         ) from None
 
 
@@ -878,5 +878,5 @@ async def pull_transactions(
     except InvalidSyncCursor:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid sync cursor.",
+            detail="Senkronizasyon bilgisi geçersiz. Lütfen yeniden deneyin.",
         ) from None

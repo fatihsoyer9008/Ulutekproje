@@ -98,7 +98,10 @@ void main() {
       const Duration(milliseconds: 200),
     ]);
     expect(task.retryCount, 2);
-    expect(task.lastError, contains('Geçici'));
+    expect(
+      task.lastError,
+      'Grup işlemi senkronize edilemedi. Lütfen tekrar deneyin.',
+    );
     expect(task.lastAttemptAt, isNotNull);
     expect(task.status, OfflineTaskStatus.synced);
   });

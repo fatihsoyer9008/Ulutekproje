@@ -151,7 +151,9 @@ def test_unhandled_exception_response_preserves_observability_headers() -> None:
         )
 
     assert response.status_code == 500
-    assert response.json() == {"detail": "Internal server error."}
+    assert response.json() == {
+        "detail": "İşlem şu anda tamamlanamıyor. Lütfen daha sonra tekrar deneyin."
+    }
     assert response.headers[REQUEST_ID_HEADER] == request_id
     assert float(response.headers[PROCESS_TIME_HEADER]) >= 0
 
