@@ -1,5 +1,28 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+# Keep in sync with the Flutter catalog:
+# fis_uygulamasi/lib/features/avatar/domain/avatar_catalog.dart
+ALLOWED_AVATAR_IDS = frozenset(
+    {
+        "woman",
+        "man",
+        "person",
+        "elder_woman",
+        "elder_man",
+        "curly_woman",
+        "curly_man",
+        "redhead_woman",
+        "redhead_man",
+        "blonde_woman",
+        "blonde_man",
+        "bald_woman",
+        "bald_man",
+        "bearded_man",
+        "girl",
+        "boy",
+    }
+)
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -64,6 +87,17 @@ class DeleteAccountRequest(BaseModel):
     current_password: str | None = Field(default=None, max_length=128)
 
 
+class UpdateAvatarRequest(BaseModel):
+    avatar_id: str = Field(min_length=1, max_length=32)
+
+    @field_validator("avatar_id")
+    @classmethod
+    def validate_avatar_id(cls, value: str) -> str:
+        if value not in ALLOWED_AVATAR_IDS:
+            raise ValueError("Unknown avatar_id")
+        return value
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -71,6 +105,7 @@ class UserResponse(BaseModel):
     email: EmailStr
     display_name: str | None
     is_email_verified: bool
+    avatar_id: str | None = None
 
     @classmethod
     def from_user(cls, user) -> "UserResponse":
@@ -79,6 +114,7 @@ class UserResponse(BaseModel):
             email=user.email,
             display_name=user.display_name,
             is_email_verified=user.is_email_verified,
+            avatar_id=user.avatar_id,
         )
 
 

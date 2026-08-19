@@ -37,6 +37,8 @@ abstract interface class AuthRepositoryBase {
 
   Future<AuthUser?> silentRefresh();
 
+  Future<AuthUser> updateAvatar(String avatarId);
+
   Future<void> logout();
 
   Future<void> deleteAccount({String? currentPassword});
@@ -197,6 +199,22 @@ class AuthRepository implements AuthRepositoryBase {
   Future<AuthUser?> silentRefresh() async {
     final bundle = await _apiClient.refreshSession();
     return bundle == null ? null : AuthUser.fromJson(bundle.user);
+  }
+
+  @override
+  Future<AuthUser> updateAvatar(String avatarId) async {
+    try {
+      final response = await _apiClient.dio.patch<Map<String, dynamic>>(
+        '/api/v1/auth/me/avatar',
+        data: {'avatar_id': avatarId},
+      );
+      if (response.data == null) {
+        throw const AuthException('Sunucu boş yanıt döndürdü.');
+      }
+      return AuthUser.fromJson(response.data!);
+    } on DioException catch (error) {
+      throw _exceptionFrom(error, 'Avatar güncellenemedi.');
+    }
   }
 
   @override

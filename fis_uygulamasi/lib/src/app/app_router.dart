@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/notifications/notification_navigation_controller.dart';
 import '../../features/onboarding/presentation/onboarding_page.dart';
+import '../../features/avatar/presentation/choose_avatar_page.dart';
 import '../../features/ai_assistant/data/ai_assistant_client.dart';
 import '../../features/ai_assistant/domain/ai_assistant_message_stream.dart';
 import '../../features/ai_assistant/presentation/assistant_access_gate.dart';
@@ -71,6 +72,7 @@ GoRouter createAppRouter({
             '/profile',
             '/sync-conflicts',
             '/categories',
+            '/choose-avatar',
             NotificationNavigationController.expenseReceiptRoute,
           }.contains(location);
 
@@ -92,6 +94,14 @@ GoRouter createAppRouter({
       if (auth.status == AuthStatus.guest && groupsLocation) {
         return groupsLoginLocation(location);
       }
+      final needsAvatarSelection =
+          auth.status == AuthStatus.authenticated &&
+          (auth.user?.avatarId == null || auth.user!.avatarId!.isEmpty);
+      if (needsAvatarSelection &&
+          location != '/choose-avatar' &&
+          (isProtectedPage || isAuthPage || location == '/startup')) {
+        return '/choose-avatar';
+      }
       if (auth.status == AuthStatus.authenticated &&
           (isAuthPage || location == '/startup')) {
         final redirect = safeGroupsRedirect(
@@ -111,6 +121,10 @@ GoRouter createAppRouter({
     routes: [
       GoRoute(path: '/startup', builder: (_, _) => const StartupPage()),
       GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingPage()),
+      GoRoute(
+        path: '/choose-avatar',
+        builder: (_, _) => const ChooseAvatarPage(),
+      ),
       GoRoute(path: '/welcome', builder: (_, _) => const WelcomePage()),
       GoRoute(
         path: '/login',

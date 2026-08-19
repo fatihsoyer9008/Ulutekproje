@@ -4,12 +4,22 @@ class AuthUser {
     required this.email,
     required this.isEmailVerified,
     this.displayName,
+    this.avatarId,
   });
 
   final String id;
   final String email;
   final String? displayName;
   final bool isEmailVerified;
+  final String? avatarId;
+
+  AuthUser copyWith({String? avatarId}) => AuthUser(
+    id: id,
+    email: email,
+    isEmailVerified: isEmailVerified,
+    displayName: displayName,
+    avatarId: avatarId ?? this.avatarId,
+  );
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
     final id = json['id'];
@@ -23,6 +33,7 @@ class AuthUser {
       email: email,
       displayName: json['display_name'] as String?,
       isEmailVerified: verified,
+      avatarId: json['avatar_id'] as String?,
     );
   }
 }
