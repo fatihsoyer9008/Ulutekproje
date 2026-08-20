@@ -88,6 +88,34 @@ void main() {
       expect(engine.closeCallCount, 1);
     });
 
+    test('keeps original OCR unless enhanced score is higher', () async {
+      final engine = _FakeOcrEngine([
+        const ReceiptOcrCandidate(text: 'ORIGINAL', score: 0.8),
+        const ReceiptOcrCandidate(text: 'ENHANCED', score: 0.79),
+      ]);
+      final recognizer = _recognizer(
+        engine: engine,
+        workspace: _FakeWorkspace(sourceBytes: _validJpegBytes()),
+      );
+
+      expect(await recognizer.recognize('receipt.jpg'), 'ORIGINAL');
+      expect(engine.recognizeCallCount, 2);
+    });
+
+    test('keeps original OCR when candidate scores are equal', () async {
+      final engine = _FakeOcrEngine([
+        const ReceiptOcrCandidate(text: 'ORIGINAL', score: 0.8),
+        const ReceiptOcrCandidate(text: 'ENHANCED', score: 0.8),
+      ]);
+      final recognizer = _recognizer(
+        engine: engine,
+        workspace: _FakeWorkspace(sourceBytes: _validJpegBytes()),
+      );
+
+      expect(await recognizer.recognize('receipt.jpg'), 'ORIGINAL');
+      expect(engine.recognizeCallCount, 2);
+    });
+
     test(
       'cleanup failure does not mask a successful enhanced OCR result',
       () async {

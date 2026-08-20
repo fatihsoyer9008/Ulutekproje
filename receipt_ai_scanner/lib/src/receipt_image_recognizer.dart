@@ -86,7 +86,7 @@ class OnDeviceReceiptImageRecognizer implements ReceiptImageRecognizer {
         }
         temporaryImagePath = await workspace.writeTemporaryImage(enhancedBytes);
         final enhancedCandidate = await engine.recognize(temporaryImagePath);
-        if (enhancedCandidate.score + 0.02 >= originalCandidate.score) {
+        if (enhancedCandidate.score > originalCandidate.score) {
           selectedCandidate = enhancedCandidate;
         }
       } catch (_) {

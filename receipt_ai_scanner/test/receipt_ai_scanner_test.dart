@@ -166,9 +166,33 @@ void main() {
     expect((background - print).abs(), greaterThan(35));
   });
 
-  test('receipt image enhancement expands thermal print contrast', () {
-    // Mevcut testin kodu burada kalacak.
-  });
+  test(
+    'receipt image enhancement lifts shadows without blowing highlights',
+    () {
+      final source = image_lib.Image(width: 256, height: 128);
+      for (var y = 0; y < source.height; y++) {
+        for (var x = 0; x < source.width; x++) {
+          final isShadow = x < source.width ~/ 2;
+          final isPrint = y >= 48 && y < 64;
+          final tone = isShadow ? (isPrint ? 48 : 78) : (isPrint ? 178 : 225);
+          source.setPixelRgb(x, y, tone, tone, tone);
+        }
+      }
+
+      final enhanced = image_lib.decodeImage(
+        enhanceReceiptImage(image_lib.encodePng(source)),
+      )!;
+      final shadowBackground = enhanced.getPixel(32, 20).luminance;
+      final shadowPrint = enhanced.getPixel(32, 55).luminance;
+      final brightBackground = enhanced.getPixel(224, 20).luminance;
+      final brightPrint = enhanced.getPixel(224, 55).luminance;
+
+      expect(shadowBackground, greaterThan(78));
+      expect(shadowBackground - shadowPrint, greaterThan(30));
+      expect(brightBackground, lessThanOrEqualTo(250));
+      expect(brightBackground - brightPrint, greaterThan(47));
+    },
+  );
 
   test('prepares a large receipt image for upload', () {
     final source = image_lib.Image(width: 2400, height: 1200);
