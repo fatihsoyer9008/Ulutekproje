@@ -12,6 +12,7 @@ from app.group_schemas import (
 from app.models.group import Group, GroupMember, GroupRole
 from app.repositories.groups import GroupMemberAlreadyExists, GroupRepository
 from app.repositories.users import UserRepository
+from app.services.debt_summary_service import DebtSummaryService
 
 
 class GroupServiceError(ValueError):
@@ -42,7 +43,13 @@ class GroupService:
         stored = await self.repository.get_by_id(group.id, include_members=True)
         if stored is None:  # pragma: no cover - database invariant guard
             raise RuntimeError("created group could not be reloaded")
-        response = _group_detail(stored, actor_user_id)
+        # A brand-new group cannot have any expenses yet.
+        response = _group_detail(
+            stored,
+            actor_user_id,
+            net_amount_in_minor=0,
+            has_activity=False,
+        )
         await self.session.commit()
         return response
 
@@ -56,7 +63,22 @@ class GroupService:
             actor_user_id,
             include_archived=include_archived,
         )
-        return [_group_summary(group, actor_user_id) for group in groups]
+        group_ids = [group.id for group in groups]
+        debt_service = DebtSummaryService(self.session)
+        balances = await debt_service.get_group_net_balances(
+            user_id=actor_user_id,
+            group_ids=group_ids,
+        )
+        active_group_ids = await debt_service.get_groups_with_activity(group_ids)
+        return [
+            _group_summary(
+                group,
+                actor_user_id,
+                net_amount_in_minor=balances.get(group.id, 0),
+                has_activity=group.id in active_group_ids,
+            )
+            for group in groups
+        ]
 
     async def get_detail(
         self,
@@ -68,7 +90,18 @@ class GroupService:
             group_id=group_id,
             actor_user_id=actor_user_id,
         )
-        return _group_detail(group, actor_user_id)
+        debt_service = DebtSummaryService(self.session)
+        balances = await debt_service.get_group_net_balances(
+            user_id=actor_user_id,
+            group_ids=[group.id],
+        )
+        active_group_ids = await debt_service.get_groups_with_activity([group.id])
+        return _group_detail(
+            group,
+            actor_user_id,
+            net_amount_in_minor=balances.get(group.id, 0),
+            has_activity=group.id in active_group_ids,
+        )
 
     async def list_members(
         self,
@@ -120,7 +153,18 @@ class GroupService:
         stored = await self.repository.get_by_id(group.id, include_members=True)
         if stored is None:  # pragma: no cover - database invariant guard
             raise RuntimeError("updated group could not be reloaded")
-        response = _group_detail(stored, actor_user_id)
+        debt_service = DebtSummaryService(self.session)
+        balances = await debt_service.get_group_net_balances(
+            user_id=actor_user_id,
+            group_ids=[stored.id],
+        )
+        active_group_ids = await debt_service.get_groups_with_activity([stored.id])
+        response = _group_detail(
+            stored,
+            actor_user_id,
+            net_amount_in_minor=balances.get(stored.id, 0),
+            has_activity=stored.id in active_group_ids,
+        )
         await self.session.commit()
         return response
 
@@ -319,9 +363,22 @@ def _member_response(member: GroupMember) -> GroupMemberResponse:
     )
 
 
+def _group_status(*, net_amount_in_minor: int, has_activity: bool) -> str:
+    if not has_activity:
+        return "no_expenses"
+    if net_amount_in_minor > 0:
+        return "you_are_owed"
+    if net_amount_in_minor < 0:
+        return "you_owe"
+    return "settled_up"
+
+
 def _group_summary(
     group: Group,
     current_user_id: uuid.UUID,
+    *,
+    net_amount_in_minor: int,
+    has_activity: bool,
 ) -> GroupSummaryResponse:
     members = _active_members(group)
     current_membership = next(
@@ -337,6 +394,11 @@ def _group_summary(
         currency=group.currency,
         member_count=len(members),
         current_user_role=current_membership.role,
+        current_user_net_amount_in_minor=net_amount_in_minor,
+        status=_group_status(
+            net_amount_in_minor=net_amount_in_minor,
+            has_activity=has_activity,
+        ),
         created_by=group.created_by,
         created_at=_as_utc(group.created_at),
         updated_at=_as_utc(group.updated_at),
@@ -347,8 +409,16 @@ def _group_summary(
 def _group_detail(
     group: Group,
     current_user_id: uuid.UUID,
+    *,
+    net_amount_in_minor: int,
+    has_activity: bool,
 ) -> GroupDetailResponse:
-    summary = _group_summary(group, current_user_id)
+    summary = _group_summary(
+        group,
+        current_user_id,
+        net_amount_in_minor=net_amount_in_minor,
+        has_activity=has_activity,
+    )
     members = [
         GroupMemberResponse(
             group_id=member.group_id,

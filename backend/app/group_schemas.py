@@ -182,6 +182,8 @@ class GroupSummaryResponse(BaseModel):
     currency: str
     member_count: int
     current_user_role: GroupRole
+    current_user_net_amount_in_minor: int
+    status: str
     created_by: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
