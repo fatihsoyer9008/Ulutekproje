@@ -30,6 +30,7 @@ import '../../features/groups/domain/group_expense_draft.dart';
 import '../../features/groups/domain/group_models.dart';
 import '../../features/groups/presentation/fast_split_page.dart';
 import '../../features/groups/presentation/itemized_split_page.dart';
+import '../../features/groups/presentation/friends_page.dart';
 import '../../features/groups/presentation/groups_page.dart';
 import '../../features/groups/presentation/group_detail_page.dart';
 import '../../features/groups/presentation/group_ocr_page.dart';
@@ -203,6 +204,7 @@ GoRouter createAppRouter({
         builder: (_, _) => const CategoryManagementPage(),
       ),
       GoRoute(path: '/groups', builder: (_, _) => const GroupsPage()),
+      GoRoute(path: '/friends', builder: (_, _) => const FriendsPage()),
       GoRoute(
         path: '/groups/:groupId',
         builder: (_, state) =>
