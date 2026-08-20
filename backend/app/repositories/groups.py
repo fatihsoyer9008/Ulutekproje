@@ -71,6 +71,9 @@ class GroupRepository:
             .where(
                 GroupMember.user_id == user_id,
                 GroupMember.left_at.is_(None),
+                # Direct (friend) groups are hidden from the regular groups
+                # list; they only surface through the /friends endpoint.
+                Group.is_direct.is_(False),
             )
             .options(
                 selectinload(Group.members).selectinload(GroupMember.user)
