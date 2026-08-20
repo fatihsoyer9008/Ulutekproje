@@ -91,6 +91,17 @@ class DebtSummary:
     generated_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class OverallBalance:
+    """A user's net balance across all of their non-direct groups, per currency."""
+
+    currency: str
+    net_amount_in_minor: int
+
+    def __post_init__(self) -> None:
+        _require_minor_unit(self.net_amount_in_minor, "net_amount_in_minor")
+
+
 class DebtSimplificationService:
     """Create a deterministic greedy settlement plan from net balances.
 
