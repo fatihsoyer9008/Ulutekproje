@@ -103,10 +103,7 @@ def _raise_idempotency_conflict() -> NoReturn:
         status_code=status.HTTP_409_CONFLICT,
         detail={
             "code": "idempotency_conflict",
-            "message": (
-                "Idempotency-Key daha önce farklı bir settlement "
-                "isteği için kullanıldı."
-            ),
+            "message": "Ödeme isteği daha önce farklı bilgilerle gönderildi.",
         },
     ) from None
 
@@ -191,7 +188,7 @@ async def create_settlement(
     actor_user_id = actor_membership.user_id
     request_hash = _request_hash(payload)
     idempotency_key_hash = privacy_hash(
-        "settlement-create:" f"{group_id}:{actor_user_id}:{idempotency_key}"
+        f"settlement-create:{group_id}:{actor_user_id}:{idempotency_key}"
     )
 
     repository = SettlementRepository(db)

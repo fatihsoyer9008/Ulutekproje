@@ -592,11 +592,15 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
         ..showSnackBar(
           const SnackBar(content: Text('Gider başarıyla kaydedildi.')),
         );
-    } on Exception catch (error) {
+    } on Exception {
       if (!context.mounted) return;
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('Gider kaydedilemedi: $error')));
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Gider kaydedilemedi. Lütfen tekrar deneyin.'),
+          ),
+        );
     } finally {
       _isSaving = false;
     }

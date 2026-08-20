@@ -201,6 +201,42 @@ void main() {
       },
     );
   }
+
+  test('bilinmeyen backend mesajını ve doğrulama ayrıntısını gizler', () async {
+    final repository = ApiGroupRepository(
+      _client(
+        (_) => _jsonResponse({
+          'detail': {
+            'code': 'validation_error',
+            'message': 'Internal validator table=expense_shares',
+            'field_errors': [
+              {
+                'field': 'split.shares.0.amount_in_minor',
+                'message': 'Input should be greater than zero',
+              },
+            ],
+          },
+        }, statusCode: 422),
+      ),
+    );
+
+    await expectLater(
+      repository.listGroups(),
+      throwsA(
+        isA<GroupApiException>()
+            .having(
+              (error) => error.error.detail.message,
+              'message',
+              'Gönderilen bilgiler doğrulanamadı. Lütfen alanları kontrol edin.',
+            )
+            .having(
+              (error) => error.error.detail.fieldErrors!.single.message,
+              'field message',
+              'Pay bilgisini kontrol edin.',
+            ),
+      ),
+    );
+  });
 }
 
 ApiClient _client(ResponseBody Function(RequestOptions) handler) {

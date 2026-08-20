@@ -50,13 +50,13 @@ class RateLimiter:
             # Protected endpoints must fail closed when Redis is unavailable.
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Request protection is temporarily unavailable.",
+                detail="İstek koruması geçici olarak kullanılamıyor. Lütfen daha sonra tekrar deneyin.",
             ) from exc
 
         if int(current) > rule.limit:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many requests. Please try again later.",
+                detail="Çok fazla istek gönderildi. Lütfen daha sonra tekrar deneyin.",
                 headers={"Retry-After": str(max(int(ttl), 1))},
             )
 

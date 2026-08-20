@@ -115,7 +115,7 @@ def test_assistant_provider_does_not_fallback_to_receipt_key(
         get_assistant_model_service()
 
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == "AI assistant provider is not configured."
+    assert exc_info.value.detail == "Finans asistanı şu anda kullanılamıyor."
 
 
 def _transaction(
@@ -296,7 +296,7 @@ async def test_assistant_rejects_query_without_current_consent(
 
     assert response.status_code == 403
     assert response.json() == {
-        "detail": "Current AI data processing consent is required."
+        "detail": "Finans asistanını kullanmak için veri işleme izni gereklidir."
     }
     assert model.summaries == []
 
@@ -330,7 +330,7 @@ async def test_assistant_rejects_query_after_consent_is_revoked(
 
     assert query_response.status_code == 403
     assert query_response.json() == {
-        "detail": "Current AI data processing consent is required."
+        "detail": "Finans asistanını kullanmak için veri işleme izni gereklidir."
     }
     assert model.summaries == []
 
@@ -409,8 +409,8 @@ async def test_assistant_maps_provider_failure_to_bad_gateway(
 ) -> None:
     client, _ = assistant_context
     await _grant_assistant_consent(client)
-    app.dependency_overrides[get_assistant_model_service] = (
-        lambda: FailingAssistantModel()
+    app.dependency_overrides[get_assistant_model_service] = lambda: (
+        FailingAssistantModel()
     )
 
     response = await client.post(
@@ -422,7 +422,9 @@ async def test_assistant_maps_provider_failure_to_bad_gateway(
     )
 
     assert response.status_code == 502
-    assert response.json() == {"detail": "AI assistant could not generate an answer."}
+    assert response.json() == {
+        "detail": "Finans asistanı yanıt oluşturamadı. Lütfen tekrar deneyin."
+    }
 
 
 @pytest.mark.asyncio
@@ -442,4 +444,4 @@ async def test_assistant_feature_flag_fails_closed(
     )
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "AI assistant is not enabled."}
+    assert response.json() == {"detail": "Finans asistanı şu anda kullanılamıyor."}

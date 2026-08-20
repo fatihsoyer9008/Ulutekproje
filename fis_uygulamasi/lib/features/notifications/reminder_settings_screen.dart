@@ -78,11 +78,13 @@ class _ReminderSettingsScreenState
       setState(() {
         _enabled = enabled;
       });
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Hatırlatıcı ayarlanamadı: $error')),
+        const SnackBar(
+          content: Text('Hatırlatıcı ayarlanamadı. Lütfen tekrar deneyin.'),
+        ),
       );
     } finally {
       if (mounted) {
@@ -130,12 +132,14 @@ class _ReminderSettingsScreenState
           ),
         ),
       );
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Saat kaydedilemedi: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Saat kaydedilemedi. Lütfen tekrar deneyin.'),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {

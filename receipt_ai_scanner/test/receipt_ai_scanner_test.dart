@@ -39,6 +39,19 @@ void main() {
       expect(failure.message, contains('kısıtlanmış'));
       expect(failure.canRetry, isFalse);
     });
+
+    test('does not expose platform camera details', () {
+      final failure = cameraFailureFromException(
+        CameraException(
+          'CameraServiceError',
+          'android.hardware.camera2.CameraAccessException stack trace',
+        ),
+      );
+
+      expect(failure.message, contains('Lütfen tekrar deneyin'));
+      expect(failure.message, isNot(contains('CameraAccessException')));
+      expect(failure.message, isNot(contains('stack trace')));
+    });
   });
 
   group('receipt text normalization', () {

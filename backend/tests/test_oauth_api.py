@@ -177,7 +177,10 @@ async def test_google_endpoint_returns_actionable_validation_error(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == {"code": code, "message": message}
+    assert response.json()["detail"] == {
+        "code": code,
+        "message": "Google girişi doğrulanamadı. Lütfen tekrar deneyin.",
+    }
 
 
 @pytest.mark.asyncio
@@ -321,9 +324,7 @@ async def test_apple_refresh_token_is_encrypted_and_revoked_on_delete(
     async with session_factory() as session:
         account = (
             await session.scalars(
-                select(OAuthAccount).where(
-                    OAuthAccount.provider == OAuthProvider.apple
-                )
+                select(OAuthAccount).where(OAuthAccount.provider == OAuthProvider.apple)
             )
         ).one()
         encrypted = account.provider_refresh_token_encrypted

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:app_main/features/groups/application/group_sync_coordinator.dart';
@@ -141,7 +142,7 @@ void main() {
       final syncedDeleteTask = (await deviceA.offlineTasks.where().findAll())
           .singleWhere(
             (task) => task.type == OfflineTaskType.groupExpenseDelete,
-      );
+          );
       expect(syncedDeleteTask.status, OfflineTaskStatus.synced);
       expect(deletedOnDeviceA?.syncState, SyncState.synced);
       expect(deletedOnDeviceA?.deletedAt?.toUtc(), serverTime);
@@ -174,7 +175,16 @@ void main() {
       final conflictState = scopeB.read(groupSyncCoordinatorProvider);
       expect(conflictTask.status, OfflineTaskStatus.conflict);
       expect(conflictTask.retryCount, 0);
-      expect(conflictTask.lastError, contains('farklı payload'));
+      final conflictAudit =
+          jsonDecode(conflictTask.lastError!) as Map<String, dynamic>;
+      expect(conflictAudit['kind'], 'group_sync_conflict');
+      expect(conflictAudit['code'], 'idempotency_conflict');
+      expect(
+        conflictAudit['message'],
+        'Aynı işlem kimliği daha önce farklı bilgilerle kullanıldı.',
+      );
+      expect(conflictTask.lastError, isNot(contains('clientRecordId')));
+      expect(conflictTask.lastError, isNot(contains('farklı payload')));
       expect(conflictedExpense?.syncState, SyncState.failed);
       expect(conflictState.status, GroupSyncStatus.conflict);
       expect(conflictState.conflictCount, 1);

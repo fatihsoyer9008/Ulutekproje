@@ -4,6 +4,7 @@ import 'package:finance_database/finance_database.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/errors/user_facing_error.dart';
 import '../domain/ai_assistant_message_stream.dart';
 
 class AiAssistantSheet extends StatefulWidget {
@@ -64,11 +65,12 @@ class _AiAssistantSheetState extends State<AiAssistantSheet> {
       },
       onError: (Object error) {
         if (!mounted) return;
-        final message = error.toString().trim();
         setState(() {
-          _messages.last.text = message.isEmpty
-              ? 'Şu anda yanıt oluşturamıyorum. Lütfen tekrar dene.'
-              : message;
+          _messages.last.text = userFacingErrorMessage(
+            error,
+            fallbackMessage:
+                'Şu anda yanıt oluşturamıyorum. Lütfen tekrar dene.',
+          );
           _isStreaming = false;
         });
       },

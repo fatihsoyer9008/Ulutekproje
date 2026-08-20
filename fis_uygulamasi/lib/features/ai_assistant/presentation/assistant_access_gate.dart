@@ -2,6 +2,7 @@ import 'package:finance_database/finance_database.dart'
     show OfflineQueueSummary;
 import 'package:flutter/material.dart';
 
+import '../../../core/errors/user_facing_error.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../data/ai_assistant_client.dart';
 
@@ -281,13 +282,9 @@ class AiAssistantAccessGate {
   }
 
   String _safeError(Object error) {
-    final message = error.toString().trim();
-    if (message.isEmpty) {
-      return 'Beklenmeyen bir hata oluştu. Lütfen tekrar dene.';
-    }
-
-    return message
-        .replaceFirst('Exception: ', '')
-        .replaceFirst('FormatException: ', '');
+    return userFacingErrorMessage(
+      error,
+      fallbackMessage: 'İşlem tamamlanamadı. Lütfen tekrar deneyin.',
+    );
   }
 }

@@ -334,7 +334,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp>
           'Bu davetin süresi dolmuş veya davet daha önce kullanılmış.',
         'invitation_email_mismatch' =>
           'Bu davet farklı bir e-posta hesabına ait.',
-        _ => error.error.detail.message,
+        _ => 'Grup daveti kabul edilemedi. Lütfen tekrar deneyin.',
       };
     }
     return 'Grup daveti kabul edilemedi. Lütfen tekrar deneyin.';

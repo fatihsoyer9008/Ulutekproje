@@ -5,7 +5,6 @@ from time import perf_counter
 from fastapi import FastAPI, Request, Response, status
 from fastapi.exception_handlers import (
     http_exception_handler,
-    request_validation_exception_handler,
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -93,10 +92,7 @@ def _validate_production_settings() -> None:
     n8n_webhook_hmac_secret = (
         settings.n8n_webhook_hmac_secret.get_secret_value().strip()
     )
-    if (
-        not n8n_webhook_hmac_secret
-        or n8n_webhook_hmac_secret in weak_values
-    ):
+    if not n8n_webhook_hmac_secret or n8n_webhook_hmac_secret in weak_values:
         raise RuntimeError(
             "N8N_WEBHOOK_HMAC_SECRET must be configured securely in production"
         )
@@ -205,12 +201,12 @@ async def validation_exception_handler(
 
         if is_expense_request:
             message = (
-                "Masraf isteği geçersiz; split türünü, tutarları ve "
+                "Masraf isteği geçersiz; paylaşım türünü, tutarları ve "
                 "katılımcıları kontrol edin."
             )
         elif is_settlement_request:
             message = (
-                "Settlement isteği geçersiz; kullanıcıları, tutarı, "
+                "Ödeme isteği geçersiz; kullanıcıları, tutarı, "
                 "para birimini ve tarihi kontrol edin."
             )
         else:
@@ -229,7 +225,24 @@ async def validation_exception_handler(
                 }
             },
         )
-    return await request_validation_exception_handler(request, exc)
+    if request.url.path.startswith("/api/"):
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={
+                "detail": {
+                    "code": "invalid_request",
+                    "message": (
+                        "Gönderilen bilgiler geçersiz. Lütfen alanları kontrol edin."
+                    ),
+                }
+            },
+        )
+    # API dışındaki bir rotada oluşması beklenmez; yine de teknik doğrulama
+    # ayrıntılarını istemciye taşımayız.
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={"detail": "Gönderilen bilgiler geçersiz."},
+    )
 
 
 @app.middleware("http")
@@ -260,7 +273,9 @@ async def log_request(
         )
         response = JSONResponse(
             status_code=status_code,
-            content={"detail": "Internal server error."},
+            content={
+                "detail": "İşlem şu anda tamamlanamıyor. Lütfen daha sonra tekrar deneyin."
+            },
         )
 
     duration_ms = (perf_counter() - started_at) * 1000

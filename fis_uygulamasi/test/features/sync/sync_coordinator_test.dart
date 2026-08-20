@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:app_main/core/errors/sync_error_category.dart';
 import 'package:app_main/features/sync/application/sync_coordinator.dart';
 import 'package:app_main/features/sync/data/pending_task_sync_gateway.dart';
 import 'package:app_main/features/sync/domain/sync_state.dart';
@@ -101,7 +102,8 @@ void main() {
   });
 
   test('kalıcı 4xx hatasını retry etmez', () async {
-    final repository = _FakeSyncTaskRepository([task(1)]);
+    final failedTask = task(1);
+    final repository = _FakeSyncTaskRepository([failedTask]);
     var attempts = 0;
     final scope = container(
       repository: repository,
@@ -120,7 +122,67 @@ void main() {
     expect(attempts, 1);
     expect(repository.failedIds, [1]);
     expect(repository.errorUpdates, 0);
+    expect(failedTask.lastError, 'permanent_failure');
   });
+
+  final categorizedErrors = <String, Object>{
+    'network_unavailable': DioException(
+      requestOptions: RequestOptions(path: '/api/v1/sync/push'),
+      type: DioExceptionType.connectionError,
+      message: 'socket details must not persist',
+    ),
+    'timeout': DioException(
+      requestOptions: RequestOptions(path: '/api/v1/sync/push'),
+      type: DioExceptionType.receiveTimeout,
+      message: 'timeout details must not persist',
+    ),
+    'invalid_payload': const FormatException(
+      'payload details must not persist',
+    ),
+    'server_unavailable': DioException(
+      requestOptions: RequestOptions(path: '/api/v1/sync/push'),
+      type: DioExceptionType.badResponse,
+      response: Response<void>(
+        requestOptions: RequestOptions(path: '/api/v1/sync/push'),
+        statusCode: 503,
+      ),
+    ),
+  };
+
+  test('Dio transformTimeout timeout audit kategorisine dönüşür', () {
+    final error = DioException(
+      requestOptions: RequestOptions(path: '/api/v1/sync/push'),
+      type: DioExceptionType.transformTimeout,
+      message: 'transform details must not persist',
+    );
+
+    expect(categorizeSyncError(error), SyncErrorCategory.timeout);
+  });
+
+  for (final MapEntry(key: expectedCategory, value: error)
+      in categorizedErrors.entries) {
+    test('$expectedCategory audit kodu lastError alanında saklanır', () async {
+      final failedTask = task(1);
+      final repository = _FakeSyncTaskRepository([failedTask]);
+      final scope = container(
+        repository: repository,
+        gateway: _FakeGateway((_) async => throw error),
+        maxRetries: 1,
+      );
+
+      await scope.read(syncCoordinatorProvider.notifier).syncPendingTasks();
+
+      final state = scope.read(syncCoordinatorProvider);
+      expect(failedTask.lastError, expectedCategory);
+      expect(failedTask.lastError, isNot(contains('details')));
+      expect(
+        state.errorMessage,
+        '1 işlem senkronize edilemedi: '
+        'İşlem senkronize edilemedi. Lütfen tekrar deneyin.',
+      );
+      expect(state.errorMessage, isNot(contains(expectedCategory)));
+    });
+  }
 
   test('HTTP 200 conflict sonucunu ayrı state olarak tutar', () async {
     final repository = _FakeSyncTaskRepository([task(1)]);
@@ -341,13 +403,15 @@ class _FakeSyncTaskRepository implements SyncTaskRepository {
 
   @override
   Future<void> markPermanentlyFailed(Id id, String error) async {
-    _pending.remove(id);
+    final task = _pending.remove(id);
+    if (task != null) task.lastError = error;
     failedIds.add(id);
   }
 
   @override
   Future<void> markConflict(Id id, String error) async {
-    _pending.remove(id);
+    final task = _pending.remove(id);
+    if (task != null) task.lastError = error;
     conflictIds.add(id);
   }
 
@@ -355,7 +419,11 @@ class _FakeSyncTaskRepository implements SyncTaskRepository {
   Future<void> updateTaskError(Id id, String error) async {
     errorUpdates += 1;
     final task = _pending[id];
-    if (task != null) task.retryCount += 1;
+    if (task != null) {
+      task
+        ..retryCount += 1
+        ..lastError = error;
+    }
   }
 
   @override

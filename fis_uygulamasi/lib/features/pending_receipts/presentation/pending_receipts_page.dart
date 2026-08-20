@@ -176,9 +176,9 @@ class _PendingReceiptsList extends ConsumerWidget {
           content: Text('Fatura onaylandı ve gider olarak kaydedildi.'),
         ),
       );
-    } on Exception catch (error) {
+    } on Exception {
       messenger.showSnackBar(
-        SnackBar(content: Text('Kaydedilemedi: $error')),
+        const SnackBar(content: Text('Kaydedilemedi. Lütfen tekrar deneyin.')),
       );
     }
   }

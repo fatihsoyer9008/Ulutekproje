@@ -378,6 +378,29 @@ void main() {
       expect(result.message, contains(entry.value));
     });
   }
+
+  test('bilinmeyen 409 kodunda ham sunucu mesajını kullanmaz', () async {
+    const rawServerMessage =
+        'PostgreSQL connection failed at postgres://admin@example.test/db';
+    final gateway = DioGroupPushGateway(
+      _dio(
+        (_) => _response(<String, Object?>{
+          'detail': <String, Object?>{
+            'code': 'unknown_conflict',
+            'message': rawServerMessage,
+          },
+        }, statusCode: 409),
+      ),
+    );
+
+    final result = await gateway.push(_task(14));
+
+    expect(result.status, GroupPushStatus.conflict);
+    expect(result.conflictCode, 'unknown_conflict');
+    expect(result.message, 'Finansal kayıt sunucudaki sürümle çakıştı.');
+    expect(result.message, isNot(contains(rawServerMessage)));
+    expect(result.message, isNot(contains('postgres://')));
+  });
 }
 
 OfflineTask _task(int id, {String title = 'Market'}) {

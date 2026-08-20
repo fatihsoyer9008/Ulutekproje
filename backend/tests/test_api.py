@@ -217,7 +217,6 @@ def test_production_assistant_requires_dedicated_gemini_key(
         _validate_production_settings()
 
 
-
 @pytest.mark.parametrize(
     "n8n_webhook_hmac_secret",
     [
@@ -253,6 +252,7 @@ def test_production_rejects_missing_or_weak_n8n_webhook_hmac_secret(
         match="N8N_WEBHOOK_HMAC_SECRET must be configured securely",
     ):
         _validate_production_settings()
+
 
 def test_receipt_ignores_forwarded_for_when_proxy_trust_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
@@ -446,6 +446,12 @@ def test_parse_receipt_rejects_invalid_installation_id() -> None:
         )
 
     assert response.status_code == 422
+    assert response.json() == {
+        "detail": {
+            "code": "invalid_request",
+            "message": ("Gönderilen bilgiler geçersiz. Lütfen alanları kontrol edin."),
+        }
+    }
     assert parser.call_count == 0
 
 

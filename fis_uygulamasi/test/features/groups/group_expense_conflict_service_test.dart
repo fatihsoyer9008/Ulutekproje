@@ -61,7 +61,10 @@ void main() {
 
     expect(conflicts, hasLength(1));
     expect(conflicts.single.code, 'version_mismatch');
-    expect(conflicts.single.message, 'Başka cihazda güncellendi.');
+    expect(
+      conflicts.single.message,
+      'Kayıt başka bir cihazda güncellendi. Güncel veriyi yükleyip yeniden deneyin.',
+    );
     expect(conflicts.single.localExpense?.title, 'Yerel değişiklik');
     expect(conflicts.single.canKeepLocal, isTrue);
   });
@@ -169,6 +172,32 @@ void main() {
       (await isar.offlineTasks.where().findAll()).single.status,
       OfflineTaskStatus.conflict,
     );
+  });
+
+  test('kalıcı kayıttaki ham conflict mesajını UI modeline taşımaz', () async {
+    const rawServerMessage =
+        'PostgreSQL connection failed at postgres://admin@example.test/db';
+    await _seedConflict(
+      repository,
+      message: jsonEncode(<String, Object?>{
+        'kind': 'group_sync_conflict',
+        'code': 'unknown_conflict',
+        'message': rawServerMessage,
+      }),
+    );
+    final service = GroupExpenseConflictService(
+      repository,
+      _RemoteExpenseRepository([fastSplitTransferExpense]),
+      () => '66000000-0000-4000-8000-000000000005',
+    );
+
+    final conflict =
+        (await service.watch(ownerKey: groupOperationOwnerKey).first).single;
+
+    expect(conflict.code, 'unknown_conflict');
+    expect(conflict.message, 'Finansal kayıt sunucudaki sürümle çakıştı.');
+    expect(conflict.message, isNot(contains(rawServerMessage)));
+    expect(conflict.message, isNot(contains('postgres://')));
   });
 }
 

@@ -1,18 +1,23 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../../core/errors/user_facing_error.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_config.dart';
 import '../domain/auth_user.dart';
 
-class AuthException implements Exception {
+class AuthException implements UserFacingException {
   const AuthException(this.message, {this.code});
 
   final String message;
   final String? code;
+
+  @override
+  String get userMessage => message;
 
   @override
   String toString() => message;
@@ -79,7 +84,7 @@ class AuthRepository implements AuthRepositoryBase {
     String? displayName,
   }) async {
     try {
-      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+      await _apiClient.dio.post<Map<String, dynamic>>(
         '/api/v1/auth/register',
         data: {
           'email': email.trim(),
@@ -89,8 +94,7 @@ class AuthRepository implements AuthRepositoryBase {
         },
         options: Options(extra: const {'skipAuth': true}),
       );
-      return response.data?['message'] as String? ??
-          'Doğrulama bağlantısı e-posta adresinize gönderildi.';
+      return 'Adres uygunsa doğrulama bağlantısı e-posta adresinize gönderildi.';
     } on DioException catch (error) {
       throw _exceptionFrom(error, 'Kayıt oluşturulamadı.');
     }
@@ -99,13 +103,12 @@ class AuthRepository implements AuthRepositoryBase {
   @override
   Future<String> verifyEmail(String token) async {
     try {
-      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+      await _apiClient.dio.post<Map<String, dynamic>>(
         '/api/v1/auth/verify-email',
         data: {'token': token},
         options: Options(extra: const {'skipAuth': true}),
       );
-      return response.data?['message'] as String? ??
-          'E-posta adresiniz doğrulandı.';
+      return 'E-posta adresiniz doğrulandı.';
     } on DioException catch (error) {
       throw _exceptionFrom(error, 'E-posta doğrulanamadı.');
     }
@@ -114,13 +117,12 @@ class AuthRepository implements AuthRepositoryBase {
   @override
   Future<String> resendVerification(String email) async {
     try {
-      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+      await _apiClient.dio.post<Map<String, dynamic>>(
         '/api/v1/auth/resend-verification',
         data: {'email': email.trim()},
         options: Options(extra: const {'skipAuth': true}),
       );
-      return response.data?['message'] as String? ??
-          'Doğrulama bağlantısı yeniden gönderildi.';
+      return 'Adres uygunsa doğrulama bağlantısı yeniden gönderildi.';
     } on DioException catch (error) {
       throw _exceptionFrom(error, 'Doğrulama e-postası gönderilemedi.');
     }
@@ -129,13 +131,12 @@ class AuthRepository implements AuthRepositoryBase {
   @override
   Future<String> forgotPassword(String email) async {
     try {
-      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+      await _apiClient.dio.post<Map<String, dynamic>>(
         '/api/v1/auth/forgot-password',
         data: {'email': email.trim()},
         options: Options(extra: const {'skipAuth': true}),
       );
-      return response.data?['message'] as String? ??
-          'Uygunsa sıfırlama bağlantısı e-posta adresinize gönderildi.';
+      return 'Adres uygunsa sıfırlama bağlantısı e-posta adresinize gönderildi.';
     } on DioException catch (error) {
       throw _exceptionFrom(error, 'Şifre sıfırlama isteği gönderilemedi.');
     }
@@ -145,7 +146,7 @@ class AuthRepository implements AuthRepositoryBase {
   Future<AuthUser> signInWithGoogle() async {
     if (ApiConfig.googleServerClientId.isEmpty) {
       throw const AuthException(
-        'Google girişi için GOOGLE_SERVER_CLIENT_ID tanımlanmalıdır.',
+        'Google ile giriş şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.',
       );
     }
 
@@ -154,7 +155,9 @@ class AuthRepository implements AuthRepositoryBase {
       final account = await _googleSignIn.authenticate();
       final idToken = account.authentication.idToken;
       if (idToken == null || idToken.isEmpty) {
-        throw const AuthException('Google kimlik belirteci alınamadı.');
+        throw const AuthException(
+          'Google girişi tamamlanamadı. Lütfen tekrar deneyin.',
+        );
       }
       validateGoogleIdTokenAudience(
         idToken,
@@ -209,7 +212,9 @@ class AuthRepository implements AuthRepositoryBase {
         data: {'avatar_id': avatarId},
       );
       if (response.data == null) {
-        throw const AuthException('Sunucu boş yanıt döndürdü.');
+        throw const AuthException(
+          'Avatar güncellenemedi. Lütfen tekrar deneyin.',
+        );
       }
       return AuthUser.fromJson(response.data!);
     } on DioException catch (error) {
@@ -252,55 +257,89 @@ class AuthRepository implements AuthRepositoryBase {
   }
 
   Future<AuthUser> _saveTokenResponse(Map<String, dynamic>? data) async {
-    if (data == null) throw const AuthException('Sunucu boş yanıt döndürdü.');
+    if (data == null) {
+      throw const AuthException('Oturum açılamadı. Lütfen tekrar deneyin.');
+    }
     try {
       final bundle = AuthTokenBundle.fromJson(data);
       await _apiClient.setSession(bundle);
       return AuthUser.fromJson(bundle.user);
-    } on FormatException catch (error) {
-      throw AuthException(error.message);
+    } on FormatException {
+      throw const AuthException('Oturum açılamadı. Lütfen tekrar deneyin.');
     }
   }
 
   static AuthException _exceptionFrom(DioException error, String fallback) {
     final data = error.response?.data;
+    String? code;
     if (data is Map) {
       final detail = data['detail'];
-      if (detail is String) return AuthException(detail);
-      if (detail is Map && detail['message'] is String) {
-        return AuthException(
-          detail['message'] as String,
-          code: detail['code'] as String?,
-        );
-      }
-      if (detail is List && detail.isNotEmpty) {
-        final first = detail.first;
-        if (first is Map && first['msg'] is String) {
-          final location = first['loc'];
-          final field = location is List && location.isNotEmpty
-              ? location.last
-              : null;
-          return AuthException(
-            field == null ? first['msg'] as String : '$field: ${first['msg']}',
-          );
-        }
+      if (detail is Map && detail['code'] is String) {
+        code = detail['code'] as String;
       }
     }
     final statusCode = error.response?.statusCode;
+
+    if (code == 'email_not_verified') {
+      return const AuthException(
+        'E-posta adresiniz henüz doğrulanmadı. Doğrulama bağlantısını kontrol edin.',
+        code: 'email_not_verified',
+      );
+    }
+    if (code == 'google_account_already_exists') {
+      return const AuthException(
+        'Bu e-posta adresiyle bir hesap zaten var. Önce e-posta ve şifrenizle giriş yapın.',
+        code: 'google_account_already_exists',
+      );
+    }
+    if (statusCode == 429) {
+      return const AuthException(
+        'Çok fazla deneme yapıldı. Lütfen biraz sonra tekrar deneyin.',
+        code: 'rate_limited',
+      );
+    }
+    if (statusCode == 400 || statusCode == 422) {
+      return AuthException(
+        '$fallback Bilgileri kontrol edip tekrar deneyin.',
+        code: code ?? 'invalid_request',
+      );
+    }
+    if (statusCode == 401) {
+      return AuthException(
+        fallback == 'Giriş yapılamadı.'
+            ? 'E-posta adresi veya şifre hatalı.'
+            : '$fallback Lütfen yeniden giriş yapıp tekrar deneyin.',
+        code: code ?? 'unauthorized',
+      );
+    }
+    if (statusCode == 403) {
+      return AuthException(
+        '$fallback Bu işlem için hesabınızın doğrulanması gerekiyor.',
+        code: code ?? 'forbidden',
+      );
+    }
+    if (statusCode == 409) {
+      return AuthException(
+        '$fallback Bilgiler başka bir işlemle çakıştı.',
+        code: code ?? 'conflict',
+      );
+    }
     if (statusCode != null) {
-      return AuthException('$fallback (HTTP $statusCode)');
+      return AuthException(
+        '$fallback Servis şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.',
+        code: code ?? 'service_unavailable',
+      );
     }
     if (error.type == DioExceptionType.connectionError ||
         error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.receiveTimeout ||
         error.type == DioExceptionType.sendTimeout) {
       return AuthException(
-        'Auth sunucusuna ulaşılamadı: ${ApiConfig.baseUrl}. '
-        'Telefon kullanıyorsanız güncel HTTPS tünel adresiyle yeniden '
-        'derleyin.',
+        'İnternet bağlantısı kurulamadı. Bağlantınızı kontrol edip tekrar deneyin.',
+        code: 'connection_failed',
       );
     }
-    return AuthException('$fallback ${error.message ?? ''}'.trim());
+    return AuthException('$fallback Lütfen tekrar deneyin.', code: 'unknown');
   }
 
   static String _createNonce() {
@@ -313,13 +352,10 @@ class AuthRepository implements AuthRepositoryBase {
 String googleSignInErrorMessage(GoogleSignInExceptionCode code) {
   switch (code) {
     case GoogleSignInExceptionCode.canceled:
-      return 'Google oturumu tamamlanamadı. İşlemi siz iptal etmediyseniz '
-          'Android OAuth istemcisindeki paket adı ile SHA-1/SHA-256 '
-          'değerlerini kontrol edin.';
+      return 'Google giriş işlemi iptal edildi.';
     case GoogleSignInExceptionCode.clientConfigurationError:
     case GoogleSignInExceptionCode.providerConfigurationError:
-      return 'Google giriş yapılandırması geçersiz. Android OAuth istemcisi, '
-          'paket adı ve GOOGLE_SERVER_CLIENT_ID değerlerini kontrol edin.';
+      return 'Google ile giriş şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.';
     case GoogleSignInExceptionCode.interrupted:
       return 'Google giriş işlemi yarıda kesildi. Lütfen tekrar deneyin.';
     case GoogleSignInExceptionCode.uiUnavailable:
@@ -348,16 +384,27 @@ void validateGoogleIdTokenAudience(
         audience == expectedAudience ||
         (audience is List && audience.contains(expectedAudience));
     if (!matches) {
+      developer.log(
+        'Google ID token audience eşleşmedi. GOOGLE_SERVER_CLIENT_ID ile '
+        'backend GOOGLE_OAUTH_CLIENT_IDS OAuth Client ID yapılandırmasını '
+        'kontrol edin.',
+        name: 'app.auth.google_token_validation',
+      );
       throw const AuthException(
-        'Google Client ID eşleşmiyor. Flutter GOOGLE_SERVER_CLIENT_ID ile '
-        'backend GOOGLE_OAUTH_CLIENT_IDS aynı Web OAuth Client ID olmalıdır.',
+        'Google girişi doğrulanamadı. Lütfen tekrar deneyin.',
+        code: 'google_token_verification_failed',
       );
     }
   } on AuthException {
     rethrow;
   } on FormatException {
+    developer.log(
+      'google_token_parse_failed',
+      name: 'app.auth.google_token_validation',
+    );
     throw const AuthException(
-      'Google kimlik belirteci okunamadı. OAuth yapılandırmasını kontrol edin.',
+      'Google girişi doğrulanamadı. Lütfen tekrar deneyin.',
+      code: 'google_token_verification_failed',
     );
   }
 }

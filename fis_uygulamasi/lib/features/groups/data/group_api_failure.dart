@@ -14,6 +14,7 @@ GroupApiException groupApiExceptionFromDio(
   if (structuredError != null && statusCode != 401) {
     final detail = structuredError.detail;
     final message = switch (statusCode) {
+      400 => 'Gönderilen bilgiler geçersiz. Lütfen alanları kontrol edin.',
       403 => 'Bu işlem için grup yetkiniz bulunmamaktadır.',
       409
           when detail.code.contains('financial') ||
@@ -23,7 +24,12 @@ GroupApiException groupApiExceptionFromDio(
         'Masraf isteği daha önce farklı bilgilerle gönderildi. Lütfen yeniden deneyin.',
       429 when retryAfterSeconds != null =>
         'Çok fazla istek gönderildi. $retryAfterSeconds saniye sonra tekrar deneyin.',
-      _ => detail.message,
+      429 => 'Çok fazla istek gönderildi. Lütfen biraz sonra tekrar deneyin.',
+      404 => 'İstenen grup kaydı bulunamadı.',
+      422 => 'Gönderilen bilgiler doğrulanamadı. Lütfen alanları kontrol edin.',
+      408 || 504 => 'Sunucu yanıt vermedi. Lütfen tekrar deneyin.',
+      >= 500 => 'Grup servisine şu anda ulaşılamıyor. Lütfen tekrar deneyin.',
+      _ => fallbackMessage,
     };
     return GroupApiException(
       statusCode: statusCode,
@@ -31,7 +37,14 @@ GroupApiException groupApiExceptionFromDio(
         detail: GroupApiErrorDetail(
           code: detail.code,
           message: message,
-          fieldErrors: detail.fieldErrors,
+          fieldErrors: detail.fieldErrors
+              ?.map(
+                (error) => GroupApiFieldError(
+                  field: error.field,
+                  message: _fieldErrorMessage(error.field),
+                ),
+              )
+              .toList(growable: false),
           unassignedReceiptLineItemIds: detail.unassignedReceiptLineItemIds,
           unassignedReceiptLineItemPositions:
               detail.unassignedReceiptLineItemPositions,
@@ -111,7 +124,7 @@ GroupApiError? _structuredError(Object? body) {
                 .join('.')
           : 'request';
       fieldErrors.add(
-        GroupApiFieldError(field: field, message: item['msg']! as String),
+        GroupApiFieldError(field: field, message: _fieldErrorMessage(field)),
       );
     }
     if (fieldErrors.isNotEmpty) {
@@ -126,6 +139,28 @@ GroupApiError? _structuredError(Object? body) {
     }
   }
   return null;
+}
+
+String _fieldErrorMessage(String field) {
+  if (field == 'title' || field.endsWith('.title')) {
+    return 'Başlık alanını kontrol edin.';
+  }
+  if (field.contains('total_amount')) {
+    return 'Toplam tutarı kontrol edin.';
+  }
+  if (field.contains('line_items')) {
+    return 'Ürün paylaşımını kontrol edin.';
+  }
+  if (field.contains('extra_amounts')) {
+    return 'Ek tutar paylaşımını kontrol edin.';
+  }
+  if (field.contains('shares')) {
+    return 'Pay bilgisini kontrol edin.';
+  }
+  if (field.contains('currency')) {
+    return 'Para birimini kontrol edin.';
+  }
+  return 'Bu alanı kontrol edin.';
 }
 
 int? _retryAfterSeconds(Headers? headers) {

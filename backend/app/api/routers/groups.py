@@ -450,9 +450,7 @@ def _raise_expense_idempotency_conflict() -> NoReturn:
         status_code=status.HTTP_409_CONFLICT,
         detail={
             "code": "idempotency_conflict",
-            "message": (
-                "Idempotency-Key daha önce farklı bir masraf isteği için kullanıldı."
-            ),
+            "message": "İstek daha önce farklı bilgilerle gönderildi.",
         },
     ) from None
 

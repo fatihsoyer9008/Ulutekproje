@@ -3,9 +3,20 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 
+import '../../../core/errors/user_facing_error.dart';
 import '../../../core/network/api_client.dart';
 
 typedef AssistantTimezoneResolver = Future<String> Function();
+
+class AiAssistantException implements UserFacingException {
+  const AiAssistantException(this.userMessage);
+
+  @override
+  final String userMessage;
+
+  @override
+  String toString() => userMessage;
+}
 
 class AiAssistantStatus {
   const AiAssistantStatus({
@@ -118,10 +129,12 @@ class AiAssistantClient implements AiAssistantAccessClient {
       try {
         final normalizedQuestion = question.trim();
         if (normalizedQuestion.isEmpty) {
-          throw const FormatException('Soru boş olamaz.');
+          throw const AiAssistantException('Lütfen bir soru yazın.');
         }
         if (normalizedQuestion.length > 500) {
-          throw const FormatException('Soru en fazla 500 karakter olabilir.');
+          throw const AiAssistantException(
+            'Soru en fazla 500 karakter olabilir.',
+          );
         }
 
         final timezone = await _timezoneResolver();
@@ -143,7 +156,9 @@ class AiAssistantClient implements AiAssistantAccessClient {
             periodStart is! String ||
             periodEndExclusive is! String ||
             (dataAsOf != null && dataAsOf is! String)) {
-          throw const FormatException('Geçersiz asistan yanıtı.');
+          throw const AiAssistantException(
+            'Finans asistanı şu anda yanıt oluşturamadı. Lütfen tekrar deneyin.',
+          );
         }
 
         final freshness = dataAsOf == null
@@ -183,8 +198,8 @@ class AiAssistantClient implements AiAssistantAccessClient {
     return controller.stream;
   }
 
-  String _friendlyMessage(DioException error) {
-    return switch (error.response?.statusCode) {
+  AiAssistantException _friendlyMessage(DioException error) {
+    final message = switch (error.response?.statusCode) {
       400 || 422 => 'Soruyu veya tarih aralığını kontrol edip tekrar dene.',
       401 => 'Finans asistanını kullanmak için giriş yapmalısın.',
       403 => 'Finans asistanını kullanmadan önce veri işleme izni vermelisin.',
@@ -196,5 +211,6 @@ class AiAssistantClient implements AiAssistantAccessClient {
       504 => 'Finans asistanı zaman aşımına uğradı. Lütfen tekrar dene.',
       _ => 'Finans asistanına bağlanılamadı. İnternet bağlantını kontrol et.',
     };
+    return AiAssistantException(message);
   }
 }

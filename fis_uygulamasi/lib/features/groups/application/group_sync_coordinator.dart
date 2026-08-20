@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 
 import '../../../core/database/database_providers.dart';
+import '../../../core/errors/sync_error_category.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
 import '../data/group_offline_operation_mapper.dart';
 import '../data/group_sync_gateway.dart';
@@ -237,7 +238,7 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
           ? await repository.requeueRetryableFailures()
           : const <Id>{};
       await _sync(repository, freshRetryIds: freshRetryIds);
-    } on Object catch (error) {
+    } on Object {
       state = GroupSyncState(
         status: GroupSyncStatus.failed,
         completedCount: state.completedCount,
@@ -245,7 +246,8 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
         failedCount: max(1, state.failedCount),
         conflictCount: state.conflictCount,
         pulledCount: state.pulledCount,
-        errorMessage: 'Grup senkronizasyonu başlatılamadı: ${_safe(error)}',
+        errorMessage:
+            'Grup senkronizasyonu başlatılamadı. Bağlantınızı kontrol edip tekrar deneyin.',
       );
     }
   }
@@ -361,12 +363,12 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
       try {
         final result = await gateway.push(task);
         if (result.operationId != task.clientTaskId) {
-          throw const GroupSyncPermanentException(
+          throw const GroupSyncPermanentException.invalidPayload(
             'Push sonucu farklı bir grup operasyonuna ait.',
           );
         }
         if (result.status == GroupPushStatus.conflict) {
-          final message = result.message ?? 'Grup operasyonu çakıştı.';
+          final message = safeGroupSyncConflictMessage(result.conflictCode);
           await repository.markConflict(
             task.id,
             jsonEncode(<String, Object?>{
@@ -380,24 +382,26 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
         await repository.markAsSynced(task.id);
         return const _GroupTaskSuccess();
       } on Object catch (error) {
-        final message = _safe(error);
+        final auditCode = categorizeSyncError(error).code;
         if (_isPermanent(error)) {
-          await repository.markPermanentlyFailed(task.id, message);
-          return _GroupTaskFailure(message);
+          await repository.markPermanentlyFailed(task.id, auditCode);
+          return const _GroupTaskFailure(_groupSyncFailureUserMessage);
         }
         attempt += 1;
-        await repository.recordRetryableError(task.id, message);
+        await repository.recordRetryableError(task.id, auditCode);
         if (attempt >= maxRetries) {
-          await repository.markPermanentlyFailed(task.id, message);
-          return _GroupTaskFailure(message);
+          await repository.markPermanentlyFailed(task.id, auditCode);
+          return const _GroupTaskFailure(_groupSyncFailureUserMessage);
         }
         await _delay(_backoff(attempt));
       }
     }
 
-    const message = 'Maksimum grup sync deneme sayısına ulaşıldı.';
-    await repository.markPermanentlyFailed(task.id, message);
-    return const _GroupTaskFailure(message);
+    await repository.markPermanentlyFailed(
+      task.id,
+      SyncErrorCategory.permanentFailure.code,
+    );
+    return const _GroupTaskFailure(_groupSyncFailureUserMessage);
   }
 
   Duration _backoff(int attempt) => Duration(
@@ -406,10 +410,10 @@ class GroupSyncCoordinator extends Notifier<GroupSyncState> {
 
   bool _isPermanent(Object error) =>
       error is FormatException || error is GroupSyncPermanentException;
-
-  String _safe(Object error) =>
-      error.toString().replaceFirst('Exception: ', '');
 }
+
+const _groupSyncFailureUserMessage =
+    'Grup işlemi senkronize edilemedi. Lütfen tekrar deneyin.';
 
 sealed class _GroupTaskOutcome {
   const _GroupTaskOutcome();

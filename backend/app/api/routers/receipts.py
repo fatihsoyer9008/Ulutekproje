@@ -53,7 +53,7 @@ def get_receipt_parser_service() -> ReceiptParserService:
     if settings.gemini_api_key is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="GEMINI_API_KEY yapılandırılmamış",
+            detail="Fiş analizi şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.",
         )
 
     return GeminiReceiptParserService(
@@ -114,6 +114,7 @@ async def parse_receipt(
             model_name,
             outcome,
         )
+
 
 @router.post(
     "/receipts/parse-image",

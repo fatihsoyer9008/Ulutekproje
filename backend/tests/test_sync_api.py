@@ -511,9 +511,7 @@ async def test_group_sync_pushes_expense_update_and_delete_idempotently(
     assert len(changes) == 2
 
     current_user["value"] = second_user
-    first_page = await client.get(
-        "/api/v1/sync/groups/pull", params={"limit": 1}
-    )
+    first_page = await client.get("/api/v1/sync/groups/pull", params={"limit": 1})
     second_page = await client.get(
         "/api/v1/sync/groups/pull",
         params={"limit": 1, "cursor": first_page.json()["next_cursor"]},
@@ -954,7 +952,7 @@ async def test_claim_rejects_reused_idempotency_key_with_different_body(
     assert first.status_code == 200
     assert conflicting.status_code == 409
     assert conflicting.json() == {
-        "detail": "Idempotency-Key was already used for a different request."
+        "detail": "İstek daha önce farklı bilgilerle gönderildi. Lütfen yeniden deneyin."
     }
 
 
@@ -1235,7 +1233,9 @@ async def test_pull_rejects_invalid_cursor(sync_context) -> None:
     )
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "Invalid sync cursor."}
+    assert response.json() == {
+        "detail": "Senkronizasyon bilgisi geçersiz. Lütfen yeniden deneyin."
+    }
 
 
 @pytest.mark.asyncio
