@@ -184,6 +184,22 @@ class GroupExpenseRepository:
             statement = statement.where(GroupExpense.deleted_at.is_(None))
         return list((await self.session.scalars(statement)).all())
 
+    async def list_for_groups(
+        self,
+        group_ids: Sequence[uuid.UUID],
+    ) -> list[GroupExpense]:
+        if not group_ids:
+            return []
+        statement = (
+            select(GroupExpense)
+            .where(
+                GroupExpense.group_id.in_(group_ids),
+                GroupExpense.deleted_at.is_(None),
+            )
+            .options(selectinload(GroupExpense.shares))
+        )
+        return list((await self.session.scalars(statement)).all())
+
     async def soft_delete(
         self,
         expense: GroupExpense,

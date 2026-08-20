@@ -249,6 +249,41 @@ class GroupService:
         await self.session.commit()
         return response
 
+    async def get_or_create_direct_group(
+        self,
+        *,
+        user_a_id: uuid.UUID,
+        user_b_id: uuid.UUID,
+    ) -> Group:
+        if user_a_id == user_b_id:
+            raise GroupServiceError("cannot_friend_self")
+        if await UserRepository(self.session).get_by_id(user_b_id) is None:
+            raise GroupServiceError("user_not_found")
+
+        existing = await self.repository.get_direct_group(user_a_id, user_b_id)
+        if existing is not None:
+            return existing
+
+        group = await self.repository.create(
+            # Direct groups are never shown by name (GET /groups filters them
+            # out, GET /friends renders the counterpart's display_name
+            # instead), so a fixed placeholder is enough here.
+            name="",
+            created_by=user_a_id,
+            currency="TRY",
+            is_direct=True,
+        )
+        await self.repository.add_member(
+            group_id=group.id,
+            user_id=user_b_id,
+            role=GroupRole.member,
+        )
+        stored = await self.repository.get_by_id(group.id, include_members=True)
+        if stored is None:  # pragma: no cover - database invariant guard
+            raise RuntimeError("created direct group could not be reloaded")
+        await self.session.commit()
+        return stored
+
     async def _get_authorized_group(
         self,
         *,

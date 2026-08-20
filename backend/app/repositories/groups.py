@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.models.group import Group, GroupMember, GroupRole
 
@@ -81,6 +81,29 @@ class GroupRepository:
         if not include_archived:
             statement = statement.where(Group.archived_at.is_(None))
         return list((await self.session.scalars(statement)).all())
+
+    async def get_direct_group(
+        self,
+        user_a_id: uuid.UUID,
+        user_b_id: uuid.UUID,
+    ) -> Group | None:
+        member_a = aliased(GroupMember)
+        member_b = aliased(GroupMember)
+        statement = (
+            select(Group)
+            .join(member_a, member_a.group_id == Group.id)
+            .join(member_b, member_b.group_id == Group.id)
+            .where(
+                Group.is_direct.is_(True),
+                member_a.user_id == user_a_id,
+                member_a.left_at.is_(None),
+                member_b.user_id == user_b_id,
+                member_b.left_at.is_(None),
+            )
+            .options(selectinload(Group.members).selectinload(GroupMember.user))
+            .execution_options(populate_existing=True)
+        )
+        return await self.session.scalar(statement)
 
     async def add_member(
         self,
