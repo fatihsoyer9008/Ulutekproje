@@ -448,7 +448,12 @@ class _AlwaysAuthenticatedRepository implements AuthRepositoryBase {
   Future<AuthUser> login({
     required String email,
     required String password,
-  }) async => AuthUser(id: 'user-id', email: email, isEmailVerified: true);
+  }) async => AuthUser(
+    id: 'user-id',
+    email: email,
+    isEmailVerified: true,
+    avatarId: 'woman',
+  );
 
   @override
   Future<void> logout() async {}
