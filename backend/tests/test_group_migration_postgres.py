@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.engine import URL, make_url
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_REVISION = "20260819_0001"
+EXPECTED_REVISION = "20260820_0001"
 PRE_GROUP_REVISION = "20260806_0004"
 PRE_EXPENSE_REVISION = "20260810_0005"
 PRE_ASSIGNMENT_REVISION = "20260811_0006"
@@ -357,6 +357,23 @@ def _expect_avatar_id(snapshot: dict[str, object]) -> dict[str, object]:
         "users": {
             **users,
             "row": {**users["row"], "avatar_id": None},
+        },
+    }
+
+
+def _expect_is_direct(snapshot: dict[str, object]) -> dict[str, object]:
+    """Legacy `groups` rows gain a non-null `is_direct` column (default
+    false) at revision 20260820_0001. Snapshots taken before that migration
+    ran naturally lack the key, so upgraded-side comparisons must expect it.
+    Only used with the `_pre_assignment_snapshot`/`_pre_expense_snapshot`
+    "rows" (plural, list) shape, unlike `_expect_avatar_id`'s "row" shape.
+    """
+    groups = snapshot["groups"]
+    return {
+        **snapshot,
+        "groups": {
+            **groups,
+            "rows": [{**row, "is_direct": False} for row in groups["rows"]],
         },
     }
 
@@ -1664,7 +1681,7 @@ async def test_assignment_migration_preserves_existing_group_data() -> None:
             )
             assert (
                 await _pre_assignment_snapshot(migration_url, identifiers)
-                == group_before
+                == _expect_is_direct(group_before)
             )
 
             connection = await asyncpg.connect(_asyncpg_dsn(migration_url))
@@ -1718,7 +1735,7 @@ async def test_assignment_migration_preserves_existing_group_data() -> None:
             )
             assert (
                 await _pre_assignment_snapshot(migration_url, identifiers)
-                == group_before
+                == _expect_is_direct(group_before)
             )
         finally:
             await admin_connection.execute(

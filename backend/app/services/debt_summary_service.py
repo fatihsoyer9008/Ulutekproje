@@ -2,6 +2,7 @@ import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.debts import (
@@ -9,7 +10,11 @@ from app.domain.debts import (
     DebtSimplificationService,
     DebtSummary,
     DebtTransfer,
+    OverallBalance,
 )
+from app.models.group import Group
+from app.models.group_expense import ExpenseShare, GroupExpense
+from app.models.settlement import Settlement
 from app.repositories.group_expenses import GroupExpenseRepository
 from app.repositories.groups import GroupRepository
 from app.repositories.settlements import SettlementRepository
@@ -102,4 +107,98 @@ class DebtSummaryService:
             balances=settled_balances,
             suggested_transfers=suggested_transfers,
             generated_at=datetime.now(UTC),
+        )
+
+    async def get_overall_balance(
+        self,
+        user_id: uuid.UUID,
+    ) -> tuple[OverallBalance, ...]:
+        """Net balance for one user across every non-direct, non-archived
+        group they have ever taken part in, grouped by currency.
+
+        Mirrors ``get_for_group``'s sign convention (paid - share, then
+        settlements applied) but is computed with aggregate queries instead
+        of loading every expense/settlement row, since a user may belong to
+        many groups.
+        """
+        totals: defaultdict[str, int] = defaultdict(int)
+
+        paid_rows = await self.session.execute(
+            select(
+                Group.currency,
+                func.coalesce(func.sum(GroupExpense.total_amount_in_minor), 0),
+            )
+            .select_from(GroupExpense)
+            .join(Group, Group.id == GroupExpense.group_id)
+            .where(
+                GroupExpense.payer_user_id == user_id,
+                GroupExpense.deleted_at.is_(None),
+                Group.is_direct.is_(False),
+                Group.archived_at.is_(None),
+            )
+            .group_by(Group.currency)
+        )
+        for currency, amount in paid_rows:
+            totals[currency] += amount
+
+        share_rows = await self.session.execute(
+            select(
+                Group.currency,
+                func.coalesce(func.sum(ExpenseShare.amount_in_minor), 0),
+            )
+            .select_from(ExpenseShare)
+            .join(GroupExpense, GroupExpense.id == ExpenseShare.expense_id)
+            .join(Group, Group.id == GroupExpense.group_id)
+            .where(
+                ExpenseShare.user_id == user_id,
+                GroupExpense.deleted_at.is_(None),
+                Group.is_direct.is_(False),
+                Group.archived_at.is_(None),
+            )
+            .group_by(Group.currency)
+        )
+        for currency, amount in share_rows:
+            totals[currency] -= amount
+
+        settlements_paid_rows = await self.session.execute(
+            select(
+                Group.currency,
+                func.coalesce(func.sum(Settlement.amount_in_minor), 0),
+            )
+            .select_from(Settlement)
+            .join(Group, Group.id == Settlement.group_id)
+            .where(
+                Settlement.from_user_id == user_id,
+                Group.is_direct.is_(False),
+                Group.archived_at.is_(None),
+            )
+            .group_by(Group.currency)
+        )
+        for currency, amount in settlements_paid_rows:
+            totals[currency] += amount
+
+        settlements_received_rows = await self.session.execute(
+            select(
+                Group.currency,
+                func.coalesce(func.sum(Settlement.amount_in_minor), 0),
+            )
+            .select_from(Settlement)
+            .join(Group, Group.id == Settlement.group_id)
+            .where(
+                Settlement.to_user_id == user_id,
+                Group.is_direct.is_(False),
+                Group.archived_at.is_(None),
+            )
+            .group_by(Group.currency)
+        )
+        for currency, amount in settlements_received_rows:
+            totals[currency] -= amount
+
+        # A currency only appears here if the user has at least one expense,
+        # share, or settlement row in it — a currency the user is exactly
+        # settled up in still reports (net 0, status "settled_up"); a
+        # currency the user has never touched is omitted entirely.
+        return tuple(
+            OverallBalance(currency=currency, net_amount_in_minor=amount)
+            for currency, amount in sorted(totals.items())
         )

@@ -23,12 +23,14 @@ class GroupRepository:
         created_by: uuid.UUID,
         description: str | None = None,
         currency: str = "TRY",
+        is_direct: bool = False,
     ) -> Group:
         group = Group(
             name=name,
             description=description,
             currency=currency.upper(),
             created_by=created_by,
+            is_direct=is_direct,
         )
         group.members.append(
             GroupMember(
