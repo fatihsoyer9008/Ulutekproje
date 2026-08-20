@@ -18,6 +18,14 @@ abstract interface class CategorizedSyncException implements Exception {
   SyncErrorCategory get category;
 }
 
+SyncErrorCategory _categorizeHttpStatus(int? statusCode) {
+  if (statusCode == 408) return SyncErrorCategory.timeout;
+  if (statusCode == 429 || (statusCode != null && statusCode >= 500)) {
+    return SyncErrorCategory.serverUnavailable;
+  }
+  return SyncErrorCategory.permanentFailure;
+}
+
 SyncErrorCategory categorizeSyncError(Object error) {
   if (error is CategorizedSyncException) return error.category;
   if (error is FormatException) return SyncErrorCategory.invalidPayload;
@@ -35,16 +43,11 @@ SyncErrorCategory categorizeSyncError(Object error) {
       case DioExceptionType.connectionError:
         return SyncErrorCategory.networkUnavailable;
       case DioExceptionType.badResponse:
-        final statusCode = error.response?.statusCode;
-        if (statusCode == 408) return SyncErrorCategory.timeout;
-        if (statusCode == 429 || (statusCode != null && statusCode >= 500)) {
-          return SyncErrorCategory.serverUnavailable;
-        }
-        return SyncErrorCategory.permanentFailure;
+        return _categorizeHttpStatus(error.response?.statusCode);
       case DioExceptionType.unknown:
         return error.response == null
             ? SyncErrorCategory.networkUnavailable
-            : SyncErrorCategory.serverUnavailable;
+            : _categorizeHttpStatus(error.response?.statusCode);
       case DioExceptionType.badCertificate:
       case DioExceptionType.cancel:
         return SyncErrorCategory.permanentFailure;
