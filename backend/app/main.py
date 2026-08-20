@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.routers.activity import router as activity_router
 from app.api.routers.assistant import router as assistant_router
 from app.api.routers.auth import router as auth_router
+from app.api.routers.friends import router as friends_router
 from app.api.routers.group_invitations import router as group_invitations_router
 from app.api.routers.groups import router as groups_router
 from app.api.routers.me import router as me_router
@@ -156,6 +157,7 @@ if settings.cors_origins:
 app.include_router(activity_router)
 app.include_router(assistant_router)
 app.include_router(auth_router)
+app.include_router(friends_router)
 app.include_router(groups_router)
 app.include_router(group_invitations_router)
 app.include_router(me_router)
