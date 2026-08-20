@@ -578,7 +578,12 @@ class _NavigationAuthRepository implements AuthRepositoryBase {
   Future<AuthUser> login({
     required String email,
     required String password,
-  }) async => AuthUser(id: currentUserId, email: email, isEmailVerified: true);
+  }) async => AuthUser(
+    id: currentUserId,
+    email: email,
+    isEmailVerified: true,
+    avatarId: 'woman',
+  );
 
   @override
   Future<AuthUser> signInWithGoogle() =>
