@@ -38,6 +38,8 @@ typedef GroupItemizedSplitSubmit =
       String idempotencyKey,
     );
 
+enum GroupReceiptSource { camera, gallery }
+
 class GroupOcrPage extends ConsumerStatefulWidget {
   const GroupOcrPage({
     super.key,
@@ -47,6 +49,7 @@ class GroupOcrPage extends ConsumerStatefulWidget {
     this.scanReceipt,
     this.pickGalleryReceipt,
     this.parseReceipt,
+    this.initialSource,
   });
 
   final GroupDetail group;
@@ -55,6 +58,7 @@ class GroupOcrPage extends ConsumerStatefulWidget {
   final GroupReceiptLauncher? scanReceipt;
   final GroupReceiptLauncher? pickGalleryReceipt;
   final GroupReceiptParser? parseReceipt;
+  final GroupReceiptSource? initialSource;
 
   @override
   ConsumerState<GroupOcrPage> createState() => _GroupOcrPageState();
@@ -70,6 +74,21 @@ class _GroupOcrPageState extends ConsumerState<GroupOcrPage> {
   DateTime? _submissionDate;
   CancelToken? _cancelToken;
   int _flowId = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final source = widget.initialSource;
+    if (source != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final launcher = source == GroupReceiptSource.camera
+            ? widget.scanReceipt ?? _launchReceiptScanner
+            : widget.pickGalleryReceipt ?? _pickGalleryReceipt;
+        _runOcr(launcher);
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -246,10 +265,7 @@ class _GroupOcrPageState extends ConsumerState<GroupOcrPage> {
   }
 
   Future<String?> _launchReceiptScanner(BuildContext context) async {
-    final result = await Navigator.of(context).push<ReceiptScanResult>(
-      MaterialPageRoute(builder: (_) => const ReceiptScannerScreen()),
-    );
-    return result?.rawOcrText;
+    return captureReceiptWithCamera();
   }
 
   Future<String?> _pickGalleryReceipt(BuildContext context) async {

@@ -85,7 +85,8 @@ class GroupsPage extends ConsumerWidget {
           backgroundColor: const Color(0xFF1FB69C),
           foregroundColor: Colors.white,
           extendedPadding: const EdgeInsets.symmetric(horizontal: 28),
-          onPressed: () => _openExpenseEntry(context, groupsAsync.valueOrNull?.groups),
+          onPressed: () =>
+              _openExpenseEntry(context, groupsAsync.valueOrNull?.groups),
           icon: const Icon(Icons.receipt_long_outlined),
           label: const Text(
             'Harcama ekle',
@@ -95,10 +96,8 @@ class GroupsPage extends ConsumerWidget {
         bottomNavigationBar: _GroupsBottomNavigation(
           isDark: isDark,
           lightBackgroundColor: pageBackground,
-          onFriendsPressed: () => _showComingSoonMessage(
-            context,
-            'Arkadaşlar yakında eklenecek.',
-          ),
+          onFriendsPressed: () =>
+              _showComingSoonMessage(context, 'Arkadaşlar yakında eklenecek.'),
           onActivityPressed: () => _showComingSoonMessage(
             context,
             'Aktivite ekranı yakında eklenecek.',
@@ -109,11 +108,14 @@ class GroupsPage extends ConsumerWidget {
     );
   }
 
-  void _showComingSoon(BuildContext context) => ScaffoldMessenger.of(context)
-      .showSnackBar(const SnackBar(content: Text('Arama yakında eklenecek.')));
+  void _showComingSoon(BuildContext context) => ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(const SnackBar(content: Text('Arama yakında eklenecek.')));
 
   void _showComingSoonMessage(BuildContext context, String message) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
 
   void _openExpenseEntry(BuildContext context, List<Group>? groups) {
     if (groups == null || groups.isEmpty) {
@@ -292,9 +294,9 @@ class _GroupsOverview extends ConsumerWidget {
             Expanded(
               child: RichText(
                 text: TextSpan(
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
                   children: [
                     const TextSpan(text: 'Toplam borcunuz '),
                     TextSpan(
@@ -414,7 +416,6 @@ class _GroupCard extends ConsumerWidget {
       ),
     );
   }
-
 }
 
 class _GroupStatus {
@@ -433,8 +434,9 @@ class _GroupStatus {
     }
 
     return debtAsync.when(
-      loading: () => const _GroupStatus('Hesaplanıyor…', null, Color(0xFF69746F)),
-      error: (_, _) => const _GroupStatus('Harcama yok', null, Color(0xFF69746F)),
+      loading: () =>
+          const _GroupStatus('Hesaplanıyor…', null, Color(0xFF69746F)),
+      error: (_, _) => const _GroupStatus('Alınamadı', null, Color(0xFF69746F)),
       data: (summary) {
         final currentBalance = summary.balances.where(
           (balance) => balance.userId == currentUserId,
@@ -482,9 +484,16 @@ class _GroupsEmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 36),
       child: Column(
         children: [
-          const Icon(Icons.group_off_outlined, size: 56, color: Color(0xFF20C5A7)),
+          const Icon(
+            Icons.group_off_outlined,
+            size: 56,
+            color: Color(0xFF20C5A7),
+          ),
           const SizedBox(height: 16),
-          Text('Henüz grubunuz yok', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'Henüz grubunuz yok',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 8),
           Text(
             'Ortak harcamalarınızı yönetmek için yeni bir grup oluşturun.',
@@ -619,7 +628,8 @@ class _GroupVisualPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_GroupVisualPainter oldDelegate) => oldDelegate.index != index;
+  bool shouldRepaint(_GroupVisualPainter oldDelegate) =>
+      oldDelegate.index != index;
 }
 
 class _GroupsErrorState extends StatelessWidget {

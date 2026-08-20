@@ -208,104 +208,102 @@ class _SavingsJourneyScreenState extends ConsumerState<SavingsJourneyScreen>
       appBar: AppBar(
         backgroundColor: isDark ? const Color(0xFF061216) : journeyBackground,
         foregroundColor: isDark ? const Color(0xFFF4FBFA) : AppColors.ink,
-          title: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Kumbara'),
-              SizedBox(height: 2),
-              Text(
-                'Hedefine adım adım',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w400,
-                  color: isDark ? const Color(0xFFB8CED1) : AppColors.muted,
-                ),
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Kumbara'),
+            SizedBox(height: 2),
+            Text(
+              'Hedefine adım adım',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                color: isDark ? const Color(0xFFB8CED1) : AppColors.muted,
               ),
-            ],
-          ),
-          centerTitle: true,
+            ),
+          ],
         ),
-        body: SafeArea(
-          child: Stack(
-            children: [
-              FadeTransition(
-            opacity: reduceMotion
-                ? const AlwaysStoppedAnimation(1)
-                : CurvedAnimation(
-                    parent: _entranceController,
-                    curve: Curves.easeOutCubic,
-                  ),
-            child: SlideTransition(
-              position: reduceMotion
-                  ? const AlwaysStoppedAnimation(Offset.zero)
-                  : Tween<Offset>(
-                      begin: const Offset(0, .035),
-                      end: Offset.zero,
-                    ).animate(
-                      CurvedAnimation(
-                        parent: _entranceController,
-                        curve: Curves.easeOutCubic,
-                      ),
+        centerTitle: true,
+      ),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            FadeTransition(
+              opacity: reduceMotion
+                  ? const AlwaysStoppedAnimation(1)
+                  : CurvedAnimation(
+                      parent: _entranceController,
+                      curve: Curves.easeOutCubic,
                     ),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-                child: Column(
-                  children: [
-                _GoalSummaryCard(
-                  goal: goal,
-                  currentAmountInMinor: goal.currentAmountInMinor,
-                  targetAmountInMinor: goal.targetAmountInMinor,
-                  remainingAmountInMinor: remainingAmountInMinor,
-                  currency: currency,
-                  isDark: isDark,
-                ),
-                const SizedBox(height: 20),
-                _SavingsCapsule(
-                  progress: goal.progress,
-                  jump: _capsuleJump,
-                  coinDrop: _coinController,
-                  isDark: isDark,
-                ),
-                const SizedBox(height: 18),
-                _MilestonePath(
-                  progress: goal.progress,
-                  avatarInitial: avatarInitial,
-                  celebrationId: _levelCelebrationId,
-                ),
-                const SizedBox(height: 28),
-                _JourneyTipCard(isDark: isDark),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: widget.onAddMoney == null
-                        ? null
-                        : _handleAddMoney,
-                    style: isDark
-                        ? FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF78EFE5),
-                            foregroundColor: const Color(0xFF062020),
-                          )
-                        : null,
-                    icon: const Icon(Icons.add_rounded),
-                    label: const Text('Birikim Ekle'),
+              child: SlideTransition(
+                position: reduceMotion
+                    ? const AlwaysStoppedAnimation(Offset.zero)
+                    : Tween<Offset>(
+                        begin: const Offset(0, .035),
+                        end: Offset.zero,
+                      ).animate(
+                        CurvedAnimation(
+                          parent: _entranceController,
+                          curve: Curves.easeOutCubic,
+                        ),
+                      ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                  child: Column(
+                    children: [
+                      _GoalSummaryCard(
+                        goal: goal,
+                        currentAmountInMinor: goal.currentAmountInMinor,
+                        targetAmountInMinor: goal.targetAmountInMinor,
+                        remainingAmountInMinor: remainingAmountInMinor,
+                        currency: currency,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 20),
+                      _SavingsCapsule(
+                        progress: goal.progress,
+                        jump: _capsuleJump,
+                        coinDrop: _coinController,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 18),
+                      _MilestonePath(
+                        progress: goal.progress,
+                        avatarInitial: avatarInitial,
+                        celebrationId: _levelCelebrationId,
+                      ),
+                      const SizedBox(height: 28),
+                      _JourneyTipCard(isDark: isDark),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: widget.onAddMoney == null
+                              ? null
+                              : _handleAddMoney,
+                          style: isDark
+                              ? FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF78EFE5),
+                                  foregroundColor: const Color(0xFF062020),
+                                )
+                              : null,
+                          icon: const Icon(Icons.add_rounded),
+                          label: const Text('Birikim Ekle'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                  ],
-                ),
               ),
+            ),
+            Positioned.fill(
+              child: Center(
+                child: _CenterConfettiBurst(celebrationId: _levelCelebrationId),
               ),
-              ),
-              Positioned.fill(
-                child: Center(
-                  child: _CenterConfettiBurst(
-                    celebrationId: _levelCelebrationId,
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
     );
   }
 }
@@ -323,7 +321,9 @@ class _JourneyTipCard extends StatelessWidget {
         color: isDark ? const Color(0xFF10272D) : AppColors.mintLight,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: (isDark ? const Color(0xFF20D7D2) : journeyAccent).withValues(alpha: .34),
+          color: (isDark ? const Color(0xFF20D7D2) : journeyAccent).withValues(
+            alpha: .34,
+          ),
         ),
       ),
       child: Row(
@@ -379,7 +379,9 @@ class _GoalSummaryCard extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: isDark ? const Color(0xFF20D7D2).withValues(alpha: .65) : AppColors.border,
+          color: isDark
+              ? const Color(0xFF20D7D2).withValues(alpha: .65)
+              : AppColors.border,
         ),
         boxShadow: [
           BoxShadow(
@@ -400,10 +402,8 @@ class _GoalSummaryCard extends StatelessWidget {
                 height: 62,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                    color: goal.color.withValues(alpha: .16),
-                  border: Border.all(
-                    color: goal.color.withValues(alpha: .40),
-                  ),
+                  color: goal.color.withValues(alpha: .16),
+                  border: Border.all(color: goal.color.withValues(alpha: .40)),
                 ),
                 child: Icon(goal.icon, color: goal.color, size: 30),
               ),
@@ -438,7 +438,9 @@ class _GoalSummaryCard extends StatelessWidget {
                 child: Text(
                   '%${(goal.progress * 100).round()}',
                   style: TextStyle(
-                    color: isDark ? const Color(0xFF20D7D2) : AppColors.primaryDark,
+                    color: isDark
+                        ? const Color(0xFF20D7D2)
+                        : AppColors.primaryDark,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -513,7 +515,9 @@ class _SavingsCapsule extends StatelessWidget {
         animation: Listenable.merge([jump, coinDrop]),
         builder: (context, child) {
           final coinAnimationProgress = coinDrop.value;
-          final fallProgress = Curves.easeInCubic.transform(coinAnimationProgress);
+          final fallProgress = Curves.easeInCubic.transform(
+            coinAnimationProgress,
+          );
           final coinTop = -42 + (fallProgress * 115);
 
           final fadeProgress = ((coinAnimationProgress - .78) / .22)
@@ -523,13 +527,14 @@ class _SavingsCapsule extends StatelessWidget {
 
           return RepaintBoundary(
             child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: [
-              Transform.translate(
-                offset: Offset(0, jump.value),
-                child: Semantics(
-                    label: 'Birikim kavanozu, %${(this.progress * 100).round()} dolu',
+              alignment: Alignment.center,
+              clipBehavior: Clip.none,
+              children: [
+                Transform.translate(
+                  offset: Offset(0, jump.value),
+                  child: Semantics(
+                    label:
+                        'Birikim kavanozu, %${(progress * 100).round()} dolu',
                     image: true,
                     child: Image.asset(
                       isDark
@@ -539,50 +544,53 @@ class _SavingsCapsule extends StatelessWidget {
                       fit: BoxFit.contain,
                       filterQuality: FilterQuality.high,
                     ),
+                  ),
                 ),
-              ),
 
-              for (var index = 0; index < 3; index++)
-                _DroppingCoin(progress: coinDrop.value, index: index),
-              if (coinAnimationProgress > 0 && coinAnimationProgress < 1)
-                Positioned(
-                  top: coinTop,
-                  child: Opacity(
-                    opacity: opacity,
-                    child: Transform.rotate(
-                      angle: .12 * (1 - coinAnimationProgress),
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFFFE08A), Color(0xFFFFB300)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                for (var index = 0; index < 3; index++)
+                  _DroppingCoin(progress: coinDrop.value, index: index),
+                if (coinAnimationProgress > 0 && coinAnimationProgress < 1)
+                  Positioned(
+                    top: coinTop,
+                    child: Opacity(
+                      opacity: opacity,
+                      child: Transform.rotate(
+                        angle: .12 * (1 - coinAnimationProgress),
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFFE08A), Color(0xFFFFB300)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            border: Border.all(
+                              color: const Color(0xFFFFF0B8),
+                              width: 2,
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x99FFB300),
+                                blurRadius: 10,
+                              ),
+                            ],
                           ),
-                          border: Border.all(
-                            color: const Color(0xFFFFF0B8),
-                            width: 2,
-                          ),
-                          boxShadow: const [
-                            BoxShadow(color: Color(0x99FFB300), blurRadius: 10),
-                          ],
-                        ),
-                        child: const Text(
-                          '₺',
-                          style: TextStyle(
-                            color: Color(0xFF704500),
-                            fontSize: 21,
-                            fontWeight: FontWeight.w900,
+                          child: const Text(
+                            '₺',
+                            style: TextStyle(
+                              color: Color(0xFF704500),
+                              fontSize: 21,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
             ),
           );
         },
@@ -710,7 +718,10 @@ class _MilestoneRoadPainter extends CustomPainter {
 
     final metrics = path.computeMetrics().toList(growable: false);
     if (metrics.isEmpty || progress <= 0) return;
-    final activePath = metrics.first.extractPath(0, metrics.first.length * progress);
+    final activePath = metrics.first.extractPath(
+      0,
+      metrics.first.length * progress,
+    );
     final active = Paint()
       ..color = activeColor
       ..strokeWidth = 5
@@ -944,14 +955,15 @@ class _CenterConfettiBurstState extends State<_CenterConfettiBurst>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    )..addStatusListener((status) {
-      if (status == AnimationStatus.completed && mounted) {
-        setState(() => _visible = false);
-      }
-    });
+    _controller =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 1100),
+        )..addStatusListener((status) {
+          if (status == AnimationStatus.completed && mounted) {
+            setState(() => _visible = false);
+          }
+        });
   }
 
   @override

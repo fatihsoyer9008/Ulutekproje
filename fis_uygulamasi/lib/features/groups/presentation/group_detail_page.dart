@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/network/request_id.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
@@ -29,20 +33,9 @@ class GroupDetailPage extends ConsumerWidget {
     final groupAsync = ref.watch(groupDetailProvider(groupId));
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Grup Detayı'),
-        leading: BackButton(
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/groups');
-            }
-          },
-        ),
-      ),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: groupAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const _GroupDetailLoadingState(),
         error: (error, _) => _DetailErrorState(
           message: groupUserMessage(
             error,
@@ -56,148 +49,409 @@ class GroupDetailPage extends ConsumerWidget {
   }
 }
 
-class _GroupDetailContent extends ConsumerWidget {
+class _GroupDetailContent extends ConsumerStatefulWidget {
   const _GroupDetailContent({required this.group});
 
   final GroupDetail group;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_GroupDetailContent> createState() =>
+      _GroupDetailContentState();
+}
+
+class _GroupDetailContentState extends ConsumerState<_GroupDetailContent> {
+  late final ScrollController _scrollController;
+  String? _coverImagePath;
+  DateTime? _settleUpDate;
+
+  GroupDetail get group => widget.group;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController(keepScrollOffset: false);
+    unawaited(_loadCoverImage());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final expensesAsync = ref.watch(groupExpensesProvider(group.id));
+    final debtAsync = ref.watch(groupDebtSummaryProvider(group.id));
     final currentUserId = ref.watch(authSessionControllerProvider).user?.id;
     final supportsInvitations = ref.watch(
       groupRepositoryProvider.select(
         (repository) => repository.capabilities.supportsInvitations,
       ),
     );
-    final description = group.description?.trim();
-
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    group.name,
-                    key: const Key('group_detail_name'),
-                    style: Theme.of(context).textTheme.headlineSmall,
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: CustomScrollView(
+            key: const Key('group_detail_scroll_view'),
+            controller: _scrollController,
+            primary: false,
+            slivers: [
+              SliverToBoxAdapter(
+                child: _GroupHeaderSection(
+                  group: group,
+                  coverImagePath: _coverImagePath,
+                  settleUpDate: _settleUpDate,
+                  onSelectSettleUpDate: _selectSettleUpDate,
+                  onBack: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/groups');
+                    }
+                  },
+                  onSettings: () => _showGroupSettingsSheet(
+                    context,
+                    supportsInvitations: supportsInvitations,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${group.memberCount} üye',
-                    key: const Key('group_detail_member_count'),
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                  if (description?.isNotEmpty ?? false) ...[
-                    const SizedBox(height: 8),
-                    Text(description ?? ''),
-                  ],
-                  const SizedBox(height: 12),
-                  _RoleChip(role: group.currentUserRole),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            _SectionTitle(
-              title: 'Masraflar',
-              action: SizedBox(
-                width: 180,
-                child: FilledButton.icon(
-                  key: const Key('add_group_expense_button'),
-                  onPressed: currentUserId == null
-                      ? null
-                      : () => _showExpenseTypeSelector(
-                          context,
-                          ref,
-                          currentUserId,
-                        ),
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text('Yeni Masraf Ekle'),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            _ExpensesSection(
-              expensesAsync: expensesAsync,
-              onRetry: () => ref.invalidate(groupExpensesProvider(group.id)),
-              canMutate: (expense) => _canMutateExpense(expense, currentUserId),
-              onEdit: (expense) =>
-                  _editExpense(context, ref, expense, currentUserId),
-              onDelete: (expense) => _confirmAndDeleteExpense(
-                context,
-                ref,
-                expense,
-                currentUserId,
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            _SectionTitle(title: 'Borç Özeti'),
-            const SizedBox(height: 8),
-            AppCard(
-              child: ListTile(
-                key: const Key('open_debt_summary_button'),
-                leading: const Icon(Icons.account_balance_wallet_outlined),
-                title: const Text('Borç Özetini Görüntüle'),
-                subtitle: const Text('Grup bakiyeleri ve ödeme önerileri'),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: currentUserId == null
-                    ? null
-                    : () => _openDebtSummary(context, ref, currentUserId),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            _SectionTitle(
-              title: 'Üyeler',
-              action: _canManageMembers
-                  ? IconButton(
-                      key: const Key('add_group_member_button'),
-                      tooltip: supportsInvitations
-                          ? 'Üye ekle'
-                          : 'Davet sistemi hazırlanıyor',
-                      onPressed: supportsInvitations
-                          ? () => _showAddMemberSheet(context, ref)
+              SliverPadding(
+                key: const Key('group_detail_content_padding'),
+                padding: const EdgeInsets.fromLTRB(20, 26, 20, 120),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    _BalanceSummary(
+                      debtAsync: debtAsync,
+                      group: group,
+                      currentUserId: currentUserId,
+                    ),
+                    const SizedBox(height: 28),
+                    _ActionButtons(
+                      onSettleUp: currentUserId == null
+                          ? null
+                          : () => _openDebtSummary(context, ref, currentUserId),
+                      onCharts: () =>
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Grup grafikleri yakında.'),
+                            ),
+                          ),
+                      onBalances: currentUserId == null
+                          ? null
+                          : () => _openDebtSummary(context, ref, currentUserId),
+                    ),
+                    const SizedBox(height: 28),
+                    _GroupExpensesList(
+                      expensesAsync: expensesAsync,
+                      currentUserId: currentUserId,
+                      members: group.members,
+                      onRetry: () =>
+                          ref.invalidate(groupExpensesProvider(group.id)),
+                      canMutate: (expense) =>
+                          _canMutateExpense(expense, currentUserId),
+                      onEdit: (expense) =>
+                          _editExpense(context, ref, expense, currentUserId),
+                      onDelete: (expense) => _confirmAndDeleteExpense(
+                        context,
+                        ref,
+                        expense,
+                        currentUserId,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    _SectionTitle(
+                      title: 'Üyeler',
+                      action: _canManageMembers
+                          ? IconButton(
+                              key: const Key('add_group_member_button'),
+                              tooltip: supportsInvitations
+                                  ? 'Üye ekle'
+                                  : 'Davet sistemi hazırlanıyor',
+                              onPressed: supportsInvitations
+                                  ? () => _showAddMemberSheet(context, ref)
+                                  : null,
+                              icon: const Icon(Icons.person_add_alt_1_rounded),
+                            )
                           : null,
-                      icon: const Icon(Icons.person_add_alt_1_rounded),
-                    )
-                  : null,
-            ),
-            if (_canManageMembers && !supportsInvitations) ...[
-              const SizedBox(height: 4),
-              const Row(
-                key: Key('group_invitation_unavailable_message'),
-                children: [
-                  Icon(Icons.info_outline_rounded, size: 18),
-                  SizedBox(width: 8),
-                  Expanded(child: Text('Davet sistemi hazırlanıyor')),
-                ],
+                    ),
+                    if (_canManageMembers && !supportsInvitations) ...[
+                      const SizedBox(height: 4),
+                      const Row(
+                        key: Key('group_invitation_unavailable_message'),
+                        children: [
+                          Icon(Icons.info_outline_rounded, size: 18),
+                          SizedBox(width: 8),
+                          Expanded(child: Text('Davet sistemi hazırlanıyor')),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    _MembersSection(
+                      members: group.members,
+                      currentUserId: currentUserId,
+                      currentUserRole: group.currentUserRole,
+                      onRemoveMember: _canManageMembers
+                          ? (member) =>
+                                _confirmAndRemoveMember(context, ref, member)
+                          : null,
+                    ),
+                  ]),
+                ),
               ),
             ],
-            const SizedBox(height: 8),
-            _MembersSection(
-              members: group.members,
-              currentUserId: currentUserId,
-              currentUserRole: group.currentUserRole,
-              onRemoveMember: _canManageMembers
-                  ? (member) => _confirmAndRemoveMember(context, ref, member)
-                  : null,
-            ),
-          ],
+          ),
         ),
-      ),
+        Positioned(
+          right: 20,
+          bottom: 24 + MediaQuery.paddingOf(context).bottom,
+          child: FilledButton.icon(
+            key: const Key('add_group_expense_button'),
+            onPressed: currentUserId == null
+                ? null
+                : () => _showExpenseTypeSelector(context, ref, currentUserId),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF00A86B),
+              foregroundColor: Colors.white,
+              minimumSize: const Size(172, 58),
+              shape: const StadiumBorder(),
+              elevation: 8,
+            ),
+            icon: const Icon(Icons.receipt_outlined),
+            label: const Text(
+              'Harcama ekle',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   bool _canMutateExpense(GroupExpense expense, String? currentUserId) =>
       currentUserId != null &&
       (expense.createdBy == currentUserId || _canManageMembers);
+
+  Future<void> _selectSettleUpDate() async {
+    final now = DateTime.now();
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: _settleUpDate ?? now,
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 10),
+      helpText: 'Ödeme tarihini seçin',
+      cancelText: 'İptal',
+      confirmText: 'Seç',
+    );
+    if (!mounted || selectedDate == null) return;
+    setState(() => _settleUpDate = selectedDate);
+  }
+
+  String get _coverPreferenceKey => 'group_cover_image_${group.id}';
+
+  Future<void> _loadCoverImage() async {
+    final preferences = await SharedPreferences.getInstance();
+    final path = preferences.getString(_coverPreferenceKey);
+    if (!mounted || path == null) return;
+    if (await File(path).exists()) setState(() => _coverImagePath = path);
+  }
+
+  Future<void> _showGroupSettingsSheet(
+    BuildContext context, {
+    required bool supportsInvitations,
+  }) async {
+    final preferences = await SharedPreferences.getInstance();
+    final notificationsEnabled =
+        preferences.getBool('group_notifications_${group.id}') ?? true;
+    if (!mounted || !context.mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => _GroupSettingsBottomSheet(
+        groupName: group.name,
+        currency: group.currency,
+        isOwner: group.currentUserRole == GroupRole.owner,
+        notificationsEnabled: notificationsEnabled,
+        onEditGroup: () => _showTemporarySettingsMessage(
+          context,
+          'Grup bilgilerini düzenleme yakında eklenecek.',
+        ),
+        onGroupPhoto: () => _showCoverSourceSheet(context),
+        onInviteMember: () {
+          if (_canManageMembers && supportsInvitations) {
+            _showAddMemberSheet(context, ref);
+          } else {
+            _showTemporarySettingsMessage(
+              context,
+              'Bu grupta üye davet etme yetkiniz bulunmuyor.',
+            );
+          }
+        },
+        onNotificationsChanged: (value) =>
+            preferences.setBool('group_notifications_${group.id}', value),
+        onCurrency: () => _showTemporarySettingsMessage(
+          context,
+          'Varsayılan para birimi değiştirme yakında eklenecek.',
+        ),
+        onLeaveGroup: () => _confirmGroupAction(context, deleteGroup: false),
+        onDeleteGroup: () => _confirmGroupAction(context, deleteGroup: true),
+      ),
+    );
+  }
+
+  Future<void> _showCoverSourceSheet(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text('Grup fotoğrafı'),
+              subtitle: Text('Kapak alanında gösterilecek görseli seçin.'),
+            ),
+            ListTile(
+              key: const Key('pick_group_cover_gallery'),
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Galeriden seç'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                unawaited(_pickCoverImage(ImageSource.gallery));
+              },
+            ),
+            ListTile(
+              key: const Key('pick_group_cover_camera'),
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Kamerayla çek'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                unawaited(_pickCoverImage(ImageSource.camera));
+              },
+            ),
+            if (_coverImagePath != null)
+              ListTile(
+                key: const Key('remove_group_cover'),
+                leading: Icon(
+                  Icons.delete_outline,
+                  color: Theme.of(sheetContext).colorScheme.error,
+                ),
+                title: const Text('Kapak fotoğrafını kaldır'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  unawaited(_removeCoverImage());
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showTemporarySettingsMessage(BuildContext context, String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _confirmGroupAction(
+    BuildContext context, {
+    required bool deleteGroup,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: Key(deleteGroup ? 'delete_group_dialog' : 'leave_group_dialog'),
+        title: Text(deleteGroup ? 'Grubu sil' : 'Gruptan ayrıl'),
+        content: Text(
+          deleteGroup
+              ? 'Bu grup ve ilişkili tüm kayıtlar kalıcı olarak silinecek. Devam etmek istiyor musunuz?'
+              : 'Bu gruptan ayrılmak istediğinize emin misiniz?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 48),
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(deleteGroup ? 'Grubu sil' : 'Gruptan ayrıl'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || !context.mounted) return;
+    _showTemporarySettingsMessage(
+      context,
+      deleteGroup
+          ? 'Grup silme işlemi backend bağlantısını bekliyor.'
+          : 'Gruptan ayrılma işlemi backend bağlantısını bekliyor.',
+    );
+  }
+
+  Future<void> _pickCoverImage(ImageSource source) async {
+    try {
+      final selection = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 88,
+        maxWidth: 1600,
+      );
+      if (selection == null) return;
+
+      final documentsDirectory = await getApplicationDocumentsDirectory();
+      final coversDirectory = Directory(
+        '${documentsDirectory.path}${Platform.pathSeparator}group_covers',
+      );
+      await coversDirectory.create(recursive: true);
+      final extensionIndex = selection.path.lastIndexOf('.');
+      final extension = extensionIndex >= 0
+          ? selection.path.substring(extensionIndex)
+          : '.jpg';
+      final destination = File(
+        '${coversDirectory.path}${Platform.pathSeparator}${group.id}$extension',
+      );
+      final previousPath = _coverImagePath;
+      await File(selection.path).copy(destination.path);
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_coverPreferenceKey, destination.path);
+      if (previousPath != null && previousPath != destination.path) {
+        final previousFile = File(previousPath);
+        if (await previousFile.exists()) await previousFile.delete();
+      }
+      if (mounted) setState(() => _coverImagePath = destination.path);
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kapak fotoğrafı eklenemedi: $error')),
+      );
+    }
+  }
+
+  Future<void> _removeCoverImage() async {
+    final path = _coverImagePath;
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.remove(_coverPreferenceKey);
+    if (path != null) {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    }
+    if (mounted) setState(() => _coverImagePath = null);
+  }
 
   Future<void> _editExpense(
     BuildContext context,
@@ -277,6 +531,7 @@ class _GroupDetailContent extends ConsumerWidget {
           ),
           FilledButton(
             key: const Key('confirm_delete_group_expense_button'),
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('Masrafı sil'),
           ),
@@ -326,63 +581,23 @@ class _GroupDetailContent extends ConsumerWidget {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Bölüştürme Türünü Seç',
-                style: Theme.of(sheetContext).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                key: const Key('select_scan_receipt_button'),
-                leading: const Icon(Icons.document_scanner_outlined),
-                title: const Text('Fiş Tara'),
-                subtitle: const Text(
-                  'Kamera veya galeriden fiş bilgilerini otomatik oku.',
-                ),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _openGroupOcr(context);
-                },
-              ),
-              ListTile(
-                key: const Key('select_fast_split_button'),
-                leading: const Icon(Icons.flash_on_outlined),
-                title: const Text('Hızlı Bölüştürme'),
-                subtitle: const Text(
-                  'Tutarı eşit, yüzde veya sabit tutar ile paylaş.',
-                ),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _openFastSplit(context, ref, currentUserId);
-                },
-              ),
-              ListTile(
-                key: const Key('select_itemized_split_button'),
-                leading: const Icon(Icons.receipt_long_outlined),
-                title: const Text('Kalem Bazlı Bölüştürme'),
-                subtitle: const Text('Fişteki ürün kalemlerini üyelere dağıt.'),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Kalem bazlı bölüştürme için önce ürün kalemleri buluta eşitlenmiş bir fiş seçilmelidir.',
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) => _AddExpenseBottomSheet(
+        onCamera: () {
+          Navigator.of(sheetContext).pop();
+          _openGroupOcr(context, source: 'camera');
+        },
+        onGallery: () {
+          Navigator.of(sheetContext).pop();
+          _openGroupOcr(context, source: 'gallery');
+        },
+        onManual: () {
+          Navigator.of(sheetContext).pop();
+          _openFastSplit(context, ref, currentUserId);
+        },
       ),
     );
   }
@@ -448,8 +663,12 @@ class _GroupDetailContent extends ConsumerWidget {
     );
   }
 
-  void _openGroupOcr(BuildContext context) {
-    context.push('/groups/${Uri.encodeComponent(group.id)}/ocr', extra: group);
+  void _openGroupOcr(BuildContext context, {String? source}) {
+    final query = source == null ? '' : '?source=$source';
+    context.push(
+      '/groups/${Uri.encodeComponent(group.id)}/ocr$query',
+      extra: group,
+    );
   }
 
   Future<void> _openDebtSummary(
@@ -556,6 +775,7 @@ class _GroupDetailContent extends ConsumerWidget {
           ),
           FilledButton(
             key: const Key('confirm_remove_member_button'),
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('Üyeyi çıkar'),
           ),
@@ -612,6 +832,783 @@ class _SectionTitle extends StatelessWidget {
       ],
     );
   }
+}
+
+const _orange = Color(0xFFFF5A26);
+const _green = Color(0xFF10B981);
+
+class _GroupSettingsBottomSheet extends StatefulWidget {
+  const _GroupSettingsBottomSheet({
+    required this.groupName,
+    required this.currency,
+    required this.isOwner,
+    required this.notificationsEnabled,
+    required this.onEditGroup,
+    required this.onGroupPhoto,
+    required this.onInviteMember,
+    required this.onNotificationsChanged,
+    required this.onCurrency,
+    required this.onLeaveGroup,
+    required this.onDeleteGroup,
+  });
+
+  final String groupName;
+  final String currency;
+  final bool isOwner;
+  final bool notificationsEnabled;
+  final VoidCallback onEditGroup;
+  final VoidCallback onGroupPhoto;
+  final VoidCallback onInviteMember;
+  final ValueChanged<bool> onNotificationsChanged;
+  final VoidCallback onCurrency;
+  final VoidCallback onLeaveGroup;
+  final VoidCallback onDeleteGroup;
+
+  @override
+  State<_GroupSettingsBottomSheet> createState() =>
+      _GroupSettingsBottomSheetState();
+}
+
+class _GroupSettingsBottomSheetState extends State<_GroupSettingsBottomSheet> {
+  late bool _notificationsEnabled;
+
+  @override
+  void initState() {
+    super.initState();
+    _notificationsEnabled = widget.notificationsEnabled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * .88,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+          children: [
+            Text(
+              'Grup Ayarları',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              widget.groupName,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 20),
+            _SettingsSection(
+              title: 'Grup yönetimi',
+              children: [
+                ListTile(
+                  key: const Key('edit_group_settings'),
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text('Grup bilgilerini düzenle'),
+                  subtitle: const Text('Grup adı ve simgesi'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _closeAndRun(widget.onEditGroup),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  key: const Key('group_photo_settings'),
+                  leading: const Icon(Icons.image_outlined),
+                  title: const Text('Grup fotoğrafı'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _closeAndRun(widget.onGroupPhoto),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  key: const Key('manage_group_members'),
+                  leading: const Icon(Icons.group_add_outlined),
+                  title: const Text('Üyeleri yönet ve davet et'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _closeAndRun(widget.onInviteMember),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _SettingsSection(
+              title: 'Tercihler',
+              children: [
+                SwitchListTile(
+                  key: const Key('group_notifications_switch'),
+                  secondary: const Icon(Icons.notifications_outlined),
+                  title: const Text('Bildirimler'),
+                  subtitle: const Text('Grup masraf bildirimleri'),
+                  value: _notificationsEnabled,
+                  onChanged: (value) {
+                    setState(() => _notificationsEnabled = value);
+                    widget.onNotificationsChanged(value);
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  key: const Key('group_currency_settings'),
+                  leading: const Icon(Icons.currency_exchange_rounded),
+                  title: const Text('Varsayılan para birimi'),
+                  subtitle: Text(_currencyLabel(widget.currency)),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _closeAndRun(widget.onCurrency),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _SettingsSection(
+              title: 'Tehlikeli bölge',
+              titleColor: colors.error,
+              children: [
+                ListTile(
+                  key: const Key('leave_group_settings'),
+                  leading: Icon(Icons.logout_rounded, color: colors.error),
+                  title: Text(
+                    'Gruptan ayrıl',
+                    style: TextStyle(color: colors.error),
+                  ),
+                  onTap: () => _closeAndRun(widget.onLeaveGroup),
+                ),
+                if (widget.isOwner) ...[
+                  const Divider(height: 1),
+                  ListTile(
+                    key: const Key('delete_group_settings'),
+                    leading: Icon(Icons.delete_outline, color: colors.error),
+                    title: Text(
+                      'Grubu sil',
+                      style: TextStyle(color: colors.error),
+                    ),
+                    subtitle: const Text('Grubu kalıcı olarak sonlandırır'),
+                    onTap: () => _closeAndRun(widget.onDeleteGroup),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _closeAndRun(VoidCallback callback) {
+    Navigator.of(context).pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) => callback());
+  }
+
+  String _currencyLabel(String currency) => switch (currency.toUpperCase()) {
+    'TRY' => 'TRY (₺)',
+    'USD' => 'USD (\$)',
+    'EUR' => 'EUR (€)',
+    _ => currency.toUpperCase(),
+  };
+}
+
+class _SettingsSection extends StatelessWidget {
+  const _SettingsSection({
+    required this.title,
+    required this.children,
+    this.titleColor,
+  });
+
+  final String title;
+  final List<Widget> children;
+  final Color? titleColor;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 8),
+        child: Text(
+          title,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: titleColor,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+      Card(
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        child: Column(children: children),
+      ),
+    ],
+  );
+}
+
+class _GroupHeaderSection extends StatelessWidget {
+  const _GroupHeaderSection({
+    required this.group,
+    required this.coverImagePath,
+    required this.settleUpDate,
+    required this.onSelectSettleUpDate,
+    required this.onBack,
+    required this.onSettings,
+  });
+
+  final GroupDetail group;
+  final String? coverImagePath;
+  final DateTime? settleUpDate;
+  final VoidCallback onSelectSettleUpDate;
+  final VoidCallback onBack;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasCover = coverImagePath?.isNotEmpty == true;
+    return SizedBox(
+      height: 258,
+      child: Stack(
+        children: [
+          if (hasCover)
+            Positioned.fill(
+              child: Image.file(
+                File(coverImagePath!),
+                key: const Key('group_cover_image'),
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
+            ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: hasCover
+                      ? const [
+                          Color(0xC90F2B3E),
+                          Color(0xA6143D4C),
+                          Color(0xD9121212),
+                        ]
+                      : const [
+                          Color(0xFF0F2B3E),
+                          Color(0xFF143D4C),
+                          Color(0xFF121212),
+                        ],
+                ),
+              ),
+            ),
+          ),
+          const Positioned.fill(child: _HeaderPattern()),
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _CircleIconButton(
+                        icon: Icons.arrow_back,
+                        tooltip: 'Geri',
+                        onPressed: onBack,
+                      ),
+                      _CircleIconButton(
+                        icon: Icons.settings_outlined,
+                        tooltip: 'Ayarlar',
+                        onPressed: onSettings,
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      _GroupAvatar(
+                        groupName: group.name,
+                        imageUrl: group.imageUrl,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          group.name,
+                          key: const Key('group_detail_name'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 38,
+                            height: 1,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _HeaderChip(
+                          key: const Key('settle_up_date_chip'),
+                          icon: Icons.calendar_today_outlined,
+                          label: settleUpDate == null
+                              ? 'Ödeme tarihi ekle'
+                              : 'Ödeme: ${_formatDate(settleUpDate!)}',
+                          outlined: true,
+                          onTap: onSelectSettleUpDate,
+                        ),
+                        const SizedBox(width: 10),
+                        _HeaderChip(
+                          key: const Key('group_detail_member_count'),
+                          icon: Icons.people_outline,
+                          label: '${group.memberCount} kişi',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupAvatar extends StatelessWidget {
+  const _GroupAvatar({required this.groupName, required this.imageUrl});
+
+  final String groupName;
+  final String? imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = _groupIconForName(groupName);
+    final initial = groupName.trim().isEmpty
+        ? '?'
+        : groupName.trim().characters.first.toUpperCase();
+
+    return Container(
+      key: const Key('group_detail_avatar'),
+      width: 58,
+      height: 58,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1FB69C).withValues(alpha: .24),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: .24)),
+      ),
+      alignment: Alignment.center,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(17),
+        child: imageUrl?.trim().isNotEmpty == true
+            ? Image.network(
+                imageUrl!,
+                width: 58,
+                height: 58,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) =>
+                    _GroupAvatarFallback(icon: icon, initial: initial),
+              )
+            : _GroupAvatarFallback(icon: icon, initial: initial),
+      ),
+    );
+  }
+}
+
+class _GroupAvatarFallback extends StatelessWidget {
+  const _GroupAvatarFallback({required this.icon, required this.initial});
+
+  final IconData? icon;
+  final String initial;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: icon != null
+        ? Icon(icon, color: Colors.white, size: 31)
+        : Text(
+            initial,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 25,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+  );
+}
+
+IconData? _groupIconForName(String name) {
+  final normalized = name.toLowerCase();
+  if (normalized.contains('ev') || normalized.contains('bursa')) {
+    return Icons.home_rounded;
+  }
+  if (normalized.contains('gezi') || normalized.contains('tatil')) {
+    return Icons.flight_rounded;
+  }
+  if (normalized.contains('yemek') || normalized.contains('restoran')) {
+    return Icons.restaurant_rounded;
+  }
+  return null;
+}
+
+class _HeaderPattern extends StatelessWidget {
+  const _HeaderPattern();
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(painter: _HousePatternPainter());
+}
+
+class _HousePatternPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white.withValues(alpha: 0.045);
+    final path = Path()
+      ..moveTo(size.width * .08, size.height * .34)
+      ..lineTo(size.width * .42, 0)
+      ..lineTo(size.width * .78, size.height * .30)
+      ..lineTo(size.width * .67, size.height * .30)
+      ..lineTo(size.width * .67, size.height)
+      ..lineTo(size.width * .22, size.height)
+      ..lineTo(size.width * .22, size.height * .30)
+      ..close();
+    canvas.drawPath(path, paint);
+    canvas.drawRect(
+      Rect.fromLTWH(
+        size.width * .38,
+        size.height * .55,
+        size.width * .18,
+        size.height * .45,
+      ),
+      Paint()..color = Colors.black.withValues(alpha: .08),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _CircleIconButton extends StatelessWidget {
+  const _CircleIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.black.withValues(alpha: .55),
+    shape: const CircleBorder(),
+    child: IconButton(
+      icon: Icon(icon, color: Colors.white),
+      tooltip: tooltip,
+      onPressed: onPressed,
+    ),
+  );
+}
+
+class _HeaderChip extends StatelessWidget {
+  const _HeaderChip({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.outlined = false,
+    this.onTap,
+  });
+  final IconData icon;
+  final String label;
+  final bool outlined;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.black.withValues(alpha: .38),
+    shape: StadiumBorder(
+      side: outlined
+          ? const BorderSide(color: _green, width: 1.2)
+          : BorderSide.none,
+    ),
+    child: InkWell(
+      customBorder: const StadiumBorder(),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white, size: 21),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _BalanceSummary extends StatelessWidget {
+  const _BalanceSummary({
+    required this.debtAsync,
+    required this.group,
+    required this.currentUserId,
+  });
+  final AsyncValue<DebtSummary> debtAsync;
+  final GroupDetail group;
+  final String? currentUserId;
+
+  @override
+  Widget build(BuildContext context) => debtAsync.maybeWhen(
+    data: (summary) {
+      final balance = summary.balances
+          .where((item) => item.userId == currentUserId)
+          .firstOrNull;
+      final amount = balance?.netAmountInMinor ?? 0;
+      final isDirectBalance = group.members.length == 2;
+      final other =
+          group.members
+              .where((member) => member.userId != currentUserId)
+              .firstOrNull
+              ?.displayName ??
+          'grup üyesi';
+      final owes = amount < 0;
+      return Text.rich(
+        TextSpan(
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+          children: [
+            TextSpan(
+              text: amount == 0
+                  ? 'Tüm hesaplar kapalı'
+                  : owes
+                  ? isDirectBalance
+                        ? "$other'ye borcunuz: "
+                        : 'Gruba borcunuz: '
+                  : isDirectBalance
+                  ? "$other'den alacağınız: "
+                  : 'Gruptan alacağınız: ',
+            ),
+            if (amount != 0)
+              TextSpan(
+                text: _formatTl(amount.abs()),
+                style: TextStyle(
+                  color: owes ? _orange : _green,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+          ],
+        ),
+      );
+    },
+    orElse: () => const SizedBox(height: 24),
+  );
+}
+
+class _ActionButtons extends StatelessWidget {
+  const _ActionButtons({
+    required this.onSettleUp,
+    required this.onCharts,
+    required this.onBalances,
+  });
+  final VoidCallback? onSettleUp;
+  final VoidCallback onCharts;
+  final VoidCallback? onBalances;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: Row(
+      children: [
+        FilledButton(
+          onPressed: onSettleUp,
+          style: FilledButton.styleFrom(
+            backgroundColor: _orange,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(0, 48),
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+          ),
+          child: const Text('Ödeme yap'),
+        ),
+        const SizedBox(width: 12),
+        OutlinedButton.icon(
+          onPressed: onCharts,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 48),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+          ),
+          icon: const Icon(Icons.diamond, color: Color(0xFF9B5DE5)),
+          label: const Text('Grafikler'),
+        ),
+        const SizedBox(width: 12),
+        OutlinedButton(
+          key: const Key('open_debt_summary_button'),
+          onPressed: onBalances,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 48),
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+          ),
+          child: const Text('Bakiyeler'),
+        ),
+      ],
+    ),
+  );
+}
+
+class _GroupDetailLoadingState extends StatelessWidget {
+  const _GroupDetailLoadingState();
+  @override
+  Widget build(BuildContext context) => const SafeArea(
+    key: Key('group_detail_loading'),
+    child: Padding(
+      padding: EdgeInsets.all(20),
+      child: Column(
+        children: [
+          _ShimmerBlock(height: 210),
+          SizedBox(height: 24),
+          _ShimmerBlock(height: 26),
+          SizedBox(height: 28),
+          _ShimmerBlock(height: 68),
+          SizedBox(height: 14),
+          _ShimmerBlock(height: 68),
+        ],
+      ),
+    ),
+  );
+}
+
+class _ShimmerBlock extends StatelessWidget {
+  const _ShimmerBlock({required this.height});
+  final double height;
+  @override
+  Widget build(BuildContext context) => Container(
+    height: height,
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(18),
+    ),
+  );
+}
+
+String _formatTl(int amountInMinor) => amountInMinor.toTLDisplay;
+
+String _formatDate(DateTime date) =>
+    '${date.day.toString().padLeft(2, '0')}.'
+    '${date.month.toString().padLeft(2, '0')}.${date.year}';
+
+class _AddExpenseBottomSheet extends StatelessWidget {
+  const _AddExpenseBottomSheet({
+    required this.onCamera,
+    required this.onGallery,
+    required this.onManual,
+  });
+  final VoidCallback onCamera;
+  final VoidCallback onGallery;
+  final VoidCallback onManual;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Bölüştürme Türünü Seç',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Masrafı nasıl eklemek istediğinizi seçin.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 18),
+          _AddExpenseOption(
+            key: const Key('select_scan_receipt_button'),
+            icon: Icons.camera_alt_outlined,
+            title: 'Fiş Tara',
+            subtitle: 'Kamerayla çekin ve otomatik okutun',
+            onTap: onCamera,
+          ),
+          const SizedBox(height: 10),
+          _AddExpenseOption(
+            key: const Key('select_gallery_receipt_button'),
+            icon: Icons.photo_library_outlined,
+            title: 'Galeriden Seç',
+            subtitle: 'Cihazınızdaki bir fişi okutun',
+            onTap: onGallery,
+          ),
+          const SizedBox(height: 10),
+          _AddExpenseOption(
+            key: const Key('select_fast_split_button'),
+            icon: Icons.edit_outlined,
+            title: 'Manuel Ekle',
+            subtitle: 'Masraf bilgilerini kendiniz girin',
+            onTap: onManual,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _AddExpenseOption extends StatelessWidget {
+  const _AddExpenseOption({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Theme.of(context).colorScheme.surfaceContainer,
+    borderRadius: BorderRadius.circular(16),
+    child: ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: _green.withValues(alpha: .14),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: _green),
+      ),
+      title: Text(title, style: Theme.of(context).textTheme.titleMedium),
+      subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+      trailing: Icon(
+        Icons.chevron_right,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+      onTap: onTap,
+    ),
+  );
 }
 
 enum _ExpenseAction { edit, delete }
@@ -713,6 +1710,9 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
                   const SizedBox(width: 8),
                   FilledButton(
                     key: const Key('save_group_expense_update_button'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                    ),
                     onPressed: () {
                       if (!_formKey.currentState!.validate()) return;
                       Navigator.of(context).pop(
@@ -743,9 +1743,11 @@ String _expenseMutationMessage(Object error) {
   );
 }
 
-class _ExpensesSection extends StatelessWidget {
-  const _ExpensesSection({
+class _GroupExpensesList extends StatelessWidget {
+  const _GroupExpensesList({
     required this.expensesAsync,
+    required this.currentUserId,
+    required this.members,
     required this.onRetry,
     required this.canMutate,
     required this.onEdit,
@@ -753,6 +1755,8 @@ class _ExpensesSection extends StatelessWidget {
   });
 
   final AsyncValue<List<GroupExpense>> expensesAsync;
+  final String? currentUserId;
+  final List<GroupMember> members;
   final VoidCallback onRetry;
   final bool Function(GroupExpense expense) canMutate;
   final Future<void> Function(GroupExpense expense) onEdit;
@@ -760,13 +1764,14 @@ class _ExpensesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return expensesAsync.when(
-      loading: () => const AppCard(
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: CircularProgressIndicator(),
-          ),
-        ),
+      loading: () => const Column(
+        children: [
+          _ShimmerBlock(height: 72),
+          SizedBox(height: 12),
+          _ShimmerBlock(height: 72),
+          SizedBox(height: 12),
+          _ShimmerBlock(height: 72),
+        ],
       ),
       error: (error, _) => AppCard(
         child: ListTile(
@@ -788,78 +1793,322 @@ class _ExpensesSection extends StatelessWidget {
       ),
       data: (expenses) {
         if (expenses.isEmpty) {
-          return const AppCard(
-            child: ListTile(
-              leading: Icon(Icons.receipt_long_outlined),
-              title: Text('Henüz masraf yok'),
-              subtitle: Text('İlk ortak masrafı ekleyebilirsiniz.'),
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 36),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.receipt_long_outlined,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  size: 44,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Henüz masraf yok',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'İlk ortak masrafı ekleyebilirsiniz.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
             ),
           );
         }
-
-        return AppCard(
-          child: Column(
-            children: [
-              for (var index = 0; index < expenses.length; index++) ...[
-                ListTile(
-                  key: Key('group_expense_${expenses[index].id}'),
-                  leading: const Icon(Icons.receipt_long_outlined),
-                  title: Text(expenses[index].title),
-                  subtitle: Text(expenses[index].expenseDate),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '₺${formatMinorAsTurkishLira(expenses[index].totalAmountInMinor)}',
-                      ),
-                      if (canMutate(expenses[index]))
-                        PopupMenuButton<_ExpenseAction>(
-                          key: Key(
-                            'group_expense_actions_${expenses[index].id}',
-                          ),
-                          tooltip: 'Masraf işlemleri',
-                          onSelected: (action) {
-                            switch (action) {
-                              case _ExpenseAction.edit:
-                                unawaited(onEdit(expenses[index]));
-                                break;
-                              case _ExpenseAction.delete:
-                                unawaited(onDelete(expenses[index]));
-                                break;
-                            }
-                          },
-                          itemBuilder: (_) => [
-                            PopupMenuItem<_ExpenseAction>(
-                              key: Key(
-                                'edit_group_expense_${expenses[index].id}',
-                              ),
-                              value: _ExpenseAction.edit,
-                              child: const Text('Düzenle'),
-                            ),
-                            PopupMenuItem<_ExpenseAction>(
-                              key: Key(
-                                'delete_group_expense_${expenses[index].id}',
-                              ),
-                              value: _ExpenseAction.delete,
-                              enabled: !expenses[index].isFinanciallyLocked,
-                              child: Text(
-                                expenses[index].isFinanciallyLocked
-                                    ? 'Sil (finansal olarak kilitli)'
-                                    : 'Sil',
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
-                if (index < expenses.length - 1) const Divider(height: 1),
-              ],
-            ],
-          ),
+        final sorted = [...expenses]
+          ..sort(
+            (a, b) => DateTime.parse(
+              b.expenseDate,
+            ).compareTo(DateTime.parse(a.expenseDate)),
+          );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: _buildExpenseWidgets(context, sorted),
         );
       },
     );
+  }
+
+  String _monthKey(GroupExpense expense) {
+    final date = DateTime.parse(expense.expenseDate).toLocal();
+    return '${date.year}-${date.month}';
+  }
+
+  String _monthLabel(GroupExpense expense) {
+    final date = DateTime.parse(expense.expenseDate).toLocal();
+    return '${_months[date.month - 1]} ${date.year}';
+  }
+
+  List<Widget> _buildExpenseWidgets(
+    BuildContext context,
+    List<GroupExpense> expenses,
+  ) {
+    final widgets = <Widget>[];
+    String? previousMonth;
+    for (final expense in expenses) {
+      final month = _monthKey(expense);
+      if (month != previousMonth) {
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 10),
+            child: Text(
+              _monthLabel(expense),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        );
+        previousMonth = month;
+      }
+      widgets
+        ..add(
+          _ExpenseListItem(
+            expense: expense,
+            currentUserId: currentUserId,
+            members: members,
+            canMutate: canMutate(expense),
+            onEdit: () => unawaited(onEdit(expense)),
+            onDelete: () => unawaited(onDelete(expense)),
+          ),
+        )
+        ..add(const SizedBox(height: 8));
+    }
+    return widgets;
+  }
+}
+
+const _months = <String>[
+  'Ocak',
+  'Şubat',
+  'Mart',
+  'Nisan',
+  'Mayıs',
+  'Haziran',
+  'Temmuz',
+  'Ağustos',
+  'Eylül',
+  'Ekim',
+  'Kasım',
+  'Aralık',
+];
+const _shortMonths = <String>[
+  'Oca',
+  'Şub',
+  'Mar',
+  'Nis',
+  'May',
+  'Haz',
+  'Tem',
+  'Ağu',
+  'Eyl',
+  'Eki',
+  'Kas',
+  'Ara',
+];
+
+class _ExpenseListItem extends StatelessWidget {
+  const _ExpenseListItem({
+    required this.expense,
+    required this.currentUserId,
+    required this.members,
+    required this.canMutate,
+    required this.onEdit,
+    required this.onDelete,
+  });
+  final GroupExpense expense;
+  final String? currentUserId;
+  final List<GroupMember> members;
+  final bool canMutate;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final date = DateTime.parse(expense.expenseDate).toLocal();
+    final payer = members
+        .where((member) => member.userId == expense.payerUserId)
+        .firstOrNull;
+    final userShare = expense.shares
+        .where((share) => share.userId == currentUserId)
+        .firstOrNull;
+    final userPaid = expense.payerUserId == currentUserId;
+    final isLent = userPaid;
+    final balanceAmount = isLent
+        ? expense.totalAmountInMinor - (userShare?.amountInMinor ?? 0)
+        : userShare?.amountInMinor ?? 0;
+    final isSettled = balanceAmount == 0;
+    final balanceColor = isSettled
+        ? Theme.of(context).colorScheme.onSurfaceVariant
+        : isLent
+        ? _green
+        : _orange;
+
+    return Material(
+      key: Key('group_expense_${expense.id}'),
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onLongPress: canMutate ? () => _showActions(context) : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 45,
+                child: Column(
+                  children: [
+                    Text(
+                      _shortMonths[date.month - 1],
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      date.day.toString().padLeft(2, '0'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 52,
+                height: 58,
+                margin: const EdgeInsets.only(right: 14),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.receipt_long_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 32,
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      expense.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleMedium?.copyWith(fontSize: 18),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${userPaid ? 'Siz' : payer?.displayName ?? 'Üye'} ödedi: ${_formatTl(expense.totalAmountInMinor)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    isSettled
+                        ? 'hesap kapalı'
+                        : isLent
+                        ? 'alacağınız'
+                        : 'borcunuz',
+                    style: TextStyle(
+                      color: isSettled
+                          ? Theme.of(context).colorScheme.onSurfaceVariant
+                          : isLent
+                          ? const Color(0xFF9FE3CE)
+                          : const Color(0xFFE88B6B),
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatTl(balanceAmount),
+                    style: TextStyle(
+                      color: balanceColor,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              if (canMutate)
+                PopupMenuButton<_ExpenseAction>(
+                  key: Key('group_expense_actions_${expense.id}'),
+                  padding: EdgeInsets.zero,
+                  iconSize: 18,
+                  color: Theme.of(context).colorScheme.surfaceContainer,
+                  onSelected: (action) =>
+                      action == _ExpenseAction.edit ? onEdit() : onDelete(),
+                  itemBuilder: (_) => _actionItems,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<PopupMenuEntry<_ExpenseAction>> get _actionItems => [
+    PopupMenuItem(
+      key: Key('edit_group_expense_${expense.id}'),
+      value: _ExpenseAction.edit,
+      child: const Text('Düzenle'),
+    ),
+    PopupMenuItem(
+      key: Key('delete_group_expense_${expense.id}'),
+      value: _ExpenseAction.delete,
+      enabled: !expense.isFinanciallyLocked,
+      child: Text(
+        expense.isFinanciallyLocked ? 'Sil (finansal olarak kilitli)' : 'Sil',
+      ),
+    ),
+  ];
+
+  Future<void> _showActions(BuildContext context) async {
+    final action = await showModalBottomSheet<_ExpenseAction>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Düzenle'),
+              onTap: () => Navigator.pop(context, _ExpenseAction.edit),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: Text(
+                expense.isFinanciallyLocked
+                    ? 'Sil (finansal olarak kilitli)'
+                    : 'Sil',
+              ),
+              enabled: !expense.isFinanciallyLocked,
+              onTap: expense.isFinanciallyLocked
+                  ? null
+                  : () => Navigator.pop(context, _ExpenseAction.delete),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == _ExpenseAction.edit) onEdit();
+    if (action == _ExpenseAction.delete) onDelete();
   }
 }
 
@@ -1039,7 +2288,7 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
                     ),
                     DropdownMenuItem(
                       value: GroupRole.admin,
-                      child: Text('Admin'),
+                      child: Text('Yönetici'),
                     ),
                   ],
                   onChanged: _submitting
@@ -1118,8 +2367,8 @@ class _RoleChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = switch (role) {
-      GroupRole.owner => 'Owner',
-      GroupRole.admin => 'Admin',
+      GroupRole.owner => 'Sahip',
+      GroupRole.admin => 'Yönetici',
       GroupRole.member => 'Üye',
     };
 

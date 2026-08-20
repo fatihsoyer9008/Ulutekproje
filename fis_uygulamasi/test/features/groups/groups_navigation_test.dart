@@ -51,7 +51,7 @@ void main() {
     final controller = AuthSessionController(_NavigationAuthRepository());
     await controller.login('user@example.com', 'password');
 
-    await _pumpApp(tester, controller);
+    await _pumpApp(tester, controller, scanReceipt: (_) async => null);
     await _openGroupsFromDrawer(tester);
     await tester.tap(find.text('Ev Arkadaşları'));
     await tester.pumpAndSettle();
@@ -94,8 +94,6 @@ void main() {
         ),
       );
       await _openGroupOcr(tester);
-      await tester.tap(find.byKey(const Key('group_ocr_camera_button')));
-      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('share_with_group_button')));
       await tester.pumpAndSettle();
       expect(find.byType(FastSplitPage), findsOneWidget);
@@ -156,8 +154,6 @@ void main() {
         ),
       );
       await _openGroupOcr(tester);
-      await tester.tap(find.byKey(const Key('group_ocr_camera_button')));
-      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('share_with_group_button')));
       await tester.pumpAndSettle();
       expect(find.byType(ItemizedSplitPage), findsOneWidget);
@@ -320,7 +316,9 @@ void main() {
       // (no /home beneath it), so the screen must offer its own way out
       // instead of leaving the user stuck.
       expect(find.byType(GroupsPage), findsOneWidget);
-      await tester.tap(find.byType(BackButton));
+      await tester.tap(
+        find.widgetWithIcon(IconButton, Icons.arrow_back_rounded),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byType(GroupsPage), findsNothing);
