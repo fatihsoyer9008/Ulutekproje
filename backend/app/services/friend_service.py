@@ -19,12 +19,17 @@ class FriendService:
         self.user_repository = UserRepository(session)
 
     async def list_friends(self, actor_user_id: uuid.UUID) -> list[FriendEntry]:
+        direct_groups = await self.group_repository.list_direct_for_user(
+            actor_user_id, include_archived=False
+        )
+        if not direct_groups:
+            return []
+
+        # ``list_for_user`` only returns non-direct groups; it is used below
+        # purely to find normal groups shared with a given friend.
         groups = await self.group_repository.list_for_user(
             actor_user_id, include_archived=False
         )
-        direct_groups = [group for group in groups if group.is_direct]
-        if not direct_groups:
-            return []
 
         counterpart_by_direct_group: dict[uuid.UUID, uuid.UUID] = {}
         for group in direct_groups:

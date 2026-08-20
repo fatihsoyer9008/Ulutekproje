@@ -82,6 +82,34 @@ class GroupRepository:
             statement = statement.where(Group.archived_at.is_(None))
         return list((await self.session.scalars(statement)).all())
 
+    async def list_direct_for_user(
+        self,
+        user_id: uuid.UUID,
+        *,
+        include_archived: bool = False,
+    ) -> list[Group]:
+        """Active is_direct=true groups for a user.
+
+        Kept separate from ``list_for_user`` (which excludes direct groups
+        for the regular groups list) so the Friends feature does not depend
+        on that method continuing to include them.
+        """
+        statement = (
+            select(Group)
+            .join(GroupMember)
+            .where(
+                GroupMember.user_id == user_id,
+                GroupMember.left_at.is_(None),
+                Group.is_direct.is_(True),
+            )
+            .options(selectinload(Group.members).selectinload(GroupMember.user))
+            .order_by(Group.created_at, Group.id)
+            .execution_options(populate_existing=True)
+        )
+        if not include_archived:
+            statement = statement.where(Group.archived_at.is_(None))
+        return list((await self.session.scalars(statement)).all())
+
     async def get_direct_group(
         self,
         user_a_id: uuid.UUID,
