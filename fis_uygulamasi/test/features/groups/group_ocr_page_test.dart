@@ -16,6 +16,23 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../fixtures/group_fixtures.dart';
 
 void main() {
+  testWidgets('seçilen başlangıç kaynağını otomatik olarak açar', (
+    tester,
+  ) async {
+    var cameraCalls = 0;
+    await _pumpPage(
+      tester,
+      initialSource: GroupReceiptSource.camera,
+      scanReceipt: (_) async {
+        cameraCalls++;
+        return null;
+      },
+    );
+
+    expect(cameraCalls, 1);
+    expect(find.text('Fiş tarama işlemi iptal edildi.'), findsOneWidget);
+  });
+
   testWidgets('grup adı ile kamera ve galeri seçeneklerini gösterir', (
     tester,
   ) async {
@@ -411,6 +428,7 @@ Future<void> _pumpPage(
   GroupFastSplitSubmit? onFastSplitSubmit,
   GroupItemizedSplitSubmit? onItemizedSplitSubmit,
   ThemeMode themeMode = ThemeMode.light,
+  GroupReceiptSource? initialSource,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -423,6 +441,7 @@ Future<void> _pumpPage(
         themeMode: themeMode,
         home: GroupOcrPage(
           group: group,
+          initialSource: initialSource,
           scanReceipt: scanReceipt,
           pickGalleryReceipt: pickGalleryReceipt,
           parseReceipt: parseReceipt,

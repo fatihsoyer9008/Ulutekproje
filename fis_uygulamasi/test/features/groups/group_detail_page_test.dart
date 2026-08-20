@@ -5,13 +5,17 @@ import 'package:app_main/features/groups/data/fake_group_repository.dart';
 import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:app_main/features/groups/presentation/group_detail_page.dart';
+import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../fixtures/group_fixtures.dart';
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
+
   testWidgets('grup detayı başlık, masraflar ve üyeleri gösterir', (
     tester,
   ) async {
@@ -26,10 +30,31 @@ void main() {
     );
 
     expect(find.byKey(const Key('group_detail_name')), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const Key('group_detail_scroll_view'))).height,
+      greaterThan(0),
+    );
+    final groupNameRect = tester.getRect(
+      find.byKey(const Key('group_detail_name')),
+    );
+    expect(groupNameRect.bottom, greaterThan(0));
+    expect(groupNameRect.top, lessThan(tester.view.physicalSize.height));
     expect(find.text('Ev Arkadaşları'), findsOneWidget);
-    expect(find.text('2 üye'), findsOneWidget);
-    expect(find.text('Masraflar'), findsOneWidget);
-    expect(find.text('Borç Özeti'), findsOneWidget);
+    expect(find.byKey(const Key('group_detail_avatar')), findsOneWidget);
+    expect(find.text('2 kişi'), findsOneWidget);
+    expect(find.text('Ödeme tarihi ekle'), findsOneWidget);
+    expect(find.text('Ödeme yap'), findsOneWidget);
+    expect(find.text('Grafikler'), findsOneWidget);
+    expect(find.text('Bakiyeler'), findsOneWidget);
+    expect(find.text('Harcama ekle'), findsOneWidget);
+    expect(find.text('Borç Özetini Görüntüle'), findsNothing);
+    final contentPadding = tester.widget<SliverPadding>(
+      find.byKey(const Key('group_detail_content_padding')),
+    );
+    expect(
+      (contentPadding.padding as EdgeInsets).bottom,
+      greaterThanOrEqualTo(96),
+    );
 
     expect(find.text('Aylık market alışverişi'), findsOneWidget);
     await tester.scrollUntilVisible(
@@ -39,10 +64,89 @@ void main() {
     );
 
     expect(find.text('Üyeler'), findsOneWidget);
-    expect(find.text('Zafer Tuna'), findsOneWidget);
-    expect(find.text('Abdullah Seydi'), findsOneWidget);
-    expect(find.byKey(const Key('group_role_owner')), findsWidgets);
-    expect(find.byKey(const Key('group_role_member')), findsWidgets);
+    expect(find.text('Zafer Tuna', skipOffstage: false), findsOneWidget);
+    expect(find.text('Abdullah Seydi', skipOffstage: false), findsOneWidget);
+    expect(
+      find.byKey(const Key('group_role_owner'), skipOffstage: false),
+      findsWidgets,
+    );
+    expect(
+      find.byKey(const Key('group_role_member'), skipOffstage: false),
+      findsWidgets,
+    );
+  });
+
+  testWidgets('iki kişilik grupta bakiye karşı üyenin adıyla gösterilir', (
+    tester,
+  ) async {
+    await _pumpDetailPage(
+      tester,
+      repository: FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+        debtSummariesByGroup: const <String, DebtSummary>{
+          twoMemberGroupId: currentUserDebtorDebtSummary,
+        },
+      ),
+    );
+
+    expect(find.textContaining("Abdullah Seydi'ye borcunuz:"), findsOneWidget);
+    expect(find.textContaining('₺ 62.50'), findsOneWidget);
+  });
+
+  testWidgets('çok üyeli grupta kişi adı yerine grup net bakiyesi gösterilir', (
+    tester,
+  ) async {
+    const summary = DebtSummary(
+      groupId: fourMemberGroupId,
+      currency: 'TRY',
+      balances: <DebtBalance>[
+        DebtBalance(
+          userId: currentUserId,
+          displayName: 'Zafer Tuna',
+          netAmountInMinor: 18750,
+        ),
+      ],
+      suggestedTransfers: <DebtTransfer>[],
+      generatedAt: '2026-08-20T12:00:00Z',
+    );
+    await _pumpDetailPage(
+      tester,
+      groupId: fourMemberGroupId,
+      repository: FakeGroupRepository(
+        groups: const <GroupDetail>[fourMemberGroup],
+        debtSummariesByGroup: const <String, DebtSummary>{
+          fourMemberGroupId: summary,
+        },
+      ),
+    );
+
+    expect(find.textContaining('Gruptan alacağınız:'), findsOneWidget);
+    expect(find.textContaining('Feyza'), findsNothing);
+  });
+
+  testWidgets('ödeme tarihi seçilince tarih çip üzerinde gösterilir', (
+    tester,
+  ) async {
+    await _pumpDetailPage(
+      tester,
+      repository: FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('settle_up_date_chip')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DatePickerDialog), findsOneWidget);
+    final calendar = tester.widget<CalendarDatePicker>(
+      find.byType(CalendarDatePicker),
+    );
+    calendar.onDateChanged(DateTime(2027, 3, 14));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Seç'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ödeme: 14.03.2027'), findsOneWidget);
   });
 
   testWidgets('owner üye ekleme ve member çıkarma aksiyonlarını görür', (
@@ -77,6 +181,37 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(Key('remove_group_member_$currentUserId')), findsNothing);
+  });
+
+  testWidgets('ayarlar kapsamlı grup ayarları menüsünü açar', (tester) async {
+    await _pumpDetailPage(
+      tester,
+      repository: FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      ),
+    );
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Grup Ayarları'), findsOneWidget);
+    expect(find.byKey(const Key('edit_group_settings')), findsOneWidget);
+    expect(find.byKey(const Key('group_photo_settings')), findsOneWidget);
+    expect(find.byKey(const Key('manage_group_members')), findsOneWidget);
+    expect(find.byKey(const Key('group_notifications_switch')), findsOneWidget);
+    expect(find.text('TRY (₺)'), findsOneWidget);
+    expect(find.byKey(const Key('leave_group_settings')), findsOneWidget);
+    expect(
+      find.byKey(const Key('delete_group_settings'), skipOffstage: false),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('group_photo_settings')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Grup fotoğrafı'), findsOneWidget);
+    expect(find.byKey(const Key('pick_group_cover_gallery')), findsOneWidget);
+    expect(find.byKey(const Key('pick_group_cover_camera')), findsOneWidget);
   });
   testWidgets('member kullanıcı üye yönetim aksiyonlarını görmez', (
     tester,
@@ -201,19 +336,14 @@ void main() {
 
     expect(find.text('Bölüştürme Türünü Seç'), findsOneWidget);
     expect(find.byKey(const Key('select_scan_receipt_button')), findsOneWidget);
+    expect(
+      find.byKey(const Key('select_gallery_receipt_button')),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('select_fast_split_button')), findsOneWidget);
-    expect(
-      find.byKey(const Key('select_itemized_split_button')),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.byKey(const Key('select_itemized_split_button')));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.textContaining('Kalem bazlı bölüştürme için önce'),
-      findsOneWidget,
-    );
+    expect(find.text('Fiş Tara'), findsOneWidget);
+    expect(find.text('Galeriden Seç'), findsOneWidget);
+    expect(find.text('Manuel Ekle'), findsOneWidget);
   });
 
   testWidgets('owner üye çıkarma işlemini onaylayabilir', (tester) async {
@@ -278,7 +408,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byKey(const Key('group_detail_loading')), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pumpAndSettle();
@@ -377,8 +507,11 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('group_detail_name')), findsOneWidget);
-    expect(find.text('Ev Arkadaşları'), findsOneWidget);
+    expect(
+      find.byKey(const Key('group_detail_name'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(find.text('Ev Arkadaşları', skipOffstage: false), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('open_debt_summary_button')));
     await tester.pumpAndSettle();
@@ -549,7 +682,10 @@ Future<void> _pumpDetailPage(
         authSessionControllerProvider.overrideWith((ref) => controller),
         groupRepositoryProvider.overrideWithValue(repository),
       ],
-      child: MaterialApp(home: GroupDetailPage(groupId: groupId)),
+      child: MaterialApp(
+        theme: AppTheme.light,
+        home: GroupDetailPage(groupId: groupId),
+      ),
     ),
   );
 

@@ -216,6 +216,11 @@ GoRouter createAppRouter({
 
           return _GroupOcrRoutePage(
             groupId: groupId,
+            initialSource: switch (state.uri.queryParameters['source']) {
+              'camera' => GroupReceiptSource.camera,
+              'gallery' => GroupReceiptSource.gallery,
+              _ => null,
+            },
             initialGroup:
                 selectedGroup is GroupDetail && selectedGroup.id == groupId
                 ? selectedGroup
@@ -335,6 +340,7 @@ class _GroupOcrRoutePage extends ConsumerWidget {
     required this.groupId,
     required this.initialGroup,
     required this.scanReceipt,
+    required this.initialSource,
     this.parseReceipt,
   });
 
@@ -342,6 +348,7 @@ class _GroupOcrRoutePage extends ConsumerWidget {
   final GroupDetail? initialGroup;
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
+  final GroupReceiptSource? initialSource;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -395,6 +402,7 @@ class _GroupOcrRoutePage extends ConsumerWidget {
 
     return GroupOcrPage(
       group: group,
+      initialSource: initialSource,
       scanReceipt: scanReceipt,
       parseReceipt: parseReceipt ?? parser.parse,
       onFastSplitSubmit: (draft, value, idempotencyKey) =>

@@ -16,9 +16,7 @@ import 'package:go_router/go_router.dart';
 import '../../fixtures/group_fixtures.dart';
 
 void main() {
-  testWidgets('grup kartında ad, üye sayısı ve borç durumu gösterilir', (
-    tester,
-  ) async {
+  testWidgets('grup kartında ad ve borç durumu gösterilir', (tester) async {
     final repository = FakeGroupRepository(
       groups: const [twoMemberGroup],
       debtSummariesByGroup: const {
@@ -29,8 +27,7 @@ void main() {
     await _pumpGroupsPage(tester, repository);
 
     expect(find.text('Ev Arkadaşları'), findsOneWidget);
-    expect(find.text('2 üye'), findsOneWidget);
-    expect(find.textContaining('borç'), findsOneWidget);
+    expect(find.textContaining('borcunuz'), findsWidgets);
   });
 
   testWidgets('grup kartına basılınca detay ekranı açılır', (tester) async {
@@ -148,7 +145,7 @@ void main() {
 
     await _pumpGroupsPage(tester, repository);
 
-    expect(find.textContaining('alacak'), findsOneWidget);
+    expect(find.textContaining('alacağınız'), findsOneWidget);
   });
 
   testWidgets('net tutar sıfırsa dengede durumu gösterilir', (tester) async {
