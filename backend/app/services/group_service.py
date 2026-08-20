@@ -9,7 +9,10 @@ from app.group_schemas import (
     GroupMemberResponse,
     GroupSummaryResponse,
 )
+from app.models.activity_log import ActivityType
 from app.models.group import Group, GroupMember, GroupRole
+from app.models.user import User
+from app.repositories.activity_log import ActivityLogRepository
 from app.repositories.groups import GroupMemberAlreadyExists, GroupRepository
 from app.repositories.users import UserRepository
 from app.services.debt_summary_service import DebtSummaryService
@@ -25,6 +28,7 @@ class GroupService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repository = GroupRepository(session)
+        self.activity_log = ActivityLogRepository(session)
 
     async def create(
         self,
@@ -213,6 +217,26 @@ class GroupService:
         except GroupMemberAlreadyExists:
             raise GroupServiceError("member_already_exists") from None
         await self.session.refresh(member, attribute_names=["user"])
+        acting_user = await self.session.get(User, actor_user_id)
+        self.activity_log.record(
+            group_id=group_id,
+            actor_user_id=actor_user_id,
+            type=ActivityType.member_joined,
+            payload={
+                "actor_display_name": (
+                    (acting_user.display_name or acting_user.email)
+                    if acting_user is not None
+                    else None
+                )
+                or "Silinmiş kullanıcı",
+                "member_user_id": str(user_id),
+                "member_display_name": (
+                    member.user.display_name or member.user.email
+                    if member.user is not None
+                    else "Silinmiş kullanıcı"
+                ),
+            },
+        )
         response = _member_response(member)
         await self.session.commit()
         return response

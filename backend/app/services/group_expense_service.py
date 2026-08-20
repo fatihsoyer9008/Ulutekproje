@@ -8,6 +8,7 @@ from decimal import ROUND_FLOOR, Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.activity_log import ActivityType
 from app.models.cloud_receipt import CloudReceipt, CloudReceiptLineItem
 from app.models.group import Group, GroupMember
 from app.models.group_expense import (
@@ -18,6 +19,7 @@ from app.models.group_expense import (
 )
 from app.models.settlement import Settlement
 from app.models.user import User
+from app.repositories.activity_log import ActivityLogRepository
 from app.repositories.group_expenses import GroupExpenseRepository
 
 
@@ -141,6 +143,35 @@ class GroupExpenseService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repository = GroupExpenseRepository(session)
+        self.activity_log = ActivityLogRepository(session)
+
+    async def _record_expense_activity(
+        self,
+        *,
+        expense: GroupExpense,
+        actor_user_id: uuid.UUID,
+    ) -> None:
+        actor = await self.session.get(User, actor_user_id)
+        self.activity_log.record(
+            group_id=expense.group_id,
+            actor_user_id=actor_user_id,
+            type=ActivityType.expense_created,
+            payload={
+                "actor_display_name": (
+                    actor.display_name or actor.email if actor is not None else None
+                )
+                or "Silinmiş kullanıcı",
+                "expense_id": str(expense.id),
+                "title": expense.title,
+                "total_amount_in_minor": expense.total_amount_in_minor,
+                "currency": expense.currency,
+                "payer_user_id": str(expense.payer_user_id),
+                "shares": {
+                    str(share.user_id): share.amount_in_minor
+                    for share in expense.shares
+                },
+            },
+        )
 
     async def is_financially_locked(self, expense: GroupExpense) -> bool:
         settlement_timestamps = (
@@ -249,6 +280,10 @@ class GroupExpenseService:
             shares=shares,
             idempotency_key=idempotency_key,
             idempotency_request_hash=idempotency_request_hash,
+        )
+        await self._record_expense_activity(
+            expense=expense,
+            actor_user_id=actor_user_id,
         )
         return expense, False
 
@@ -624,7 +659,7 @@ class GroupExpenseService:
             for assignment in assignments
         ]
 
-        return await self.repository.create(
+        expense = await self.repository.create(
             group_id=group_id,
             receipt_id=receipt_id,
             payer_user_id=payer_user_id,
@@ -639,3 +674,8 @@ class GroupExpenseService:
             line_item_assignments=assignment_values,
             extra_amounts=extra_amount_values,
         )
+        await self._record_expense_activity(
+            expense=expense,
+            actor_user_id=actor_user_id,
+        )
+        return expense
