@@ -186,7 +186,7 @@ class GroupService:
         )
         if group.archived_at is None:
             debt_summary = await DebtSummaryService(self.session).get_for_group(
-                group.id
+                group.id, group=group
             )
             if any(
                 balance.net_amount_in_minor != 0 for balance in debt_summary.balances
@@ -277,7 +277,9 @@ class GroupService:
         ):
             raise GroupServiceError("last_owner_required")
 
-        debt_summary = await DebtSummaryService(self.session).get_for_group(group.id)
+        debt_summary = await DebtSummaryService(self.session).get_for_group(
+            group.id, group=group
+        )
         target_balance = next(
             (
                 balance.net_amount_in_minor

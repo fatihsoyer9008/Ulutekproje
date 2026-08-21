@@ -132,6 +132,41 @@ async def test_self_leave_rejects_unsettled_member(group_api_context) -> None:
 
 
 @pytest.mark.asyncio
+async def test_admin_removing_unsettled_member_is_rejected(
+    group_api_context,
+) -> None:
+    client, factory, current, owner, member, admin, _ = group_api_context
+    group_id = await _group_with_roles(factory, owner, admin, member)
+
+    current["value"] = owner
+    expense = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers={"Idempotency-Key": "remove-unsettled-0001"},
+        json={
+            "receipt_id": None,
+            "payer_user_id": str(owner.id),
+            "title": "Ortak market",
+            "note": None,
+            "expense_date": "2026-08-21T10:00:00Z",
+            "total_amount_in_minor": 10_000,
+            "currency": "TRY",
+            "split": {
+                "type": "equal",
+                "member_ids": [str(owner.id), str(member.id)],
+            },
+        },
+    )
+    assert expense.status_code == 201
+
+    current["value"] = admin
+    response = await client.delete(
+        f"/api/v1/groups/{group_id}/members/{member.id}"
+    )
+
+    _assert_error(response, 409, "member_has_unsettled_balance")
+
+
+@pytest.mark.asyncio
 async def test_last_owner_cannot_leave(group_api_context) -> None:
     client, factory, current, owner, member, admin, _ = group_api_context
     group_id = await _group_with_roles(factory, owner, admin, member)

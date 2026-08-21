@@ -35,11 +35,14 @@ class DebtSummaryService:
     async def get_for_group(
         self,
         group_id: uuid.UUID,
+        *,
+        group: Group | None = None,
     ) -> DebtSummary:
-        group = await self.group_repository.get_by_id(
-            group_id,
-            include_members=True,
-        )
+        if group is None:
+            group = await self.group_repository.get_by_id(
+                group_id,
+                include_members=True,
+            )
         if group is None:
             raise DebtSummaryNotFoundError("group_not_found")
 

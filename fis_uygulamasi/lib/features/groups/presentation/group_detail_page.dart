@@ -370,9 +370,14 @@ class _GroupDetailContentState extends ConsumerState<_GroupDetailContent> {
     BuildContext context, {
     required bool deleteGroup,
   }) async {
-    final debtSummary = ref
-        .read(groupDebtSummaryProvider(group.id))
-        .valueOrNull;
+    DebtSummary? debtSummary;
+    try {
+      debtSummary = await ref.read(groupDebtSummaryProvider(group.id).future);
+    } catch (_) {
+      // Bakiye alınamadıysa istemci tarafı kontrolü atlanır; backend zaten
+      // açık bakiyeli silme/ayrılma isteklerini reddeder.
+    }
+    if (!mounted || !context.mounted) return;
     final unsettledBalances = debtSummary?.balances.where(
       (balance) => balance.netAmountInMinor != 0,
     );
