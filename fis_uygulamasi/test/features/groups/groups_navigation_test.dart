@@ -15,6 +15,7 @@ import 'package:app_main/features/groups/data/fake_group_repository.dart'
 import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/data/group_repository.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
+import 'package:app_main/features/groups/presentation/activity_page.dart';
 import 'package:app_main/features/groups/presentation/group_ocr_page.dart';
 import 'package:app_main/features/groups/presentation/groups_page.dart';
 import 'package:app_main/features/groups/presentation/fast_split_page.dart';
@@ -29,10 +30,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import '../../fixtures/group_fixtures.dart';
 
 void main() {
+  setUpAll(() => initializeDateFormatting('tr_TR'));
+
   testWidgets('authenticated user opens groups from the drawer', (
     tester,
   ) async {
@@ -43,6 +47,21 @@ void main() {
     await _openGroupsFromDrawer(tester);
 
     expect(find.byType(GroupsPage), findsOneWidget);
+  });
+
+  testWidgets('gruplar alt navigasyonundan Hareketler ekranı açılır', (
+    tester,
+  ) async {
+    final controller = AuthSessionController(_NavigationAuthRepository());
+    await controller.login('user@example.com', 'password');
+
+    await _pumpApp(tester, controller);
+    await _openGroupsFromDrawer(tester);
+    await tester.tap(find.text('Hareketler'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ActivityPage), findsOneWidget);
+    expect(find.text('Son hareketler'), findsOneWidget);
   });
 
   testWidgets('grup detayındaki Fiş Tara ayrı grup OCR routeunu açar', (

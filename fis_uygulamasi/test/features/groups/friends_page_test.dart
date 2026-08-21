@@ -1,9 +1,14 @@
 import 'package:app_main/features/groups/presentation/friends_page.dart';
+import 'package:app_main/features/groups/presentation/activity_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 void main() {
+  setUpAll(() => initializeDateFormatting('tr_TR'));
+
   testWidgets('AppBar arama ve kişi ekleme ikonlarını gösterir', (
     tester,
   ) async {
@@ -13,9 +18,7 @@ void main() {
     expect(find.byIcon(Icons.person_add_alt_1_outlined), findsWidgets);
   });
 
-  testWidgets('genel bakiye metni ve filtre ikonu gösterilir', (
-    tester,
-  ) async {
+  testWidgets('genel bakiye metni ve filtre ikonu gösterilir', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: FriendsPage()));
 
     expect(find.textContaining('Genel bakiye'), findsOneWidget);
@@ -54,32 +57,61 @@ void main() {
     expect(find.text('Hesap'), findsOneWidget);
   });
 
-  testWidgets('alt navigasyonda Gruplar sekmesine basınca önceki ekrana dönülür', (
-    tester,
-  ) async {
+  testWidgets(
+    'alt navigasyonda Gruplar sekmesine basınca önceki ekrana dönülür',
+    (tester) async {
+      final router = GoRouter(
+        initialLocation: '/groups',
+        routes: [
+          GoRoute(
+            path: '/groups',
+            builder: (_, _) =>
+                const Scaffold(body: Center(child: Text('groups placeholder'))),
+          ),
+          GoRoute(path: '/friends', builder: (_, _) => const FriendsPage()),
+        ],
+      );
+
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      await tester.pumpAndSettle();
+
+      router.push('/friends');
+      await tester.pumpAndSettle();
+      expect(find.byType(FriendsPage), findsOneWidget);
+
+      await tester.tap(find.text('Gruplar'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('groups placeholder'), findsOneWidget);
+      expect(find.byType(FriendsPage), findsNothing);
+    },
+  );
+
+  testWidgets('alt navigasyondan Hareketler ekranı açılır', (tester) async {
     final router = GoRouter(
-      initialLocation: '/groups',
+      initialLocation: '/friends',
       routes: [
-        GoRoute(
-          path: '/groups',
-          builder: (_, _) =>
-              const Scaffold(body: Center(child: Text('groups placeholder'))),
-        ),
         GoRoute(path: '/friends', builder: (_, _) => const FriendsPage()),
+        GoRoute(
+          path: '/activity',
+          builder: (_, _) => const ActivityPage(activities: []),
+        ),
+        GoRoute(path: '/groups', builder: (_, _) => const Text('groups page')),
+        GoRoute(
+          path: '/profile',
+          builder: (_, _) => const Text('profile page'),
+        ),
       ],
     );
 
-    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pumpWidget(
+      ProviderScope(child: MaterialApp.router(routerConfig: router)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hareketler'));
     await tester.pumpAndSettle();
 
-    router.push('/friends');
-    await tester.pumpAndSettle();
-    expect(find.byType(FriendsPage), findsOneWidget);
-
-    await tester.tap(find.text('Gruplar'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('groups placeholder'), findsOneWidget);
-    expect(find.byType(FriendsPage), findsNothing);
+    expect(find.byType(ActivityPage), findsOneWidget);
+    expect(find.text('Son hareketler'), findsOneWidget);
   });
 }

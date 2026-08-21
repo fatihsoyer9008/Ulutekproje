@@ -100,10 +100,7 @@ class GroupsPage extends ConsumerWidget {
           lightBackgroundColor: pageBackground,
           onGroupsPressed: () {},
           onFriendsPressed: () => context.push('/friends'),
-          onActivityPressed: () => _showComingSoonMessage(
-            context,
-            'Aktivite ekranı yakında eklenecek.',
-          ),
+          onActivityPressed: () => context.push('/activity'),
           onAccountPressed: () => context.push('/profile'),
         ),
       ),
@@ -113,11 +110,6 @@ class GroupsPage extends ConsumerWidget {
   void _showComingSoon(BuildContext context) => ScaffoldMessenger.of(
     context,
   ).showSnackBar(const SnackBar(content: Text('Arama yakında eklenecek.')));
-
-  void _showComingSoonMessage(BuildContext context, String message) =>
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
 
   void _openExpenseEntry(BuildContext context, List<Group>? groups) {
     if (groups == null || groups.isEmpty) {
