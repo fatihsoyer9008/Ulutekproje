@@ -188,6 +188,7 @@ mantığı — "bu arkadaşınla toplam durumun" sorusuna cevap verir).
       "user_id": "7a3e6f32-8d3d-4d3d-9f3c-3c4d5e6f7081",
       "display_name": "Ege Başaran",
       "avatar_id": "man",
+      "email": "ege@example.com",
       "direct_group_id": "8b4f7043-9e4e-4e4e-af4d-4d5e6f708192",
       "net_amount_in_minor": -27522,
       "currency": "TRY",
@@ -214,6 +215,70 @@ gövde) kabul eder, `GroupService.get_or_create_direct_group(current_user,
 friend_user_id)` ile `group_id`'yi çözer, sonra mevcut
 `create_itemized_expense` mantığını o `group_id` ile çağırır. OCR
 (`receipt_draft`) akışı dahil, hiçbir OCR-özel kod eklenmez.
+
+## Endpoint 3.1 — Arkadaşlık Daveti
+
+Arkadaşlık, `POST /friends/{friend_user_id}/expenses` ile bir masraf
+bölüştürüldüğünde **örtük** olarak da kurulabilir (bkz. Endpoint 3), ama bir
+masraf olmadan da "arkadaş ekle" isteği gönderilebilmesi için ayrı bir
+davet + kabul akışı vardır. Deseni `group_invitations` ile birebir aynıdır
+(bkz. `app/services/group_invitation_service.py`): e-posta ile davet
+gönderilir, davet edilen kişi 24 saat içinde token'ı kabul etmezse davet
+geçersiz olur.
+
+```
+POST /api/v1/friends/invitations
+```
+
+```json
+{ "email": "arkadas@example.com" }
+```
+
+Kimlik doğrulama gerektirir (`current_user` davet edici olur). Yanıt her
+zaman aynıdır (hesap var/yok bilgisi sızdırılmaz):
+
+```json
+{ "status": "request_received" }
+```
+
+`202 Accepted`. Rate limit: kullanıcı başına saatte
+`friend_invitation_user_hourly_limit` (varsayılan 20), davet edilen e-posta
+başına günde `friend_invitation_email_daily_limit` (varsayılan 5) — limit
+aşılırsa `429` + `{"code": "invitation_rate_limited"}`.
+
+```
+POST /api/v1/friend-invitations/{token}/accept
+```
+
+Kimlik doğrulama gerektirir. Davet edilen e-posta ile giriş yapan kullanıcı
+(ve e-postası doğrulanmış olmalı) token'ı kabul eder;
+`GroupService.get_or_create_direct_group` çağrılarak taraflar arasında
+gizli direct grup kurulur (zaten varsa, o grup — ve o güne kadarki bakiyesi
+— aynen kullanılır). Başarılı yanıt, davet edenin `GET /friends`'teki
+karşılığıyla birebir aynı şekle sahiptir:
+
+```json
+{
+  "friend": {
+    "user_id": "6f1c2e10-6b1b-4b1b-9f1a-1a2b3c4d5e6f",
+    "display_name": "Ege Başaran",
+    "avatar_id": "man",
+    "email": "ege@example.com",
+    "direct_group_id": "8b4f7043-9e4e-4e4e-af4d-4d5e6f708192",
+    "net_amount_in_minor": 0,
+    "currency": "TRY",
+    "status": "settled_up",
+    "shared_group_ids": []
+  }
+}
+```
+
+`201 Created`. Hata kodları: `invitation_email_mismatch` (`403` — giriş
+yapan kullanıcının doğrulanmış e-postası davetle eşleşmiyor),
+`invitation_expired_or_used` (`410` — token bulunamadı, süresi dolmuş,
+zaten kullanılmış ya da daveti gönderen kullanıcı artık yok),
+`cannot_friend_self` (`422` — kendi e-postana davet gönderip kabul etmeye
+çalışırsan).
 
 ## Endpoint 4 — Aktivite Geçmişi
 

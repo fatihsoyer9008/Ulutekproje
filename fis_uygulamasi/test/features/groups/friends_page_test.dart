@@ -1,5 +1,7 @@
-import 'package:app_main/features/groups/presentation/friends_page.dart';
+import 'package:app_main/features/groups/data/fake_friend_repository.dart';
+import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/presentation/activity_page.dart';
+import 'package:app_main/features/groups/presentation/friends_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,17 +11,28 @@ import 'package:intl/date_symbol_data_local.dart';
 void main() {
   setUpAll(() => initializeDateFormatting('tr_TR'));
 
+  Future<void> pumpFriendsPage(WidgetTester tester) => tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        friendRepositoryProvider.overrideWithValue(FakeFriendRepository()),
+      ],
+      child: const MaterialApp(home: FriendsPage()),
+    ),
+  );
+
   testWidgets('AppBar arama ve kişi ekleme ikonlarını gösterir', (
     tester,
   ) async {
-    await tester.pumpWidget(const MaterialApp(home: FriendsPage()));
+    await pumpFriendsPage(tester);
+    await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.search_rounded), findsOneWidget);
     expect(find.byIcon(Icons.person_add_alt_1_outlined), findsWidgets);
   });
 
   testWidgets('genel bakiye metni ve filtre ikonu gösterilir', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: FriendsPage()));
+    await pumpFriendsPage(tester);
+    await tester.pumpAndSettle();
 
     expect(find.textContaining('Genel bakiye'), findsOneWidget);
     expect(find.byIcon(Icons.tune_rounded), findsOneWidget);
@@ -28,7 +41,8 @@ void main() {
   testWidgets('arkadaş listesinde avatar, isim ve bakiye durumu gösterilir', (
     tester,
   ) async {
-    await tester.pumpWidget(const MaterialApp(home: FriendsPage()));
+    await pumpFriendsPage(tester);
+    await tester.pumpAndSettle();
 
     expect(find.text('Ege Başaran'), findsOneWidget);
     expect(find.textContaining('borçlusunuz'), findsWidgets);
@@ -38,7 +52,8 @@ void main() {
   testWidgets('daha fazla arkadaş ekle butonu ve harcama ekle FAB görünür', (
     tester,
   ) async {
-    await tester.pumpWidget(const MaterialApp(home: FriendsPage()));
+    await pumpFriendsPage(tester);
+    await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('add_more_friends_button')), findsOneWidget);
     expect(find.text('Daha fazla arkadaş ekle'), findsOneWidget);
@@ -46,10 +61,28 @@ void main() {
     expect(find.text('Harcama ekle'), findsOneWidget);
   });
 
+  testWidgets('arkadaş ekle daveti gönderir', (tester) async {
+    await pumpFriendsPage(tester);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('add_more_friends_button')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('friend_invitation_email_field')),
+      'arkadas@example.com',
+    );
+    await tester.tap(find.byKey(const Key('submit_friend_invitation_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Arkadaşlık daveti gönderildi.'), findsOneWidget);
+  });
+
   testWidgets('alt navigasyonda Arkadaşlar sekmesi aktif gösterilir', (
     tester,
   ) async {
-    await tester.pumpWidget(const MaterialApp(home: FriendsPage()));
+    await pumpFriendsPage(tester);
+    await tester.pumpAndSettle();
 
     expect(find.text('Arkadaşlar'), findsOneWidget);
     expect(find.text('Gruplar'), findsOneWidget);
@@ -72,7 +105,14 @@ void main() {
         ],
       );
 
-      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            friendRepositoryProvider.overrideWithValue(FakeFriendRepository()),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
       await tester.pumpAndSettle();
 
       router.push('/friends');
@@ -105,7 +145,12 @@ void main() {
     );
 
     await tester.pumpWidget(
-      ProviderScope(child: MaterialApp.router(routerConfig: router)),
+      ProviderScope(
+        overrides: [
+          friendRepositoryProvider.overrideWithValue(FakeFriendRepository()),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Hareketler'));

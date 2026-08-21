@@ -11,11 +11,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/network/request_id.dart';
 import '../../auth/presentation/controllers/auth_session_controller.dart';
+import '../../avatar/presentation/widgets/avatar_badge.dart';
 import '../../transaction_draft/model/turkish_money.dart';
 import '../application/group_expense_flow_controller.dart';
 import '../data/group_api_failure.dart';
 import '../data/group_providers.dart';
 import '../data/fake_group_repository.dart';
+import '../domain/friend_models.dart';
 import '../domain/group_expense_draft.dart';
 import '../domain/group_models.dart';
 import '../domain/group_offline_operation.dart';
@@ -2208,17 +2210,17 @@ class _MemberTile extends StatelessWidget {
   }
 }
 
-class _AddMemberSheet extends StatefulWidget {
+class _AddMemberSheet extends ConsumerStatefulWidget {
   const _AddMemberSheet({required this.canChooseAdmin, required this.onSubmit});
 
   final bool canChooseAdmin;
   final Future<void> Function(String email, GroupRole role) onSubmit;
 
   @override
-  State<_AddMemberSheet> createState() => _AddMemberSheetState();
+  ConsumerState<_AddMemberSheet> createState() => _AddMemberSheetState();
 }
 
-class _AddMemberSheetState extends State<_AddMemberSheet> {
+class _AddMemberSheetState extends ConsumerState<_AddMemberSheet> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   GroupRole _role = GroupRole.member;
@@ -2252,6 +2254,10 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
               const SizedBox(height: 8),
               const Text(
                 'Davet bağlantısı bu e-posta adresine gönderilecektir.',
+              ),
+              _FriendPicker(
+                onPick: (friend) =>
+                    setState(() => _emailController.text = friend.email),
               ),
               const SizedBox(height: 20),
               TextFormField(
@@ -2356,6 +2362,53 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+}
+
+class _FriendPicker extends ConsumerWidget {
+  const _FriendPicker({required this.onPick});
+
+  final ValueChanged<FriendSummary> onPick;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final friends = ref.watch(friendsProvider).valueOrNull;
+    if (friends == null || friends.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: SizedBox(
+        height: 76,
+        child: ListView.separated(
+          key: const Key('group_invitation_friend_picker'),
+          scrollDirection: Axis.horizontal,
+          itemCount: friends.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 12),
+          itemBuilder: (context, index) {
+            final friend = friends[index];
+            return GestureDetector(
+              key: Key('friend_picker_option_${friend.userId}'),
+              onTap: () => onPick(friend),
+              child: SizedBox(
+                width: 60,
+                child: Column(
+                  children: [
+                    AvatarBadge(avatarId: friend.avatarId, radius: 22),
+                    const SizedBox(height: 4),
+                    Text(
+                      friend.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 }
 

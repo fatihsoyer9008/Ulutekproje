@@ -7,6 +7,7 @@ class FriendEntry(BaseModel):
     user_id: uuid.UUID
     display_name: str
     avatar_id: str | None
+    email: str
     direct_group_id: uuid.UUID
     net_amount_in_minor: int
     currency: str
@@ -20,6 +21,7 @@ class FriendEntry(BaseModel):
         user_id: uuid.UUID,
         display_name: str,
         avatar_id: str | None,
+        email: str,
         direct_group_id: uuid.UUID,
         net_amount_in_minor: int,
         currency: str,
@@ -35,6 +37,7 @@ class FriendEntry(BaseModel):
             user_id=user_id,
             display_name=display_name,
             avatar_id=avatar_id,
+            email=email,
             direct_group_id=direct_group_id,
             net_amount_in_minor=net_amount_in_minor,
             currency=currency,

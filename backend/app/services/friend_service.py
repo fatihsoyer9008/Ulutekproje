@@ -140,6 +140,7 @@ class FriendService:
                         or "Silinmiş kullanıcı"
                     ),
                     avatar_id=friend_user.avatar_id if friend_user else None,
+                    email=friend_user.email if friend_user else "",
                     direct_group_id=direct_group.id,
                     net_amount_in_minor=net_amount_in_minor,
                     currency=direct_group.currency,
