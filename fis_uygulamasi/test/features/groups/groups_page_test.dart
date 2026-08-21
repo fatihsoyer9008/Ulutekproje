@@ -173,6 +173,93 @@ void main() {
     expect(find.text('Dengede'), findsOneWidget);
   });
 
+  testWidgets('filtre menüsü dört Türkçe seçeneği gösterir', (tester) async {
+    await _pumpGroupsPage(
+      tester,
+      FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+        debtSummariesByGroup: const <String, DebtSummary>{
+          twoMemberGroupId: currentUserDebtorDebtSummary,
+        },
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('group_filter_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('group_filter_sheet')), findsOneWidget);
+    expect(find.text('Tüm gruplar'), findsOneWidget);
+    expect(find.text('Açık bakiyesi olanlar'), findsOneWidget);
+    expect(find.text('Borçlu olduğunuz gruplar'), findsOneWidget);
+    expect(find.text('Size borçlu olan gruplar'), findsOneWidget);
+    for (final name in <String>['all', 'outstanding', 'youOwe', 'owedToYou']) {
+      expect(find.byKey(Key('group_filter_$name')), findsOneWidget);
+    }
+  });
+
+  testWidgets('borçlu ve alacaklı grup filtreleri listeyi süzer', (
+    tester,
+  ) async {
+    await _pumpGroupsPage(
+      tester,
+      FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup, fourMemberGroup],
+        debtSummariesByGroup: const <String, DebtSummary>{
+          twoMemberGroupId: currentUserDebtorDebtSummary,
+          fourMemberGroupId: currentUserCreditorDebtSummary,
+        },
+      ),
+    );
+
+    expect(find.text('Ev Arkadaşları'), findsOneWidget);
+    expect(find.text('Ulutek Ekibi'), findsOneWidget);
+
+    await _selectGroupFilter(tester, 'youOwe');
+    expect(find.text('Ev Arkadaşları'), findsOneWidget);
+    expect(find.text('Ulutek Ekibi'), findsNothing);
+    expect(_totalDebtText(tester), contains('TL62,50'));
+
+    await _selectGroupFilter(tester, 'owedToYou');
+    expect(find.text('Ev Arkadaşları'), findsNothing);
+    expect(find.text('Ulutek Ekibi'), findsOneWidget);
+    expect(_totalDebtText(tester), contains('TL0,00'));
+
+    await _selectGroupFilter(tester, 'all');
+    expect(find.text('Ev Arkadaşları'), findsOneWidget);
+    expect(find.text('Ulutek Ekibi'), findsOneWidget);
+  });
+
+  testWidgets('açık bakiye filtresi dengedeki grupları gizler', (tester) async {
+    const balancedFourMemberSummary = DebtSummary(
+      groupId: fourMemberGroupId,
+      currency: 'TRY',
+      balances: <DebtBalance>[
+        DebtBalance(
+          userId: currentUserId,
+          displayName: 'Zafer Tuna',
+          netAmountInMinor: 0,
+        ),
+      ],
+      suggestedTransfers: <DebtTransfer>[],
+      generatedAt: '2026-08-21T10:00:00Z',
+    );
+    await _pumpGroupsPage(
+      tester,
+      FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup, fourMemberGroup],
+        debtSummariesByGroup: const <String, DebtSummary>{
+          twoMemberGroupId: currentUserDebtorDebtSummary,
+          fourMemberGroupId: balancedFourMemberSummary,
+        },
+      ),
+    );
+
+    await _selectGroupFilter(tester, 'outstanding');
+
+    expect(find.text('Ev Arkadaşları'), findsOneWidget);
+    expect(find.text('Ulutek Ekibi'), findsNothing);
+  });
+
   testWidgets('grup yoksa empty state gösterilir', (tester) async {
     await _pumpGroupsPage(tester, FakeGroupRepository());
 
@@ -311,6 +398,18 @@ void main() {
     expect(find.text('Grup oluşturuldu.'), findsOneWidget);
   });
 }
+
+Future<void> _selectGroupFilter(WidgetTester tester, String filterName) async {
+  await tester.tap(find.byKey(const Key('group_filter_button')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(Key('group_filter_$filterName')));
+  await tester.pumpAndSettle();
+}
+
+String _totalDebtText(WidgetTester tester) => tester
+    .widget<RichText>(find.byKey(const Key('groups_total_debt')))
+    .text
+    .toPlainText();
 
 Future<void> _pumpGroupsPage(
   WidgetTester tester,

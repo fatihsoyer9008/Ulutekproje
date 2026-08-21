@@ -143,24 +143,58 @@ class GroupsPage extends ConsumerWidget {
   }
 }
 
-class _GroupsOverview extends ConsumerWidget {
+enum _GroupFilter { all, outstanding, youOwe, owedToYou }
+
+extension on _GroupFilter {
+  String get label => switch (this) {
+    _GroupFilter.all => 'Tüm gruplar',
+    _GroupFilter.outstanding => 'Açık bakiyesi olanlar',
+    _GroupFilter.youOwe => 'Borçlu olduğunuz gruplar',
+    _GroupFilter.owedToYou => 'Size borçlu olan gruplar',
+  };
+
+  bool includes(int? balanceInMinor) => switch (this) {
+    _GroupFilter.all => true,
+    _GroupFilter.outstanding => balanceInMinor != null && balanceInMinor != 0,
+    _GroupFilter.youOwe => balanceInMinor != null && balanceInMinor < 0,
+    _GroupFilter.owedToYou => balanceInMinor != null && balanceInMinor > 0,
+  };
+}
+
+class _GroupsOverview extends ConsumerStatefulWidget {
   const _GroupsOverview({required this.groups, required this.currentUserId});
 
   final List<Group> groups;
   final String? currentUserId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_GroupsOverview> createState() => _GroupsOverviewState();
+}
+
+class _GroupsOverviewState extends ConsumerState<_GroupsOverview> {
+  _GroupFilter _filter = _GroupFilter.all;
+
+  @override
+  Widget build(BuildContext context) {
+    final groupRows = <({Group group, int visualIndex, int? balanceInMinor})>[
+      for (var index = 0; index < widget.groups.length; index++)
+        (
+          group: widget.groups[index],
+          visualIndex: index,
+          balanceInMinor: _currentUserBalance(
+            ref.watch(groupDebtSummaryProvider(widget.groups[index].id)),
+          ),
+        ),
+    ];
+    final visibleRows = groupRows
+        .where((row) => _filter.includes(row.balanceInMinor))
+        .toList(growable: false);
+
     var totalOwedInMinor = 0;
-    for (final group in groups) {
-      final debt = ref.watch(groupDebtSummaryProvider(group.id)).valueOrNull;
-      final currentBalance = debt?.balances.where(
-        (balance) => balance.userId == currentUserId,
-      );
-      if (currentBalance != null && currentBalance.isNotEmpty) {
-        totalOwedInMinor += currentBalance.first.netAmountInMinor < 0
-            ? -currentBalance.first.netAmountInMinor
-            : 0;
+    for (final row in visibleRows) {
+      final balance = row.balanceInMinor;
+      if (balance != null && balance < 0) {
+        totalOwedInMinor -= balance;
       }
     }
     final owed = formatMinorAsTurkishLira(totalOwedInMinor.abs());
@@ -172,6 +206,7 @@ class _GroupsOverview extends ConsumerWidget {
           children: [
             Expanded(
               child: RichText(
+                key: const Key('groups_total_debt'),
                 text: TextSpan(
                   style: Theme.of(
                     context,
@@ -187,21 +222,24 @@ class _GroupsOverview extends ConsumerWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Filtrele ve sırala',
-              onPressed: () {},
+              key: const Key('group_filter_button'),
+              tooltip: 'Grupları filtrele',
+              onPressed: _showFilterSheet,
               icon: const Icon(Icons.tune_rounded),
             ),
           ],
         ),
         const SizedBox(height: 14),
-        if (groups.isEmpty)
+        if (widget.groups.isEmpty)
           const _GroupsEmptyState()
+        else if (visibleRows.isEmpty)
+          _GroupsFilterEmptyState(filterLabel: _filter.label)
         else ...[
-          for (var index = 0; index < groups.length; index++) ...[
+          for (final row in visibleRows) ...[
             _GroupCard(
-              group: groups[index],
-              currentUserId: currentUserId,
-              visualIndex: index,
+              group: row.group,
+              currentUserId: widget.currentUserId,
+              visualIndex: row.visualIndex,
             ),
             const SizedBox(height: 18),
           ],
@@ -222,6 +260,54 @@ class _GroupsOverview extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  int? _currentUserBalance(AsyncValue<DebtSummary> debtAsync) {
+    final userId = widget.currentUserId;
+    final debt = debtAsync.valueOrNull;
+    if (userId == null || debt == null) return null;
+    for (final balance in debt.balances) {
+      if (balance.userId == userId) return balance.netAmountInMinor;
+    }
+    return 0;
+  }
+
+  Future<void> _showFilterSheet() async {
+    final selected = await showModalBottomSheet<_GroupFilter>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: RadioGroup<_GroupFilter>(
+          groupValue: _filter,
+          onChanged: (value) {
+            if (value != null) Navigator.of(sheetContext).pop(value);
+          },
+          child: Column(
+            key: const Key('group_filter_sheet'),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 8),
+                child: Text(
+                  'Grupları filtrele',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              for (final filter in _GroupFilter.values)
+                RadioListTile<_GroupFilter>(
+                  key: Key('group_filter_${filter.name}'),
+                  value: filter,
+                  title: Text(filter.label),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || selected == null || selected == _filter) return;
+    setState(() => _filter = selected);
   }
 }
 
@@ -378,6 +464,35 @@ class _GroupsEmptyState extends StatelessWidget {
             'Ortak harcamalarınızı yönetmek için yeni bir grup oluşturun.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupsFilterEmptyState extends StatelessWidget {
+  const _GroupsFilterEmptyState({required this.filterLabel});
+
+  final String filterLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      key: const Key('groups_filter_empty_state'),
+      padding: const EdgeInsets.symmetric(vertical: 36),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.filter_alt_off_outlined,
+            size: 48,
+            color: Color(0xFF20C5A7),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '$filterLabel filtresine uygun grup yok.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyLarge,
           ),
         ],
       ),
