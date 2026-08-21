@@ -89,6 +89,15 @@ class ApiGroupRepository implements GroupRepository {
   }
 
   @override
+  Future<void> leaveGroup(String groupId) async {
+    await _send(
+      () => _apiClient.dio.delete<Map<String, dynamic>>(
+        '/api/v1/groups/$groupId/members/me',
+      ),
+    );
+  }
+
+  @override
   Future<GroupMember> addMember({
     required String groupId,
     required String userId,

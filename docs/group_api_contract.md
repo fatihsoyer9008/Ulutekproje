@@ -1205,6 +1205,8 @@ Yeni grup endpointleri aynı hata zarfını kullanır:
 | `404` | `expense_not_found` | Masraf bulunamadı |
 | `409` | `member_already_exists` | Aynı aktif üyelik zaten var |
 | `409` | `last_owner_required` | Son owner ayrılamaz/çıkarılamaz |
+| `409` | `group_has_unsettled_balances` | Açık bakiyesi olan grup arşivlenemez |
+| `409` | `member_has_unsettled_balance` | Açık bakiyesi olan üyenin üyeliği sonlandırılamaz |
 | `409` | `idempotency_conflict` | Anahtar farklı request ile kullanıldı |
 | `409` | `expense_locked_by_settlement` | Settlement sonrası finansal değişiklik yasak |
 | `409` | `receipt_not_synced` | Itemized fiş veya ürün henüz cloud kaydı değil |

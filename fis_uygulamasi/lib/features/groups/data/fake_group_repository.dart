@@ -211,9 +211,62 @@ class FakeGroupRepository implements GroupRepository {
         message: 'Bu grubu arşivleme yetkiniz yok.',
       );
     }
+    if (_hasUnsettledBalance(groupId)) {
+      throw _apiException(
+        statusCode: 409,
+        code: 'group_has_unsettled_balances',
+        message: 'Grup silinmeden önce tüm borçlar kapatılmalıdır.',
+      );
+    }
     final timestamp = _timestamp();
     _groupsById[groupId] = group.copyWith(
       archivedAt: timestamp,
+      updatedAt: timestamp,
+    );
+  }
+
+  @override
+  Future<void> leaveGroup(String groupId) async {
+    await _beforeRequest();
+    final group = _requireGroup(groupId);
+    final currentMember = group.members
+        .where(
+          (member) => member.userId == currentUserId && member.leftAt == null,
+        )
+        .firstOrNull;
+    if (currentMember == null) {
+      throw _apiException(
+        statusCode: 404,
+        code: 'member_not_found',
+        message: 'Aktif grup üyeliği bulunamadı.',
+      );
+    }
+    if (currentMember.role == GroupRole.owner) {
+      throw _apiException(
+        statusCode: 409,
+        code: 'last_owner_required',
+        message: 'Grup sahibi gruptan ayrılamaz.',
+      );
+    }
+    if (_hasUnsettledBalance(groupId, userId: currentUserId)) {
+      throw _apiException(
+        statusCode: 409,
+        code: 'member_has_unsettled_balance',
+        message: 'Gruptan ayrılmadan önce bakiyenizi kapatın.',
+      );
+    }
+
+    final timestamp = _timestamp();
+    final members = [
+      for (final member in group.members)
+        if (member.userId == currentUserId && member.leftAt == null)
+          GroupMember.fromJson({...member.toJson(), 'left_at': timestamp})
+        else
+          member,
+    ];
+    _groupsById[groupId] = group.copyWith(
+      memberCount: members.where((member) => member.leftAt == null).length,
+      members: members,
       updatedAt: timestamp,
     );
   }
@@ -391,6 +444,14 @@ class FakeGroupRepository implements GroupRepository {
       );
     }
 
+    if (_hasUnsettledBalance(groupId, userId: userId)) {
+      throw _apiException(
+        statusCode: 409,
+        code: 'member_has_unsettled_balance',
+        message: 'Üye çıkarılmadan önce bakiyesi kapatılmalıdır.',
+      );
+    }
+
     final timestamp = _timestamp();
     final members = [
       for (final item in group.members)
@@ -404,6 +465,16 @@ class FakeGroupRepository implements GroupRepository {
       memberCount: members.where((item) => item.leftAt == null).length,
       members: members,
       updatedAt: timestamp,
+    );
+  }
+
+  bool _hasUnsettledBalance(String groupId, {String? userId}) {
+    final balances = _debtSummariesByGroup[groupId]?.balances;
+    if (balances == null) return false;
+    return balances.any(
+      (balance) =>
+          (userId == null || balance.userId == userId) &&
+          balance.netAmountInMinor != 0,
     );
   }
 

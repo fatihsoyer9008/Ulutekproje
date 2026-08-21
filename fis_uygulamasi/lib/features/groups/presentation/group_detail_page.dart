@@ -370,6 +370,30 @@ class _GroupDetailContentState extends ConsumerState<_GroupDetailContent> {
     BuildContext context, {
     required bool deleteGroup,
   }) async {
+    final debtSummary = ref
+        .read(groupDebtSummaryProvider(group.id))
+        .valueOrNull;
+    final unsettledBalances = debtSummary?.balances.where(
+      (balance) => balance.netAmountInMinor != 0,
+    );
+    final hasUnsettledBalance = deleteGroup
+        ? unsettledBalances?.isNotEmpty ?? false
+        : unsettledBalances?.any(
+                (balance) =>
+                    balance.userId ==
+                    ref.read(authSessionControllerProvider).user?.id,
+              ) ??
+              false;
+    if (hasUnsettledBalance) {
+      _showTemporarySettingsMessage(
+        context,
+        deleteGroup
+            ? 'Grubu silmeden önce tüm grup borçlarını kapatın.'
+            : 'Gruptan ayrılmadan önce bakiyenizi kapatın.',
+      );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -377,8 +401,8 @@ class _GroupDetailContentState extends ConsumerState<_GroupDetailContent> {
         title: Text(deleteGroup ? 'Grubu sil' : 'Gruptan ayrıl'),
         content: Text(
           deleteGroup
-              ? 'Bu grup ve ilişkili tüm kayıtlar kalıcı olarak silinecek. Devam etmek istiyor musunuz?'
-              : 'Bu gruptan ayrılmak istediğinize emin misiniz?',
+              ? 'Grup, Gruplarım listesinden kaldırılacak. Finansal geçmiş güvenlik için korunacak. Devam etmek istiyor musunuz?'
+              : 'Grup listenizden kaldırılacak. Harcama geçmişiniz korunacak. Devam etmek istiyor musunuz?',
         ),
         actions: [
           TextButton(
@@ -386,6 +410,11 @@ class _GroupDetailContentState extends ConsumerState<_GroupDetailContent> {
             child: const Text('Vazgeç'),
           ),
           FilledButton(
+            key: Key(
+              deleteGroup
+                  ? 'confirm_delete_group_button'
+                  : 'confirm_leave_group_button',
+            ),
             style: FilledButton.styleFrom(
               minimumSize: const Size(0, 48),
               backgroundColor: Theme.of(dialogContext).colorScheme.error,
@@ -398,12 +427,41 @@ class _GroupDetailContentState extends ConsumerState<_GroupDetailContent> {
       ),
     );
     if (confirmed != true || !mounted || !context.mounted) return;
-    _showTemporarySettingsMessage(
-      context,
-      deleteGroup
-          ? 'Grup silme işlemi backend bağlantısını bekliyor.'
-          : 'Gruptan ayrılma işlemi backend bağlantısını bekliyor.',
-    );
+
+    try {
+      final repository = ref.read(groupRepositoryProvider);
+      if (deleteGroup) {
+        await repository.archiveGroup(group.id);
+      } else {
+        await repository.leaveGroup(group.id);
+      }
+
+      ref.invalidate(groupsProvider);
+      ref.invalidate(groupDetailProvider(group.id));
+      ref.invalidate(groupExpensesProvider(group.id));
+      ref.invalidate(groupDebtSummaryProvider(group.id));
+      ref.invalidate(groupSettlementsProvider(group.id));
+
+      if (!mounted || !context.mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      context.go('/groups');
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(deleteGroup ? 'Grup silindi.' : 'Gruptan ayrıldınız.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted || !context.mounted) return;
+      _showTemporarySettingsMessage(
+        context,
+        groupUserMessage(
+          error,
+          fallbackMessage: deleteGroup
+              ? 'Grup silinemedi. Lütfen tekrar deneyin.'
+              : 'Gruptan ayrılamadınız. Lütfen tekrar deneyin.',
+        ),
+      );
+    }
   }
 
   Future<void> _pickCoverImage(ImageSource source) async {
@@ -749,7 +807,9 @@ class _GroupDetailContentState extends ConsumerState<_GroupDetailContent> {
 
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Grup daveti gönderildi.')),
+              const SnackBar(
+                content: Text('Davet bağlantısı e-posta ile gönderildi.'),
+              ),
             );
           }
         },
@@ -964,17 +1024,17 @@ class _GroupSettingsBottomSheetState extends State<_GroupSettingsBottomSheet> {
               title: 'Tehlikeli bölge',
               titleColor: colors.error,
               children: [
-                ListTile(
-                  key: const Key('leave_group_settings'),
-                  leading: Icon(Icons.logout_rounded, color: colors.error),
-                  title: Text(
-                    'Gruptan ayrıl',
-                    style: TextStyle(color: colors.error),
+                if (!widget.isOwner)
+                  ListTile(
+                    key: const Key('leave_group_settings'),
+                    leading: Icon(Icons.logout_rounded, color: colors.error),
+                    title: Text(
+                      'Gruptan ayrıl',
+                      style: TextStyle(color: colors.error),
+                    ),
+                    onTap: () => _closeAndRun(widget.onLeaveGroup),
                   ),
-                  onTap: () => _closeAndRun(widget.onLeaveGroup),
-                ),
                 if (widget.isOwner) ...[
-                  const Divider(height: 1),
                   ListTile(
                     key: const Key('delete_group_settings'),
                     leading: Icon(Icons.delete_outline, color: colors.error),
@@ -982,7 +1042,9 @@ class _GroupSettingsBottomSheetState extends State<_GroupSettingsBottomSheet> {
                       'Grubu sil',
                       style: TextStyle(color: colors.error),
                     ),
-                    subtitle: const Text('Grubu kalıcı olarak sonlandırır'),
+                    subtitle: const Text(
+                      'Listeden kaldırır, finansal geçmişi korur',
+                    ),
                     onTap: () => _closeAndRun(widget.onDeleteGroup),
                   ),
                 ],
@@ -2253,7 +2315,7 @@ class _AddMemberSheetState extends ConsumerState<_AddMemberSheet> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Davet bağlantısı bu e-posta adresine gönderilecektir.',
+                'Davet bağlantısı bu e-posta adresine gönderilir ve 24 saat geçerlidir.',
               ),
               _FriendPicker(
                 onPick: (friend) =>

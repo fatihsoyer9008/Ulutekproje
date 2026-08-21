@@ -195,6 +195,8 @@ abstract interface class GroupRepository
 
   Future<void> archiveGroup(String groupId);
 
+  Future<void> leaveGroup(String groupId);
+
   Future<void> createInvitation({
     required String groupId,
     required String email,

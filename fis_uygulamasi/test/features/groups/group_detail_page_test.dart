@@ -7,10 +7,12 @@ import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/domain/friend_models.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:app_main/features/groups/presentation/group_detail_page.dart';
+import 'package:app_main/features/groups/presentation/groups_page.dart';
 import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../fixtures/group_fixtures.dart';
@@ -202,7 +204,7 @@ void main() {
     expect(find.byKey(const Key('manage_group_members')), findsOneWidget);
     expect(find.byKey(const Key('group_notifications_switch')), findsOneWidget);
     expect(find.text('TRY (₺)'), findsOneWidget);
-    expect(find.byKey(const Key('leave_group_settings')), findsOneWidget);
+    expect(find.byKey(const Key('leave_group_settings')), findsNothing);
     expect(
       find.byKey(const Key('delete_group_settings'), skipOffstage: false),
       findsOneWidget,
@@ -284,7 +286,88 @@ void main() {
     await tester.tap(find.byKey(const Key('submit_group_invitation_button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Grup daveti gönderildi.'), findsOneWidget);
+    expect(
+      find.text('Davet bağlantısı e-posta ile gönderildi.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('owner onay verince grup listeden güvenle kaldırılır', (
+    tester,
+  ) async {
+    final repository = FakeGroupRepository(
+      groups: const <GroupDetail>[twoMemberGroup],
+    );
+    await _pumpDetailRouter(tester, repository: repository);
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('delete_group_settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete_group_settings')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('delete_group_dialog')), findsOneWidget);
+    expect(find.textContaining('Finansal geçmiş'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('confirm_delete_group_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GroupsPage), findsOneWidget);
+    expect(find.text('Ev Arkadaşları'), findsNothing);
+    expect(find.text('Grup silindi.'), findsOneWidget);
+  });
+
+  testWidgets('açık bakiye varken grup silinemez', (tester) async {
+    await _pumpDetailRouter(
+      tester,
+      repository: FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+        debtSummariesByGroup: const <String, DebtSummary>{
+          twoMemberGroupId: currentUserDebtorDebtSummary,
+        },
+      ),
+    );
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('delete_group_settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete_group_settings')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('delete_group_dialog')), findsNothing);
+    expect(
+      find.text('Grubu silmeden önce tüm grup borçlarını kapatın.'),
+      findsOneWidget,
+    );
+    expect(find.byType(GroupDetailPage), findsOneWidget);
+  });
+
+  testWidgets('member onay verince gruptan ayrılır', (tester) async {
+    final repository = FakeGroupRepository(
+      currentUserId: secondUserId,
+      groups: const <GroupDetail>[twoMemberGroup],
+    );
+    await _pumpDetailRouter(
+      tester,
+      repository: repository,
+      userId: secondUserId,
+    );
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('delete_group_settings')), findsNothing);
+    await tester.ensureVisible(find.byKey(const Key('leave_group_settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('leave_group_settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm_leave_group_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GroupsPage), findsOneWidget);
+    expect(find.text('Ev Arkadaşları'), findsNothing);
+    expect(find.text('Gruptan ayrıldınız.'), findsOneWidget);
   });
 
   testWidgets('arkadaş listesinden seçince e-posta alanı otomatik dolar', (
@@ -745,6 +828,40 @@ Future<void> _pumpDetailPage(
   if (settle) {
     await tester.pumpAndSettle();
   }
+}
+
+Future<void> _pumpDetailRouter(
+  WidgetTester tester, {
+  required GroupRepository repository,
+  String userId = currentUserId,
+}) async {
+  final controller = AuthSessionController(
+    _DetailAuthRepository(userId: userId),
+  );
+  await controller.login('user@example.com', 'password');
+  final router = GoRouter(
+    initialLocation: '/groups/$twoMemberGroupId',
+    routes: [
+      GoRoute(path: '/groups', builder: (_, _) => const GroupsPage()),
+      GoRoute(
+        path: '/groups/:groupId',
+        builder: (_, state) =>
+            GroupDetailPage(groupId: state.pathParameters['groupId']!),
+      ),
+    ],
+  );
+  addTearDown(router.dispose);
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        authSessionControllerProvider.overrideWith((ref) => controller),
+        groupRepositoryProvider.overrideWithValue(repository),
+      ],
+      child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 class _RetryingDetailRepository extends FakeGroupRepository {

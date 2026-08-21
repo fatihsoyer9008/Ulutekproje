@@ -59,9 +59,9 @@ class GroupsPage extends ConsumerWidget {
               icon: const Icon(Icons.search_rounded),
             ),
             IconButton(
-              tooltip: 'Kişi ekle',
+              tooltip: 'Yeni grup oluştur',
               onPressed: () => _showCreateGroupSheet(context),
-              icon: const Icon(Icons.person_add_alt_1_outlined),
+              icon: const Icon(Icons.group_add_outlined),
             ),
             const SizedBox(width: 8),
           ],

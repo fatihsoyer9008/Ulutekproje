@@ -404,6 +404,14 @@ _ERRORS = {
         status.HTTP_409_CONFLICT,
         "Son owner gruptan ayrılamaz. Önce owner devri yapmalı veya başka bir owner atamalısınız.",
     ),
+    "group_has_unsettled_balances": (
+        status.HTTP_409_CONFLICT,
+        "Grup silinmeden önce tüm borçlar kapatılmalıdır.",
+    ),
+    "member_has_unsettled_balance": (
+        status.HTTP_409_CONFLICT,
+        "Üyelik sonlandırılmadan önce ilgili bakiye kapatılmalıdır.",
+    ),
 }
 _ITEMIZED_EXPENSE_ERRORS = {
     "group_not_found": (
