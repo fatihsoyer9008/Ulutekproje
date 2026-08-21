@@ -490,22 +490,21 @@ class _PendingFriendInvitationCardState
   Widget build(BuildContext context) {
     return AppCard(
       key: Key('pending_friend_invitation_${widget.invitation.id}'),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: widget.invitation.inviterDisplayName,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const TextSpan(text: ' seni arkadaş olarak eklemek istiyor.'),
-                ],
-              ),
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: widget.invitation.inviterDisplayName,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: ' seni arkadaş olarak eklemek istiyor.'),
+              ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(height: 12),
           FilledButton(
             key: Key('accept_friend_invitation_${widget.invitation.id}'),
             onPressed: _accepting ? null : _accept,
@@ -571,27 +570,26 @@ class _PendingGroupInvitationCardState
   Widget build(BuildContext context) {
     return AppCard(
       key: Key('pending_group_invitation_${widget.invitation.id}'),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: widget.invitation.inviterDisplayName,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  TextSpan(text: ' sizi '),
-                  TextSpan(
-                    text: widget.invitation.groupName,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const TextSpan(text: ' grubuna davet etti.'),
-                ],
-              ),
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: widget.invitation.inviterDisplayName,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: ' sizi '),
+                TextSpan(
+                  text: widget.invitation.groupName,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: ' grubuna davet etti.'),
+              ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(height: 12),
           FilledButton(
             key: Key('accept_group_invitation_${widget.invitation.id}'),
             onPressed: _accepting ? null : _accept,
