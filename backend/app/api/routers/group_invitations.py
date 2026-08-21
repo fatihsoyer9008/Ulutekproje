@@ -1,9 +1,11 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deep_link_pages import deep_link_landing_page
 from app.api.dependencies import (
     get_current_user,
     get_debt_summary_cache,
@@ -96,6 +98,23 @@ async def create_group_invitation(
         )
 
     return GroupInvitationRequestReceived()
+
+
+@router.get(
+    "/api/v1/group-invitation",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def group_invitation_landing_page(
+    token: str = Query(min_length=1, max_length=512),
+) -> HTMLResponse:
+    return deep_link_landing_page(
+        token=token,
+        deep_link_path="group-invitation",
+        title="Grup daveti",
+        description="Daveti kabul etmek için EconBuddy uygulamasını aç.",
+        button_label="Grup davetini kabul et",
+    )
 
 
 @router.post(

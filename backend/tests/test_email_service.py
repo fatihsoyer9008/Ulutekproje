@@ -80,6 +80,12 @@ async def test_smtp_sender_uses_real_provider_configuration(
         "fiskon://auth/group-invitation?token=invitation-token"
         in invitation_plain_body.get_content()
     )
+    invitation_html_body = invitation_message.get_body(preferencelist=("html",))
+    assert invitation_html_body is not None
+    assert (
+        'href="https://api.example.com/api/v1/group-invitation?token=invitation-token"'
+        in invitation_html_body.get_content()
+    )
 
     await SMTPEmailSender().send_friend_invitation(
         email="invitee@example.com",
@@ -96,6 +102,15 @@ async def test_smtp_sender_uses_real_provider_configuration(
         in friend_invitation_plain_body.get_content()
     )
     assert "Ege Başaran" in friend_invitation_plain_body.get_content()
+    friend_invitation_html_body = friend_invitation_message.get_body(
+        preferencelist=("html",)
+    )
+    assert friend_invitation_html_body is not None
+    assert (
+        'href="https://api.example.com/api/v1/friend-invitation'
+        '?token=friend-invitation-token"'
+        in friend_invitation_html_body.get_content()
+    )
 
 
 def test_legacy_smtp_variable_names_remain_supported() -> None:

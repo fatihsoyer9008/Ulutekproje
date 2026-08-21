@@ -1,7 +1,7 @@
 import html
 from email.message import EmailMessage
 from typing import Protocol
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import aiosmtplib
 
@@ -101,8 +101,9 @@ class SMTPEmailSender:
         group_name: str,
     ) -> None:
         invitation_url = self._group_invitation_url(token)
+        web_url = self._web_landing_url("group-invitation", token)
         safe_group_name = html.escape(group_name)
-        safe_invitation_url = html.escape(invitation_url, quote=True)
+        safe_web_url = html.escape(web_url, quote=True)
         await self._send(
             recipient=email,
             subject="EconBuddy grup daveti",
@@ -115,7 +116,7 @@ class SMTPEmailSender:
             ),
             html_body=(
                 f"<p><strong>{safe_group_name}</strong> grubuna davet edildin.</p>"
-                f'<p><a href="{safe_invitation_url}">Grup davetini kabul et</a></p>'
+                f'<p><a href="{safe_web_url}">Grup davetini kabul et</a></p>'
                 "<p>Bu bağlantı 24 saat geçerlidir ve yalnızca davet edilen "
                 "e-posta hesabıyla kullanılabilir.</p>"
             ),
@@ -129,8 +130,9 @@ class SMTPEmailSender:
         inviter_display_name: str,
     ) -> None:
         invitation_url = self._friend_invitation_url(token)
+        web_url = self._web_landing_url("friend-invitation", token)
         safe_inviter_name = html.escape(inviter_display_name)
-        safe_invitation_url = html.escape(invitation_url, quote=True)
+        safe_web_url = html.escape(web_url, quote=True)
         await self._send(
             recipient=email,
             subject="EconBuddy arkadaşlık daveti",
@@ -144,7 +146,7 @@ class SMTPEmailSender:
             html_body=(
                 f"<p><strong>{safe_inviter_name}</strong> seni arkadaş olarak "
                 "eklemek istiyor.</p>"
-                f'<p><a href="{safe_invitation_url}">Arkadaşlık davetini kabul et</a></p>'
+                f'<p><a href="{safe_web_url}">Arkadaşlık davetini kabul et</a></p>'
                 "<p>Bu bağlantı 24 saat geçerlidir ve yalnızca davet edilen "
                 "e-posta hesabıyla kullanılabilir.</p>"
             ),
@@ -168,6 +170,16 @@ class SMTPEmailSender:
     def _friend_invitation_url(token: str) -> str:
         base_url = settings.app_deep_link_base_url.rstrip("/")
         return f"{base_url}/friend-invitation?{urlencode({'token': token})}"
+
+    @staticmethod
+    def _web_landing_url(path: str, token: str) -> str:
+        # E-posta istemcileri (Gmail dahil) özel URL şemalarını (fiskon://)
+        # e-posta gövdesinde tıklanabilir bağlantı olarak göstermiyor. Bu yüzden
+        # e-postadaki buton, önce bu https sayfasına gider; sayfa da tıklandığında
+        # uygulamayı özel şema ile açar.
+        origin = urlsplit(settings.email_action_base_url)
+        base = f"{origin.scheme}://{origin.netloc}"
+        return f"{base}/api/v1/{path}?{urlencode({'token': token})}"
 
     async def _send(
         self,

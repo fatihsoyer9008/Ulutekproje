@@ -211,6 +211,21 @@ async def test_delivery_failure_keeps_general_response_without_logging_email(
 
 
 @pytest.mark.asyncio
+async def test_invitation_landing_page_links_to_app_deep_link(
+    friend_invitation_api_context,
+) -> None:
+    client, *_ = friend_invitation_api_context
+
+    response = await client.get(
+        "/api/v1/friend-invitation", params={"token": "some-token"}
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "fiskon://auth/friend-invitation?token=some-token" in response.text
+
+
+@pytest.mark.asyncio
 async def test_accept_requires_auth_and_unknown_token_returns_gone(
     friend_invitation_api_context,
 ) -> None:

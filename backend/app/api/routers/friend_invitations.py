@@ -1,8 +1,10 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deep_link_pages import deep_link_landing_page
 from app.api.dependencies import (
     get_current_user,
     get_email_sender,
@@ -84,6 +86,23 @@ async def create_friend_invitation(
         )
 
     return FriendInvitationRequestReceived()
+
+
+@router.get(
+    "/api/v1/friend-invitation",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def friend_invitation_landing_page(
+    token: str = Query(min_length=1, max_length=512),
+) -> HTMLResponse:
+    return deep_link_landing_page(
+        token=token,
+        deep_link_path="friend-invitation",
+        title="Arkadaşlık daveti",
+        description="Daveti kabul etmek için EconBuddy uygulamasını aç.",
+        button_label="Arkadaşlık davetini kabul et",
+    )
 
 
 @router.post(
