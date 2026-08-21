@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import (
@@ -9,7 +10,9 @@ from app.core.security import (
     normalize_email,
     utc_now,
 )
+from app.friend_invitation_schemas import PendingFriendInvitation
 from app.friend_schemas import FriendEntry
+from app.models.friend_invitation import FriendInvitation
 from app.models.user import User
 from app.repositories.friend_invitations import FriendInvitationRepository
 from app.repositories.users import UserRepository
@@ -51,6 +54,37 @@ class FriendInvitationService:
         await self.session.commit()
         return token, actor_display_name
 
+    async def list_pending(self, *, email: str) -> list[PendingFriendInvitation]:
+        normalized = normalize_email(email)
+        invitations = await self.invitations.list_pending_for_email(
+            normalized,
+            now=utc_now(),
+        )
+        inviter_ids = {
+            invitation.invited_by_user_id
+            for invitation in invitations
+            if invitation.invited_by_user_id is not None
+        }
+        inviters: dict[uuid.UUID, User] = {}
+        if inviter_ids:
+            result = await self.session.execute(
+                select(User).where(User.id.in_(inviter_ids))
+            )
+            inviters = {user.id: user for user in result.scalars().all()}
+        return [
+            PendingFriendInvitation(
+                id=invitation.id,
+                inviter_display_name=_inviter_display_name(
+                    inviters.get(invitation.invited_by_user_id)
+                    if invitation.invited_by_user_id is not None
+                    else None
+                ),
+                created_at=_as_utc(invitation.created_at),
+                expires_at=_as_utc(invitation.expires_at),
+            )
+            for invitation in invitations
+        ]
+
     async def accept(
         self,
         *,
@@ -61,6 +95,25 @@ class FriendInvitationService:
             hash_token(token),
             for_update=True,
         )
+        return await self._accept_invitation(invitation, user)
+
+    async def accept_by_id(
+        self,
+        *,
+        invitation_id: uuid.UUID,
+        user: User,
+    ) -> FriendEntry:
+        invitation = await self.invitations.get_by_id(
+            invitation_id,
+            for_update=True,
+        )
+        return await self._accept_invitation(invitation, user)
+
+    async def _accept_invitation(
+        self,
+        invitation: FriendInvitation | None,
+        user: User,
+    ) -> FriendEntry:
         now = utc_now()
         if (
             invitation is None
@@ -108,3 +161,9 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _inviter_display_name(inviter: User | None) -> str:
+    if inviter is None:
+        return "Silinmiş kullanıcı"
+    return inviter.display_name or inviter.email

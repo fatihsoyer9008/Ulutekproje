@@ -328,6 +328,69 @@ async def test_accept_requires_auth_and_unknown_token_returns_gone(
 
 
 @pytest.mark.asyncio
+async def test_list_pending_group_invitations_shows_only_own_unexpired_ones(
+    invitation_api_context,
+) -> None:
+    client, session_factory, current, owner, member, outsider, _, sender, _ = (
+        invitation_api_context
+    )
+    group_id = await _create_group(session_factory, owner.id)
+    await _verify_user(session_factory, member)
+    created = await client.post(
+        f"/api/v1/groups/{group_id}/invitations",
+        json={"email": member.email, "role": "member"},
+    )
+    assert created.status_code == 202
+
+    current["value"] = member
+    pending = await client.get("/api/v1/groups/invitations/pending")
+    assert pending.status_code == 200
+    invitations = pending.json()["invitations"]
+    assert len(invitations) == 1
+    item = invitations[0]
+    assert item["group_id"] == str(group_id)
+    assert item["role"] == "member"
+    assert item["inviter_display_name"] == (owner.display_name or owner.email)
+
+    current["value"] = outsider
+    unrelated = await client.get("/api/v1/groups/invitations/pending")
+    assert unrelated.json()["invitations"] == []
+
+
+@pytest.mark.asyncio
+async def test_accept_by_id_creates_membership_and_is_one_time(
+    invitation_api_context,
+) -> None:
+    client, session_factory, current, owner, member, _, _, sender, _ = (
+        invitation_api_context
+    )
+    group_id = await _create_group(session_factory, owner.id)
+    await _verify_user(session_factory, member)
+    created = await client.post(
+        f"/api/v1/groups/{group_id}/invitations",
+        json={"email": member.email, "role": "member"},
+    )
+    assert created.status_code == 202
+    current["value"] = member
+
+    pending = await client.get("/api/v1/groups/invitations/pending")
+    invitation_id = pending.json()["invitations"][0]["id"]
+
+    accepted = await client.post(
+        f"/api/v1/groups/invitations/{invitation_id}/accept"
+    )
+    assert accepted.status_code == 201
+    assert accepted.json()["member"]["user_id"] == str(member.id)
+    assert current["debt_cache"].invalidated_group_ids == [group_id]
+
+    replay = await client.post(
+        f"/api/v1/groups/invitations/{invitation_id}/accept"
+    )
+    assert replay.status_code == 410
+    assert replay.json()["detail"]["code"] == "invitation_expired_or_used"
+
+
+@pytest.mark.asyncio
 async def test_accept_invitation_creates_membership_invalidates_cache_and_is_one_time(
     invitation_api_context,
 ) -> None:

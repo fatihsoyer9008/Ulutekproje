@@ -22,6 +22,7 @@ from app.core.security import normalize_email, privacy_hash
 from app.group_invitation_schemas import (
     GroupInvitationCreateRequest,
     GroupInvitationRequestReceived,
+    PendingGroupInvitationsResponse,
 )
 from app.group_schemas import GroupMemberEnvelope
 from app.models.group import GroupMember
@@ -98,6 +99,41 @@ async def create_group_invitation(
         )
 
     return GroupInvitationRequestReceived()
+
+
+@router.get(
+    "/api/v1/groups/invitations/pending",
+    response_model=PendingGroupInvitationsResponse,
+)
+async def list_pending_group_invitations(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> PendingGroupInvitationsResponse:
+    invitations = await GroupInvitationService(db).list_pending(email=user.email)
+    return PendingGroupInvitationsResponse(invitations=invitations)
+
+
+@router.post(
+    "/api/v1/groups/invitations/{invitation_id}/accept",
+    response_model=GroupMemberEnvelope,
+    status_code=status.HTTP_201_CREATED,
+)
+async def accept_group_invitation_by_id(
+    invitation_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+    debt_cache: DebtSummaryCache = Depends(get_debt_summary_cache),
+) -> GroupMemberEnvelope:
+    try:
+        member = await GroupInvitationService(db).accept_by_id(
+            invitation_id=invitation_id,
+            user=user,
+        )
+    except GroupInvitationError as error:
+        _raise_invitation_error(error)
+
+    await debt_cache.invalidate_best_effort(member.group_id)
+    return GroupMemberEnvelope(member=member)
 
 
 @router.get(

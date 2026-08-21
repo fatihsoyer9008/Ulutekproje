@@ -46,3 +46,33 @@ class GroupInvitationRepository:
         if for_update:
             statement = statement.with_for_update()
         return await self.session.scalar(statement)
+
+    async def get_by_id(
+        self,
+        invitation_id: uuid.UUID,
+        *,
+        for_update: bool = False,
+    ) -> GroupInvitation | None:
+        statement = select(GroupInvitation).where(
+            GroupInvitation.id == invitation_id
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return await self.session.scalar(statement)
+
+    async def list_pending_for_email(
+        self,
+        email: str,
+        *,
+        now: datetime,
+    ) -> list[GroupInvitation]:
+        statement = (
+            select(GroupInvitation)
+            .where(
+                GroupInvitation.invited_email == email,
+                GroupInvitation.accepted_at.is_(None),
+                GroupInvitation.expires_at > now,
+            )
+            .order_by(GroupInvitation.created_at.desc())
+        )
+        return list((await self.session.scalars(statement)).all())

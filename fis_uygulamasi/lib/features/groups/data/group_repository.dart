@@ -205,6 +205,10 @@ abstract interface class GroupRepository
 
   Future<GroupMember> acceptInvitation(String token);
 
+  Future<List<PendingGroupInvitation>> listPendingInvitations();
+
+  Future<GroupMember> acceptInvitationById(String invitationId);
+
   Future<GroupMember> addMember({
     required String groupId,
     required String userId,

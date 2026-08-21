@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import (
@@ -9,8 +10,10 @@ from app.core.security import (
     normalize_email,
     utc_now,
 )
+from app.group_invitation_schemas import PendingGroupInvitation
 from app.group_schemas import GroupMemberResponse
 from app.models.group import GroupRole
+from app.models.group_invitation import GroupInvitation
 from app.models.user import User
 from app.repositories.group_invitations import GroupInvitationRepository
 from app.repositories.groups import GroupMemberAlreadyExists, GroupRepository
@@ -60,6 +63,47 @@ class GroupInvitationService:
         await self.session.commit()
         return token, group.name
 
+    async def list_pending(self, *, email: str) -> list[PendingGroupInvitation]:
+        normalized = normalize_email(email)
+        invitations = await self.invitations.list_pending_for_email(
+            normalized,
+            now=utc_now(),
+        )
+        inviter_ids = {
+            invitation.invited_by_user_id
+            for invitation in invitations
+            if invitation.invited_by_user_id is not None
+        }
+        inviters: dict[uuid.UUID, User] = {}
+        if inviter_ids:
+            result = await self.session.execute(
+                select(User).where(User.id.in_(inviter_ids))
+            )
+            inviters = {user.id: user for user in result.scalars().all()}
+
+        items: list[PendingGroupInvitation] = []
+        for invitation in invitations:
+            group = await self.groups.get_by_id(invitation.group_id)
+            if group is None or group.archived_at is not None:
+                continue
+            inviter = (
+                inviters.get(invitation.invited_by_user_id)
+                if invitation.invited_by_user_id is not None
+                else None
+            )
+            items.append(
+                PendingGroupInvitation(
+                    id=invitation.id,
+                    group_id=invitation.group_id,
+                    group_name=group.name,
+                    role=invitation.role,
+                    inviter_display_name=_inviter_display_name(inviter),
+                    created_at=_as_utc(invitation.created_at),
+                    expires_at=_as_utc(invitation.expires_at),
+                )
+            )
+        return items
+
     async def accept(
         self,
         *,
@@ -70,6 +114,25 @@ class GroupInvitationService:
             hash_token(token),
             for_update=True,
         )
+        return await self._accept_invitation(invitation, user)
+
+    async def accept_by_id(
+        self,
+        *,
+        invitation_id: uuid.UUID,
+        user: User,
+    ) -> GroupMemberResponse:
+        invitation = await self.invitations.get_by_id(
+            invitation_id,
+            for_update=True,
+        )
+        return await self._accept_invitation(invitation, user)
+
+    async def _accept_invitation(
+        self,
+        invitation: GroupInvitation | None,
+        user: User,
+    ) -> GroupMemberResponse:
         now = utc_now()
         if (
             invitation is None
@@ -115,3 +178,9 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _inviter_display_name(inviter: User | None) -> str:
+    if inviter is None:
+        return "Silinmiş kullanıcı"
+    return inviter.display_name or inviter.email

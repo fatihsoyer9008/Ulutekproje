@@ -804,6 +804,56 @@ class GroupApiErrorDetail {
   };
 }
 
+/// A group invitation addressed to the current user's verified e-mail,
+/// still waiting to be accepted. Matches `GET /api/v1/groups/invitations/pending`.
+class PendingGroupInvitation {
+  const PendingGroupInvitation({
+    required this.id,
+    required this.groupId,
+    required this.groupName,
+    required this.role,
+    required this.inviterDisplayName,
+    required this.createdAt,
+    required this.expiresAt,
+  });
+
+  factory PendingGroupInvitation.fromJson(Map<String, Object?> json) =>
+      PendingGroupInvitation(
+        id: json['id']! as String,
+        groupId: json['group_id']! as String,
+        groupName: json['group_name']! as String,
+        role: json['role']! as String,
+        inviterDisplayName: json['inviter_display_name']! as String,
+        createdAt: json['created_at']! as String,
+        expiresAt: json['expires_at']! as String,
+      );
+
+  final String id;
+  final String groupId;
+  final String groupName;
+  final String role;
+  final String inviterDisplayName;
+  final String createdAt;
+  final String expiresAt;
+}
+
+class PendingGroupInvitationsResponse {
+  const PendingGroupInvitationsResponse({required this.invitations});
+
+  factory PendingGroupInvitationsResponse.fromJson(Map<String, Object?> json) =>
+      PendingGroupInvitationsResponse(
+        invitations: (json['invitations']! as List<Object?>)
+            .map(
+              (item) => PendingGroupInvitation.fromJson(
+                item! as Map<String, Object?>,
+              ),
+            )
+            .toList(growable: false),
+      );
+
+  final List<PendingGroupInvitation> invitations;
+}
+
 class GroupApiError {
   const GroupApiError({required this.detail});
 
