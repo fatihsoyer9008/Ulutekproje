@@ -62,16 +62,13 @@ void main() {
     expect(find.textContaining('alacaklısınız'), findsWidgets);
   });
 
-  testWidgets('daha fazla arkadaş ekle butonu ve harcama ekle FAB görünür', (
-    tester,
-  ) async {
+  testWidgets('daha fazla arkadaş ekle butonu görünür', (tester) async {
     await pumpFriendsPage(tester);
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('add_more_friends_button')), findsOneWidget);
     expect(find.text('Daha fazla arkadaş ekle'), findsOneWidget);
-    expect(find.byKey(const Key('add_friend_expense_button')), findsOneWidget);
-    expect(find.text('Harcama ekle'), findsOneWidget);
+    expect(find.byKey(const Key('add_friend_expense_button')), findsNothing);
   });
 
   testWidgets('arkadaş ekle daveti gönderir', (tester) async {

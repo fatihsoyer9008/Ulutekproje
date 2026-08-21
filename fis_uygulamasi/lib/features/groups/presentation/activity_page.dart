@@ -83,18 +83,6 @@ class ActivityPage extends ConsumerWidget {
             return _ActivityFeed(entries: entries, now: now);
           },
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          key: const Key('add_activity_expense_button'),
-          backgroundColor: _teal,
-          foregroundColor: Colors.white,
-          extendedPadding: const EdgeInsets.symmetric(horizontal: 28),
-          onPressed: () => context.go('/groups'),
-          icon: const Icon(Icons.receipt_long_outlined),
-          label: const Text(
-            'Harcama ekle',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
         bottomNavigationBar: GroupsBottomNavigation(
           activeTab: GroupsBottomTab.activity,
           isDark: isDark,
