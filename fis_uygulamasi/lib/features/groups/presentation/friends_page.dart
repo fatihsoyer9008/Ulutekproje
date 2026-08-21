@@ -88,8 +88,7 @@ class FriendsPage extends StatelessWidget {
             }
           },
           onFriendsPressed: () {},
-          onActivityPressed: () =>
-              _showComingSoon(context, 'Aktivite ekranı yakında eklenecek.'),
+          onActivityPressed: () => context.push('/activity'),
           onAccountPressed: () => context.push('/profile'),
         ),
       ),

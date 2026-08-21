@@ -10,10 +10,14 @@ import '../application/group_expense_conflict_service.dart';
 import '../application/local_first_group_expense_reader.dart';
 import '../application/offline_first_group_expense_mutator.dart';
 import '../application/offline_first_group_expense_writer.dart';
+import '../domain/group_activity_models.dart';
 import '../domain/group_models.dart';
+import 'api_group_activity_repository.dart';
 import 'api_group_repository.dart';
+import 'demo_group_activity_repository.dart';
 import 'demo_group_seed.dart';
 import 'fake_group_repository.dart';
+import 'group_activity_repository.dart';
 
 final currentGroupUserIdProvider = Provider<String?>(
   (ref) => ref.watch(
@@ -59,6 +63,32 @@ final groupRepositoryProvider = Provider<GroupRepository>(
   (ref) => ref.watch(groupMockModeProvider)
       ? ref.watch(fakeGroupRepositoryProvider)
       : ref.watch(apiGroupRepositoryProvider),
+);
+
+final apiGroupActivityRepositoryProvider = Provider<GroupActivityRepository>(
+  (ref) => ApiGroupActivityRepository(
+    ref.watch(apiClientProvider),
+    currentUserId: ref.watch(currentGroupUserIdProvider),
+  ),
+);
+
+final demoGroupActivityRepositoryProvider = Provider<GroupActivityRepository>(
+  (ref) => DemoGroupActivityRepository(),
+);
+
+final groupActivityRepositoryProvider = Provider<GroupActivityRepository>((
+  ref,
+) {
+  final groupRepository = ref.watch(groupRepositoryProvider);
+  if (ref.watch(groupMockModeProvider) ||
+      groupRepository is FakeGroupRepository) {
+    return ref.watch(demoGroupActivityRepositoryProvider);
+  }
+  return ref.watch(apiGroupActivityRepositoryProvider);
+});
+
+final groupActivityFeedProvider = FutureProvider<List<GroupActivityEntry>>(
+  (ref) => loadAllGroupActivity(ref.watch(groupActivityRepositoryProvider)),
 );
 
 final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(

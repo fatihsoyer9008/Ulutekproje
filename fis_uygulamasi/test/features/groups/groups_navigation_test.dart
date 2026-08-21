@@ -15,6 +15,7 @@ import 'package:app_main/features/groups/data/fake_group_repository.dart'
 import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/data/group_repository.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
+import 'package:app_main/features/groups/presentation/activity_page.dart';
 import 'package:app_main/features/groups/presentation/group_ocr_page.dart';
 import 'package:app_main/features/groups/presentation/groups_page.dart';
 import 'package:app_main/features/groups/presentation/fast_split_page.dart';
@@ -43,6 +44,21 @@ void main() {
     await _openGroupsFromDrawer(tester);
 
     expect(find.byType(GroupsPage), findsOneWidget);
+  });
+
+  testWidgets('gruplar alt navigasyonundan Hareketler ekranı açılır', (
+    tester,
+  ) async {
+    final controller = AuthSessionController(_NavigationAuthRepository());
+    await controller.login('user@example.com', 'password');
+
+    await _pumpApp(tester, controller);
+    await _openGroupsFromDrawer(tester);
+    await tester.tap(find.text('Hareketler'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ActivityPage), findsOneWidget);
+    expect(find.text('Recent activity'), findsOneWidget);
   });
 
   testWidgets('grup detayındaki Fiş Tara ayrı grup OCR routeunu açar', (
