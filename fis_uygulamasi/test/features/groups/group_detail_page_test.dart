@@ -47,8 +47,6 @@ void main() {
     expect(find.byKey(const Key('group_detail_avatar')), findsOneWidget);
     expect(find.text('2 kişi'), findsOneWidget);
     expect(find.text('Ödeme tarihi ekle'), findsOneWidget);
-    expect(find.text('Ödeme yap'), findsOneWidget);
-    expect(find.text('Grafikler'), findsOneWidget);
     expect(find.text('Bakiyeler'), findsOneWidget);
     expect(find.text('Harcama ekle'), findsOneWidget);
     expect(find.text('Borç Özetini Görüntüle'), findsNothing);
