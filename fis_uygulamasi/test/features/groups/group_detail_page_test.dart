@@ -1,8 +1,10 @@
 import 'package:app_main/features/auth/data/auth_repository.dart';
 import 'package:app_main/features/auth/domain/auth_user.dart';
 import 'package:app_main/features/auth/presentation/controllers/auth_session_controller.dart';
+import 'package:app_main/features/groups/data/fake_friend_repository.dart';
 import 'package:app_main/features/groups/data/fake_group_repository.dart';
 import 'package:app_main/features/groups/data/group_providers.dart';
+import 'package:app_main/features/groups/domain/friend_models.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:app_main/features/groups/presentation/group_detail_page.dart';
 import 'package:core_ui/core_ui.dart';
@@ -284,6 +286,55 @@ void main() {
 
     expect(find.text('Grup daveti gönderildi.'), findsOneWidget);
   });
+
+  testWidgets('arkadaş listesinden seçince e-posta alanı otomatik dolar', (
+    tester,
+  ) async {
+    const friend = FriendSummary(
+      userId: '30000000-0000-4000-8000-000000000001',
+      displayName: 'Ege Başaran',
+      avatarId: 'man',
+      email: 'ege.basaran@example.com',
+      directGroupId: '30000000-0000-4000-8000-000000000002',
+      netAmountInMinor: 0,
+      currency: 'TRY',
+      status: 'settled_up',
+      sharedGroupIds: [],
+    );
+
+    await _pumpDetailPage(
+      tester,
+      repository: FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      ),
+      extraOverrides: [
+        friendRepositoryProvider.overrideWithValue(
+          FakeFriendRepository(friends: const [friend]),
+        ),
+      ],
+    );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('add_group_member_button')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const Key('add_group_member_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(Key('friend_picker_option_${friend.userId}')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(Key('friend_picker_option_${friend.userId}')));
+    await tester.pump();
+
+    final emailField = tester.widget<TextFormField>(
+      find.byKey(const Key('group_invitation_email_field')),
+    );
+    expect(emailField.controller!.text, friend.email);
+  });
+
   testWidgets(
     'Fast Split kaydından sonra detay ekranındaki masraf listesi yenilenir',
     (tester) async {
@@ -670,6 +721,7 @@ Future<void> _pumpDetailPage(
   String userId = currentUserId,
   String groupId = twoMemberGroupId,
   bool settle = true,
+  List<Override> extraOverrides = const [],
 }) async {
   final controller = AuthSessionController(
     _DetailAuthRepository(userId: userId),
@@ -681,6 +733,7 @@ Future<void> _pumpDetailPage(
       overrides: [
         authSessionControllerProvider.overrideWith((ref) => controller),
         groupRepositoryProvider.overrideWithValue(repository),
+        ...extraOverrides,
       ],
       child: MaterialApp(
         theme: AppTheme.light,

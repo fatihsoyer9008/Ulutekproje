@@ -1,9 +1,12 @@
+import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../avatar/presentation/widgets/avatar_badge.dart';
 import '../../transaction_draft/model/turkish_money.dart';
-import '../data/demo_friend_seed.dart';
+import '../data/group_api_failure.dart';
+import '../data/group_providers.dart';
 import '../domain/friend_models.dart';
 import 'widgets/groups_bottom_navigation.dart';
 
@@ -13,14 +16,13 @@ const _green = Color(0xFF10B981);
 
 /// Friends tab: same skeleton as [GroupsPage] (dark theme override, header
 /// balance row, list, pinned FAB, shared bottom navigation), with people
-/// instead of groups. UI-only for now — [createDemoFriendSeed] stands in for
-/// `GET /api/v1/friends` until that endpoint is wired up.
-class FriendsPage extends StatelessWidget {
+/// instead of groups.
+class FriendsPage extends ConsumerWidget {
   const FriendsPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final friends = createDemoFriendSeed();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final friendsAsync = ref.watch(friendsProvider);
     final appTheme = Theme.of(context);
     final isDark = appTheme.brightness == Brightness.dark;
     final pageBackground = isDark
@@ -50,26 +52,39 @@ class FriendsPage extends StatelessWidget {
             IconButton(
               tooltip: 'Ara',
               onPressed: () =>
-                  _showComingSoon(context, 'Arama yakında eklenecek.'),
+                  _showSnackBar(context, 'Arama yakında eklenecek.'),
               icon: const Icon(Icons.search_rounded),
             ),
             IconButton(
               tooltip: 'Arkadaş ekle',
-              onPressed: () =>
-                  _showComingSoon(context, 'Arkadaş ekleme yakında eklenecek.'),
+              onPressed: () => _showInviteFriendSheet(context, ref),
               icon: const Icon(Icons.person_add_alt_1_outlined),
             ),
             const SizedBox(width: 8),
           ],
         ),
-        body: _FriendsOverview(friends: friends),
+        body: friendsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => _FriendsErrorState(
+            message: groupUserMessage(
+              error,
+              fallbackMessage:
+                  'Arkadaşlar yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.',
+            ),
+            onRetry: () => ref.invalidate(friendsProvider),
+          ),
+          data: (friends) => _FriendsOverview(
+            friends: friends,
+            onInviteFriend: () => _showInviteFriendSheet(context, ref),
+          ),
+        ),
         floatingActionButton: FloatingActionButton.extended(
           key: const Key('add_friend_expense_button'),
           backgroundColor: _teal,
           foregroundColor: Colors.white,
           extendedPadding: const EdgeInsets.symmetric(horizontal: 28),
           onPressed: () =>
-              _showComingSoon(context, 'Harcama ekleme yakında eklenecek.'),
+              _showSnackBar(context, 'Harcama ekleme yakında eklenecek.'),
           icon: const Icon(Icons.receipt_long_outlined),
           label: const Text(
             'Harcama ekle',
@@ -94,17 +109,147 @@ class FriendsPage extends StatelessWidget {
       ),
     );
   }
+}
 
-  void _showComingSoon(BuildContext context, String message) =>
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+void _showSnackBar(BuildContext context, String message) =>
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+
+Future<void> _showInviteFriendSheet(BuildContext context, WidgetRef ref) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => _InviteFriendSheet(
+      onSubmit: (email) async {
+        await ref.read(friendRepositoryProvider).createInvitation(email: email);
+        if (context.mounted) {
+          _showSnackBar(context, 'Arkadaşlık daveti gönderildi.');
+        }
+      },
+    ),
+  );
+}
+
+class _InviteFriendSheet extends StatefulWidget {
+  const _InviteFriendSheet({required this.onSubmit});
+
+  final Future<void> Function(String email) onSubmit;
+
+  @override
+  State<_InviteFriendSheet> createState() => _InviteFriendSheetState();
+}
+
+class _InviteFriendSheetState extends State<_InviteFriendSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  bool _submitting = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
+      child: SafeArea(
+        top: false,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Arkadaş Ekle',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Arkadaşlık daveti bu e-posta adresine gönderilecektir.',
+              ),
+              const SizedBox(height: 20),
+              TextFormField(
+                key: const Key('friend_invitation_email_field'),
+                controller: _emailController,
+                autofocus: true,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(
+                  labelText: 'E-posta adresi',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  final email = value?.trim() ?? '';
+                  if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                    return 'Geçerli bir e-posta adresi girin.';
+                  }
+                  return null;
+                },
+                onFieldSubmitted: (_) => _submit(),
+              ),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _errorMessage!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                key: const Key('submit_friend_invitation_button'),
+                onPressed: _submitting ? null : _submit,
+                icon: _submitting
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.person_add_alt_1_rounded),
+                label: const Text('Daveti Gönder'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _submitting = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await widget.onSubmit(_emailController.text.trim());
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      setState(
+        () => _errorMessage = groupUserMessage(
+          error,
+          fallbackMessage: 'Davet gönderilemedi. Lütfen tekrar deneyin.',
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 }
 
 class _FriendsOverview extends StatelessWidget {
-  const _FriendsOverview({required this.friends});
+  const _FriendsOverview({required this.friends, required this.onInviteFriend});
 
   final List<FriendSummary> friends;
+  final VoidCallback onInviteFriend;
 
   @override
   Widget build(BuildContext context) {
@@ -139,11 +284,7 @@ class _FriendsOverview extends StatelessWidget {
         Center(
           child: OutlinedButton.icon(
             key: const Key('add_more_friends_button'),
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Arkadaş ekleme yakında eklenecek.'),
-              ),
-            ),
+            onPressed: onInviteFriend,
             icon: const Icon(Icons.person_add_alt_1_outlined),
             label: const Text('Daha fazla arkadaş ekle'),
             style: OutlinedButton.styleFrom(
@@ -217,9 +358,8 @@ class _FriendCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         key: Key('friend_card_${friend.userId}'),
-        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Arkadaş detayı yakında eklenecek.')),
-        ),
+        onTap: () =>
+            _showSnackBar(context, 'Arkadaş detayı yakında eklenecek.'),
         borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
@@ -286,6 +426,48 @@ class _FriendsEmptyState extends StatelessWidget {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FriendsErrorState extends StatelessWidget {
+  const _FriendsErrorState({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: AppCard(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline_rounded, size: 36),
+              const SizedBox(height: 12),
+              Text(
+                'Arkadaşlar yüklenemedi',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                key: const Key('friends_error_message'),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                key: const Key('friends_retry_button'),
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Tekrar dene'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
