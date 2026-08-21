@@ -8,26 +8,7 @@ void main() {
 
   setUpAll(() => initializeDateFormatting('tr_TR'));
 
-  test('weekly period uses seven calendar days with inclusive day start', () {
-    final start = DateTime(2026, 8, 9);
-    final result = StatisticsCalculator.filterTransactions(
-      [
-        _transaction(date: start, amount: 100),
-        _transaction(
-          date: start.subtract(const Duration(microseconds: 1)),
-          amount: 200,
-        ),
-        _transaction(date: DateTime(2026, 8, 15, 23, 59), amount: 300),
-        _transaction(date: DateTime(2026, 8, 16), amount: 400),
-      ],
-      StatisticsPeriod.weekly,
-      now,
-    );
-
-    expect(result.map((item) => item.amountInMinor), [100, 300]);
-  });
-
-  test('monthly period includes this month and excludes adjacent months', () {
+  test('one month period includes this month and excludes adjacent months', () {
     final result = StatisticsCalculator.filterTransactions(
       [
         _transaction(date: DateTime(2026, 8), amount: 100),
@@ -35,11 +16,25 @@ void main() {
         _transaction(date: DateTime(2026, 7, 31, 23, 59), amount: 300),
         _transaction(date: DateTime(2026, 9), amount: 400),
       ],
-      StatisticsPeriod.monthly,
+      StatisticsPeriod.oneMonth,
       now,
     );
 
     expect(result.map((item) => item.amountInMinor), [100, 200]);
+  });
+
+  test('three month period starts at the first day three months wide', () {
+    final result = StatisticsCalculator.filterTransactions(
+      [
+        _transaction(date: DateTime(2026, 6), amount: 100),
+        _transaction(date: DateTime(2026, 5, 31, 23, 59), amount: 200),
+        _transaction(date: DateTime(2026, 8, 31, 23, 59), amount: 300),
+      ],
+      StatisticsPeriod.threeMonths,
+      now,
+    );
+
+    expect(result.map((item) => item.amountInMinor), [100, 300]);
   });
 
   test('six month period includes first month midnight', () {
@@ -89,15 +84,28 @@ void main() {
     expect(summaries.first.progress, closeTo(1000 / 1750, .0001));
   });
 
-  test('weekly spending always returns seven calendar buckets', () {
+  test('one month spending returns calendar week buckets', () {
     final spending = StatisticsCalculator.spendingSeries(
       [_transaction(date: DateTime(2026, 8, 15), amount: 1250)],
-      StatisticsPeriod.weekly,
+      StatisticsPeriod.oneMonth,
       now,
     );
 
-    expect(spending, hasLength(7));
-    expect(spending.last.amountInMinor, 1250);
+    expect(spending, hasLength(5));
+    expect(spending[2].amountInMinor, 1250);
+  });
+
+  test('one year period returns twelve monthly buckets', () {
+    final spending = StatisticsCalculator.spendingSeries(
+      [_transaction(date: DateTime(2025, 9, 1), amount: 1250)],
+      StatisticsPeriod.oneYear,
+      now,
+    );
+
+    expect(spending, hasLength(12));
+    expect(spending.first.label, 'Eyl');
+    expect(spending.first.amountInMinor, 1250);
+    expect(spending.last.label, 'Ağu');
   });
 }
 

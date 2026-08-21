@@ -34,72 +34,6 @@ class StatisticsContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Genel İstatistik',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${period.subtitle} harcama eğilimi',
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              PopupMenuButton<StatisticsPeriod>(
-                key: const Key('statistics_period_menu'),
-                initialValue: period,
-                onSelected: onPeriodChanged,
-                itemBuilder: (_) => [
-                  for (final value in StatisticsPeriod.values)
-                    PopupMenuItem(value: value, child: Text(value.label)),
-                ],
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 13,
-                    vertical: 9,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withValues(alpha: .72),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: scheme.outlineVariant),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        period.label,
-                        style: TextStyle(
-                          color: scheme.onPrimaryContainer,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 17,
-                        color: scheme.onPrimaryContainer,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
           LayoutBuilder(
             builder: (context, constraints) {
               final tileWidth = (constraints.maxWidth - 16) / 3;
@@ -162,21 +96,41 @@ class StatisticsContent extends StatelessWidget {
                         ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: scheme.primaryContainer.withValues(alpha: .65),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Text(
-                        period.label,
-                        style: TextStyle(
-                          color: scheme.onPrimaryContainer,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
+                    PopupMenuButton<StatisticsPeriod>(
+                      key: const Key('statistics_period_menu'),
+                      initialValue: period,
+                      onSelected: onPeriodChanged,
+                      itemBuilder: (_) => [
+                        for (final value in StatisticsPeriod.values)
+                          PopupMenuItem(value: value, child: Text(value.label)),
+                      ],
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: scheme.primaryContainer.withValues(alpha: .65),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              period.label,
+                              style: TextStyle(
+                                color: scheme.onPrimaryContainer,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              size: 15,
+                              color: scheme.onPrimaryContainer,
+                            ),
+                          ],
                         ),
                       ),
                     ),

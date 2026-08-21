@@ -121,12 +121,12 @@ class _CategoryManagementPageState
                     controller: _nameController,
                     maxLength: 40,
                     decoration: const InputDecoration(
-                      labelText: 'Kategori adı',
+                      labelText: 'Kategori Adı',
                       prefixIcon: Icon(Icons.edit_outlined),
                       border: OutlineInputBorder(),
                     ),
                     validator: (value) => value == null || value.trim().isEmpty
-                        ? 'Kategori adı zorunludur'
+                        ? 'Kategori adı zorunludur.'
                         : null,
                   ),
                   const SizedBox(height: 8),

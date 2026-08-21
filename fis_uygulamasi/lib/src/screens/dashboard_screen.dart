@@ -89,10 +89,7 @@ class DashboardScreen extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 28),
-        Text(
-          'AI Finans Asistanı',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
+        Text('Finans Asistanın', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),
         AppCard(
           onTap: onAiAssistantPressed,

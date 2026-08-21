@@ -5,14 +5,14 @@ import 'package:intl/intl.dart';
 import '../../models/ui_models.dart';
 
 enum StatisticsPeriod {
-  weekly('Haftalık', 'Son 7 gün'),
-  monthly('Aylık', 'Bu ay'),
-  sixMonths('6 Ay', 'Son 6 ay');
+  oneMonth('1 Ay'),
+  threeMonths('3 Ay'),
+  sixMonths('6 Ay'),
+  oneYear('1 Yıl');
 
-  const StatisticsPeriod(this.label, this.subtitle);
+  const StatisticsPeriod(this.label);
 
   final String label;
-  final String subtitle;
 }
 
 class StatisticsSnapshot {
@@ -85,15 +85,7 @@ abstract final class StatisticsCalculator {
   ) {
     final today = _startOfDay(referenceDate);
     switch (period) {
-      case StatisticsPeriod.weekly:
-        return List.generate(7, (index) {
-          final day = today.subtract(Duration(days: 6 - index));
-          return MonthlySpending(
-            _weekdayLabel(day.weekday),
-            _sumBetween(expenses, day, day.add(const Duration(days: 1))),
-          );
-        });
-      case StatisticsPeriod.monthly:
+      case StatisticsPeriod.oneMonth:
         final monthStart = DateTime(today.year, today.month);
         final monthEnd = DateTime(today.year, today.month + 1);
         final result = <MonthlySpending>[];
@@ -114,16 +106,26 @@ abstract final class StatisticsCalculator {
           week++;
         }
         return result;
+      case StatisticsPeriod.threeMonths:
+        return _monthlySeries(expenses, today, 3);
       case StatisticsPeriod.sixMonths:
-        return List.generate(6, (index) {
-          final month = DateTime(today.year, today.month - (5 - index));
-          return MonthlySpending(
-            _monthLabel(month.month),
-            _sumBetween(expenses, month, DateTime(month.year, month.month + 1)),
-          );
-        });
+        return _monthlySeries(expenses, today, 6);
+      case StatisticsPeriod.oneYear:
+        return _monthlySeries(expenses, today, 12);
     }
   }
+
+  static List<MonthlySpending> _monthlySeries(
+    List<TransactionEntity> expenses,
+    DateTime today,
+    int monthCount,
+  ) => List.generate(monthCount, (index) {
+    final month = DateTime(today.year, today.month - (monthCount - 1 - index));
+    return MonthlySpending(
+      _monthLabel(month.month),
+      _sumBetween(expenses, month, DateTime(month.year, month.month + 1)),
+    );
+  });
 
   static List<CategorySummary> categorySummaries(
     List<TransactionEntity> expenses,
@@ -167,16 +169,20 @@ abstract final class StatisticsCalculator {
   static _DateRange _rangeFor(StatisticsPeriod period, DateTime referenceDate) {
     final today = _startOfDay(referenceDate);
     return switch (period) {
-      StatisticsPeriod.weekly => _DateRange(
-        today.subtract(const Duration(days: 6)),
-        today.add(const Duration(days: 1)),
-      ),
-      StatisticsPeriod.monthly => _DateRange(
+      StatisticsPeriod.oneMonth => _DateRange(
         DateTime(today.year, today.month),
+        DateTime(today.year, today.month + 1),
+      ),
+      StatisticsPeriod.threeMonths => _DateRange(
+        DateTime(today.year, today.month - 2),
         DateTime(today.year, today.month + 1),
       ),
       StatisticsPeriod.sixMonths => _DateRange(
         DateTime(today.year, today.month - 5),
+        DateTime(today.year, today.month + 1),
+      ),
+      StatisticsPeriod.oneYear => _DateRange(
+        DateTime(today.year, today.month - 11),
         DateTime(today.year, today.month + 1),
       ),
     };
@@ -192,9 +198,6 @@ abstract final class StatisticsCalculator {
 
   static DateTime _startOfDay(DateTime value) =>
       DateTime(value.year, value.month, value.day);
-
-  static String _weekdayLabel(int weekday) =>
-      const ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'][weekday - 1];
 
   static String _monthLabel(int month) => const [
     'Oca',

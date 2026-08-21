@@ -39,17 +39,20 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(StatisticsScreen, skipOffstage: false), findsOneWidget);
-    expect(find.text('Genel İstatistik'), findsOneWidget);
-    expect(find.text('AI Asistan'), findsOneWidget);
+    expect(find.text('Genel İstatistik'), findsNothing);
+    expect(find.text('Son 6 ay harcama eğilimi'), findsNothing);
+    expect(find.text('Kişisel Asistanın'), findsOneWidget);
     expect(find.text('Akıllı Özet'), findsNothing);
 
-    await tester.tap(find.text('AI Asistan'));
+    await tester.tap(find.text('Kişisel Asistanın'));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('ai_close_button')), findsOneWidget);
   });
 
-  testWidgets('AI Asistan opens from every navigation tab', (tester) async {
+  testWidgets('personal assistant opens from every navigation tab', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       FinanceApp(transactionStream: Stream.value(const <TransactionEntity>[])),
     );
@@ -63,7 +66,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('ai_close_button')), findsOneWidget);
-      expect(find.text('AI Asistan yakında sizinle.'), findsNothing);
+      expect(find.text('Kişisel Asistanın yakında sizinle.'), findsNothing);
 
       await tester.tap(find.byKey(const Key('ai_close_button')));
       await tester.pumpAndSettle();

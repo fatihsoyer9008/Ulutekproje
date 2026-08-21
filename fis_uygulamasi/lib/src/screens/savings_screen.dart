@@ -156,8 +156,8 @@ class _SavingsContent extends StatelessWidget {
     child: FloatingActionButton.extended(
       key: const Key('add_savings_goal_fab'),
       onPressed: () => _showCreateSheet(context),
-      backgroundColor: const Color(0xFF00D7C7),
-      foregroundColor: Colors.black,
+      backgroundColor: Theme.of(context).colorScheme.primary,
+      foregroundColor: Theme.of(context).colorScheme.onPrimary,
       icon: const Icon(Icons.add_rounded),
       label: const Text('Yeni Hedef'),
     ),
@@ -176,28 +176,18 @@ class _SavingsEmptyOnboarding extends StatelessWidget {
         builder: (context, constraints) {
           final compact = constraints.maxHeight < 720;
           return SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(28, compact ? 16 : 32, 28, 24),
+            padding: EdgeInsets.fromLTRB(28, compact ? 16 : 28, 28, 24),
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 minHeight: constraints.maxHeight - 56,
               ),
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _SavingsOnboardingIllustration(compact: compact),
-                  SizedBox(height: compact ? 20 : 30),
-                  const Text(
-                    'BİRİKİM HEDEFLERİNİZİ YÖNETİN',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.15,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: compact ? 24 : 32),
                   Text(
-                    'Birikim hedeflerinizi yönetin',
+                    'Birikim Hedeflerinizi Belirleyin',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w800,
@@ -206,10 +196,11 @@ class _SavingsEmptyOnboarding extends StatelessWidget {
                   const SizedBox(height: 12),
                   Text(
                     'Mevcut hedeflerinizi takip edin, yeni hedefler belirleyin ve otomatik kuralları özelleştirin.',
+                    key: const Key('savings_empty_description'),
                     textAlign: TextAlign.center,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyLarge?.copyWith(color: AppColors.ink),
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   SizedBox(height: compact ? 24 : 34),
                   SizedBox(
@@ -220,12 +211,6 @@ class _SavingsEmptyOnboarding extends StatelessWidget {
                       icon: const Icon(Icons.add_rounded),
                       label: const Text('HEDEF EKLE'),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Verilerin senin kontrolünde. Misafir olarak da başlayabilirsin.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.muted, fontSize: 12),
                   ),
                 ],
               ),
@@ -243,80 +228,101 @@ class _SavingsOnboardingIllustration extends StatelessWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: compact ? 270 : 330,
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.mintLight,
-        borderRadius: BorderRadius.circular(42),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            top: 0,
-            right: 0,
-            child: Container(
-              width: 142,
-              height: 106,
-              decoration: const BoxDecoration(
-                color: Color(0xFF9DEFD8),
-                borderRadius: BorderRadius.only(topRight: Radius.circular(42)),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    return SizedBox(
+      height: compact ? 270 : 330,
+      child: DecoratedBox(
+        key: const Key('savings_onboarding_illustration'),
+        decoration: BoxDecoration(
+          color: isDark ? scheme.surfaceContainerLow : AppColors.mintLight,
+          borderRadius: BorderRadius.circular(42),
+          border: Border.all(
+            color: isDark ? scheme.outlineVariant : AppColors.border,
+          ),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Container(
+                width: 142,
+                height: 106,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? scheme.primaryContainer.withValues(alpha: .58)
+                      : const Color(0xFF9DEFD8),
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(42),
+                  ),
+                ),
               ),
             ),
-          ),
-          const Positioned(
-            left: 22,
-            top: 36,
-            child: _OnboardingAvatar(initials: 'AY', color: Color(0xFFD5EBFC)),
-          ),
-          const Positioned(
-            right: 26,
-            top: 48,
-            child: _OnboardingAvatar(initials: 'MK', color: Color(0xFFBFE5D7)),
-          ),
-          Positioned(
-            left: 8,
-            right: 8,
-            top: compact ? 104 : 126,
-            child: Row(
-              children: const [
-                Expanded(
-                  child: _OnboardingGoalCard(
-                    title: 'Haftalık Tatil\nFonu',
-                    icon: Icons.favorite_rounded,
-                    progress: .22,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: _OnboardingGoalCard(
-                    title: 'Kişisel Bilgisayar\nHedefi',
-                    icon: Icons.laptop_mac_rounded,
-                    progress: .35,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: _OnboardingGoalCard(
-                    title: 'Otomatik\nBirikim',
-                    icon: Icons.savings_rounded,
-                    progress: .72,
-                  ),
-                ),
-              ],
+            const Positioned(
+              left: 22,
+              top: 36,
+              child: _OnboardingAvatar(
+                initials: 'AY',
+                color: Color(0xFFD5EBFC),
+              ),
             ),
-          ),
-          const Positioned(
-            right: 34,
-            bottom: 18,
-            child: _OnboardingAvatar(initials: 'SE', color: Color(0xFF9DEFD8)),
-          ),
-        ],
+            const Positioned(
+              right: 26,
+              top: 48,
+              child: _OnboardingAvatar(
+                initials: 'MK',
+                color: Color(0xFFBFE5D7),
+              ),
+            ),
+            Positioned(
+              left: 8,
+              right: 8,
+              top: compact ? 104 : 126,
+              child: Row(
+                children: const [
+                  Expanded(
+                    child: _OnboardingGoalCard(
+                      title: 'Haftalık Tatil\nFonu',
+                      icon: Icons.favorite_rounded,
+                      progress: .22,
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: _OnboardingGoalCard(
+                      title: 'Kişisel Bilgisayar\nHedefi',
+                      icon: Icons.laptop_mac_rounded,
+                      progress: .35,
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: _OnboardingGoalCard(
+                      title: 'Otomatik\nBirikim',
+                      icon: Icons.savings_rounded,
+                      progress: .72,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Positioned(
+              right: 34,
+              bottom: 18,
+              child: _OnboardingAvatar(
+                initials: 'SE',
+                color: Color(0xFF9DEFD8),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _OnboardingGoalCard extends StatelessWidget {
@@ -331,45 +337,53 @@ class _OnboardingGoalCard extends StatelessWidget {
   final double progress;
 
   @override
-  Widget build(BuildContext context) => Container(
-    height: 132,
-    padding: const EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(19),
-      border: Border.all(color: AppColors.border),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x16000000),
-          blurRadius: 12,
-          offset: Offset(0, 5),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    return Container(
+      key: ValueKey('savings_onboarding_goal_$title'),
+      height: 132,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isDark ? scheme.surfaceContainerHighest : Colors.white,
+        borderRadius: BorderRadius.circular(19),
+        border: Border.all(
+          color: isDark ? scheme.outlineVariant : AppColors.border,
         ),
-      ],
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 22, color: AppColors.primary),
-        const Spacer(),
-        Text(
-          title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(99),
-          child: LinearProgressIndicator(
-            value: progress,
-            minHeight: 5,
-            color: AppColors.primary,
-            backgroundColor: AppColors.border,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? .24 : .09),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 22, color: scheme.primary),
+          const Spacer(),
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 5,
+              color: scheme.primary,
+              backgroundColor: scheme.outlineVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _OnboardingAvatar extends StatelessWidget {
@@ -379,23 +393,36 @@ class _OnboardingAvatar extends StatelessWidget {
   final Color color;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: 58,
-    height: 58,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: color,
-      shape: BoxShape.circle,
-      border: Border.all(color: Colors.white, width: 4),
-    ),
-    child: Text(
-      initials,
-      style: const TextStyle(
-        fontWeight: FontWeight.w800,
-        color: AppColors.primaryDark,
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    return Container(
+      width: 58,
+      height: 58,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: isDark
+            ? Color.alphaBlend(
+                color.withValues(alpha: .28),
+                scheme.surfaceContainerHighest,
+              )
+            : color,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: isDark ? scheme.surfaceContainer : Colors.white,
+          width: 4,
+        ),
       ),
-    ),
-  );
+      child: Text(
+        initials,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: isDark ? scheme.onSurface : AppColors.primaryDark,
+        ),
+      ),
+    );
+  }
 }
 
 class _GoalCard extends StatelessWidget {
