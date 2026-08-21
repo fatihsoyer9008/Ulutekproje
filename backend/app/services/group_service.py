@@ -185,6 +185,13 @@ class GroupService:
             for_update=True,
         )
         if group.archived_at is None:
+            debt_summary = await DebtSummaryService(self.session).get_for_group(
+                group.id, group=group
+            )
+            if any(
+                balance.net_amount_in_minor != 0 for balance in debt_summary.balances
+            ):
+                raise GroupServiceError("group_has_unsettled_balances")
             archived_at = datetime.now(UTC)
             group.archived_at = archived_at
             group.updated_at = archived_at
@@ -269,6 +276,21 @@ class GroupService:
             == 1
         ):
             raise GroupServiceError("last_owner_required")
+
+        debt_summary = await DebtSummaryService(self.session).get_for_group(
+            group.id, group=group
+        )
+        target_balance = next(
+            (
+                balance.net_amount_in_minor
+                for balance in debt_summary.balances
+                if balance.user_id == str(target.user_id)
+            ),
+            0,
+        )
+        if target_balance != 0:
+            raise GroupServiceError("member_has_unsettled_balance")
+
         target.left_at = datetime.now(UTC)
         await self.session.commit()
 

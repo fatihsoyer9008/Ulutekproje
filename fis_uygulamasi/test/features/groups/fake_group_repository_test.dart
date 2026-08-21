@@ -243,6 +243,53 @@ void main() {
       expect(group.createdAt, '2026-08-10T15:00:00.000Z');
     });
 
+    test('owner dengedeki grubu arşivleyebilir', () async {
+      final repository = FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+      );
+
+      await repository.archiveGroup(twoMemberGroupId);
+
+      expect((await repository.listGroups()).groups, isEmpty);
+      expect(
+        (await repository.listGroups(
+          includeArchived: true,
+        )).groups.single.archivedAt,
+        isNotNull,
+      );
+    });
+
+    test('açık bakiye olan grup arşivlenemez', () async {
+      final repository = FakeGroupRepository(
+        groups: const <GroupDetail>[twoMemberGroup],
+        debtSummariesByGroup: const <String, DebtSummary>{
+          twoMemberGroupId: currentUserDebtorDebtSummary,
+        },
+      );
+
+      await expectLater(
+        repository.archiveGroup(twoMemberGroupId),
+        throwsA(
+          isA<GroupApiException>().having(
+            (error) => error.code,
+            'code',
+            'group_has_unsettled_balances',
+          ),
+        ),
+      );
+    });
+
+    test('member dengedeki gruptan ayrılabilir', () async {
+      final repository = FakeGroupRepository(
+        currentUserId: secondUserId,
+        groups: const <GroupDetail>[twoMemberGroup],
+      );
+
+      await repository.leaveGroup(twoMemberGroupId);
+
+      expect((await repository.listGroups()).groups, isEmpty);
+    });
+
     test('rejects duplicate members with the contract error code', () async {
       final repository = FakeGroupRepository(
         groups: const <GroupDetail>[twoMemberGroup],

@@ -13,23 +13,39 @@ GroupApiException groupApiExceptionFromDio(
   final structuredError = _structuredError(error.response?.data);
   if (structuredError != null && statusCode != 401) {
     final detail = structuredError.detail;
-    final message = switch (statusCode) {
-      400 => 'Gönderilen bilgiler geçersiz. Lütfen alanları kontrol edin.',
-      403 => 'Bu işlem için grup yetkiniz bulunmamaktadır.',
-      409
-          when detail.code.contains('financial') ||
-              detail.code.contains('lock') =>
-        'Bu masraf finansal olarak kilitli olduğu için değiştirilemiyor.',
-      409 =>
+    final message = switch (detail.code) {
+      'member_already_exists' => 'Bu kullanıcı zaten grubun üyesi.',
+      'last_owner_required' =>
+        'Gruptan ayrılmadan önce sahipliği başka bir üyeye devredin.',
+      'group_has_unsettled_balances' =>
+        'Grubu silmeden önce tüm grup borçlarını kapatın.',
+      'member_has_unsettled_balance' =>
+        'Üyelik sonlandırılmadan önce ilgili bakiyeyi kapatın.',
+      'invitation_email_mismatch' =>
+        'Bu davet farklı bir e-posta hesabına ait.',
+      'invitation_expired_or_used' =>
+        'Bu davetin süresi dolmuş veya davet daha önce kullanılmış.',
+      'idempotency_conflict' =>
         'Masraf isteği daha önce farklı bilgilerle gönderildi. Lütfen yeniden deneyin.',
-      429 when retryAfterSeconds != null =>
-        'Çok fazla istek gönderildi. $retryAfterSeconds saniye sonra tekrar deneyin.',
-      429 => 'Çok fazla istek gönderildi. Lütfen biraz sonra tekrar deneyin.',
-      404 => 'İstenen grup kaydı bulunamadı.',
-      422 => 'Gönderilen bilgiler doğrulanamadı. Lütfen alanları kontrol edin.',
-      408 || 504 => 'Sunucu yanıt vermedi. Lütfen tekrar deneyin.',
-      >= 500 => 'Grup servisine şu anda ulaşılamıyor. Lütfen tekrar deneyin.',
-      _ => fallbackMessage,
+      _ => switch (statusCode) {
+        400 => 'Gönderilen bilgiler geçersiz. Lütfen alanları kontrol edin.',
+        403 => 'Bu işlem için grup yetkiniz bulunmamaktadır.',
+        409
+            when detail.code.contains('financial') ||
+                detail.code.contains('lock') =>
+          'Bu masraf finansal olarak kilitli olduğu için değiştirilemiyor.',
+        409 =>
+          'İşlem mevcut grup verileriyle çakıştı. Lütfen yenileyip tekrar deneyin.',
+        429 when retryAfterSeconds != null =>
+          'Çok fazla istek gönderildi. $retryAfterSeconds saniye sonra tekrar deneyin.',
+        429 => 'Çok fazla istek gönderildi. Lütfen biraz sonra tekrar deneyin.',
+        404 => 'İstenen grup kaydı bulunamadı.',
+        422 =>
+          'Gönderilen bilgiler doğrulanamadı. Lütfen alanları kontrol edin.',
+        408 || 504 => 'Sunucu yanıt vermedi. Lütfen tekrar deneyin.',
+        >= 500 => 'Grup servisine şu anda ulaşılamıyor. Lütfen tekrar deneyin.',
+        _ => fallbackMessage,
+      },
     };
     return GroupApiException(
       statusCode: statusCode,

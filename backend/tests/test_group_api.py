@@ -501,6 +501,46 @@ async def test_archive_is_owner_only_soft_and_idempotent(group_api_context) -> N
 
 
 @pytest.mark.asyncio
+async def test_archive_rejects_group_with_unsettled_balances(
+    group_api_context,
+) -> None:
+    client, session_factory, _, owner, member, _, _ = group_api_context
+    async with session_factory() as session:
+        repository = GroupRepository(session)
+        group = await repository.create(name="Borçlu Grup", created_by=owner.id)
+        await repository.add_member(group_id=group.id, user_id=member.id)
+        await session.commit()
+        group_id = group.id
+
+    expense = await client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers={"Idempotency-Key": "archive-unsettled-0001"},
+        json={
+            "receipt_id": None,
+            "payer_user_id": str(owner.id),
+            "title": "Ortak market",
+            "note": None,
+            "expense_date": "2026-08-21T10:00:00Z",
+            "total_amount_in_minor": 10_000,
+            "currency": "TRY",
+            "split": {
+                "type": "equal",
+                "member_ids": [str(owner.id), str(member.id)],
+            },
+        },
+    )
+    assert expense.status_code == 201
+
+    response = await client.delete(f"/api/v1/groups/{group_id}")
+
+    _assert_error(
+        response,
+        status_code=409,
+        code="group_has_unsettled_balances",
+    )
+
+
+@pytest.mark.asyncio
 async def test_itemized_expense_reports_unassigned_line_item_ids(
     group_api_context,
 ) -> None:

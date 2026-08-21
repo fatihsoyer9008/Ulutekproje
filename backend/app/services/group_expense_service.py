@@ -212,7 +212,7 @@ class GroupExpenseService:
                 if existing.idempotency_request_hash != idempotency_request_hash:
                     raise FastSplitValidationError("idempotency_key_reused")
                 return existing, True
-        group = await self.session.get(Group, group_id)
+        group = await self.session.get(Group, group_id, with_for_update=True)
         if group is None:
             raise FastSplitValidationError("group_not_found")
         if group.archived_at is not None:
@@ -448,7 +448,7 @@ class GroupExpenseService:
         extra_amounts: Sequence[ExtraAmountInput] = (),
         note: str | None = None,
     ) -> GroupExpense:
-        group = await self.session.get(Group, group_id)
+        group = await self.session.get(Group, group_id, with_for_update=True)
         if group is None:
             raise ItemizedExpenseValidationError("group_not_found")
         if group.archived_at is not None:

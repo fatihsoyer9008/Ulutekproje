@@ -80,6 +80,39 @@ void main() {
     expect(accepted.userId, member.userId);
   });
 
+  test('production repository grup silme endpointine DELETE atar', () async {
+    late RequestOptions captured;
+    final repository = ApiGroupRepository(
+      _client((options) {
+        captured = options;
+        return _jsonResponse(const {}, statusCode: 204);
+      }),
+    );
+
+    await repository.archiveGroup(twoMemberGroupId);
+
+    expect(captured.method, 'DELETE');
+    expect(captured.path, '/api/v1/groups/$twoMemberGroupId');
+  });
+
+  test(
+    'production repository gruptan ayrılma endpointine DELETE atar',
+    () async {
+      late RequestOptions captured;
+      final repository = ApiGroupRepository(
+        _client((options) {
+          captured = options;
+          return _jsonResponse(const {}, statusCode: 204);
+        }),
+      );
+
+      await repository.leaveGroup(twoMemberGroupId);
+
+      expect(captured.method, 'DELETE');
+      expect(captured.path, '/api/v1/groups/$twoMemberGroupId/members/me');
+    },
+  );
+
   test(
     'grup listesi API response modelinden domain modeline map edilir',
     () async {
