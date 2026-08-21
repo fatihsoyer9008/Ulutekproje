@@ -1,6 +1,7 @@
 import 'package:app_main/src/models/ui_models.dart';
 import 'package:app_main/src/screens/savings_screen.dart';
 import 'package:app_main/src/screens/statistics_screen.dart';
+import 'package:core_ui/core_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -10,7 +11,44 @@ void main() {
       const MaterialApp(home: Scaffold(body: SavingsScreen())),
     );
 
-    expect(find.text('Henüz birikim hedefi bulunmuyor.'), findsOneWidget);
+    expect(find.text('Birikim Hedeflerinizi Belirleyin'), findsOneWidget);
+  });
+
+  testWidgets('savings empty state uses dark theme surfaces and text colors', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: ThemeMode.dark,
+        home: const Scaffold(body: SavingsScreen()),
+      ),
+    );
+
+    final context = tester.element(find.byType(SavingsScreen));
+    final scheme = Theme.of(context).colorScheme;
+    final description = tester.widget<Text>(
+      find.byKey(const Key('savings_empty_description')),
+    );
+    final illustration = tester.widget<DecoratedBox>(
+      find.byKey(const Key('savings_onboarding_illustration')),
+    );
+    final previewCard = tester.widget<Container>(
+      find.byKey(
+        const ValueKey('savings_onboarding_goal_Haftalık Tatil\nFonu'),
+      ),
+    );
+
+    expect(description.style?.color, scheme.onSurfaceVariant);
+    expect(
+      (illustration.decoration as BoxDecoration).color,
+      scheme.surfaceContainerLow,
+    );
+    expect(
+      (previewCard.decoration as BoxDecoration).color,
+      scheme.surfaceContainerHighest,
+    );
   });
 
   testWidgets('savings goals use featured and vertical list layout', (

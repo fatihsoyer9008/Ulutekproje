@@ -22,7 +22,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('AI Asistan'));
+    await tester.tap(find.text('Kişisel Asistanın'));
     await tester.pumpAndSettle();
 
     expect(find.text('Hazır sorular'), findsOneWidget);
@@ -62,7 +62,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('AI Asistan'));
+    await tester.tap(find.text('Kişisel Asistanın'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const Key('ai_message_field')),
@@ -82,7 +82,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('AI Asistan'));
+    await tester.tap(find.text('Kişisel Asistanın'));
     await tester.pumpAndSettle();
 
     final disclaimer = find.byKey(const Key('ai_investment_disclaimer'));

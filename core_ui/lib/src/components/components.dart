@@ -223,10 +223,10 @@ class _AppShellState extends State<AppShell> {
       onPressed:
           widget.onAiAssistantPressed ??
           () => ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('AI Asistan yakında sizinle.')),
+            const SnackBar(content: Text('Kişisel Asistanın yakında sizinle.')),
           ),
       icon: const Icon(Icons.auto_awesome_rounded),
-      label: const Text('AI Asistan'),
+      label: const Text('Kişisel Asistanın'),
     ),
   );
 }
