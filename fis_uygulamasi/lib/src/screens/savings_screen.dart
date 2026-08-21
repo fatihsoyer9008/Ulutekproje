@@ -178,7 +178,9 @@ class _SavingsEmptyOnboarding extends StatelessWidget {
           return SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(28, compact ? 16 : 32, 28, 24),
             child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight - 56),
+              constraints: BoxConstraints(
+                minHeight: constraints.maxHeight - 56,
+              ),
               child: Column(
                 children: [
                   _SavingsOnboardingIllustration(compact: compact),
@@ -205,9 +207,9 @@ class _SavingsEmptyOnboarding extends StatelessWidget {
                   Text(
                     'Mevcut hedeflerinizi takip edin, yeni hedefler belirleyin ve otomatik kuralları özelleştirin.',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: AppColors.ink,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.copyWith(color: AppColors.ink),
                   ),
                   SizedBox(height: compact ? 24 : 34),
                   SizedBox(
@@ -337,7 +339,11 @@ class _OnboardingGoalCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(19),
       border: Border.all(color: AppColors.border),
       boxShadow: const [
-        BoxShadow(color: Color(0x16000000), blurRadius: 12, offset: Offset(0, 5)),
+        BoxShadow(
+          color: Color(0x16000000),
+          blurRadius: 12,
+          offset: Offset(0, 5),
+        ),
       ],
     ),
     child: Column(
@@ -384,139 +390,10 @@ class _OnboardingAvatar extends StatelessWidget {
     ),
     child: Text(
       initials,
-      style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primaryDark),
-    ),
-  );
-}
-
-class _SavingsManagementHero extends StatelessWidget {
-  const _SavingsManagementHero({required this.goals, this.onAddGoal});
-
-  final List<_GoalView> goals;
-  final VoidCallback? onAddGoal;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Semantics(
-      container: true,
-      label: 'Birikim hedeflerinizi yönetin',
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [AppColors.mintLight, AppColors.mint],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'BİRİKİM HEDEFLERİNİZİ YÖNETİN',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.1,
-              ),
-            ),
-            const SizedBox(height: 6),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 132,
-              child: Stack(
-                children: [
-                  for (var index = 0; index < goals.length; index++)
-                    Positioned(
-                      left: index == 0 ? 4 : index == 1 ? 96 : 190,
-                      top: index == 1 ? 0 : 14,
-                      child: TweenAnimationBuilder<double>(
-                        duration: Duration(milliseconds: 420 + (index * 120)),
-                        curve: Curves.easeOutCubic,
-                        tween: Tween(begin: .88, end: 1),
-                        builder: (context, scale, child) => Transform.scale(
-                          scale: scale,
-                          child: Opacity(opacity: scale, child: child),
-                        ),
-                        child: _GoalPreviewCard(goal: goals[index]),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'Birikim hedeflerinizi yönetin',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Mevcut hedeflerini takip et, yenilerini belirle.',
-              style: theme.textTheme.bodyMedium,
-            ),
-            if (onAddGoal != null) ...[
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: onAddGoal,
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text('HEDEF EKLE'),
-                ),
-              ),
-            ],
-          ],
-        ),
+      style: const TextStyle(
+        fontWeight: FontWeight.w800,
+        color: AppColors.primaryDark,
       ),
-    );
-  }
-}
-
-class _GoalPreviewCard extends StatelessWidget {
-  const _GoalPreviewCard({required this.goal});
-
-  final _GoalView goal;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 108,
-    height: 118,
-    padding: const EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: AppColors.border),
-      boxShadow: const [
-        BoxShadow(color: Color(0x18000000), blurRadius: 10, offset: Offset(0, 4)),
-      ],
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(goal.icon, color: goal.color, size: 20),
-        const Spacer(),
-        Text(
-          goal.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 5),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(99),
-          child: LinearProgressIndicator(
-            value: goal.progress,
-            minHeight: 5,
-            color: goal.color,
-            backgroundColor: AppColors.mint,
-          ),
-        ),
-      ],
     ),
   );
 }
@@ -553,7 +430,9 @@ class _GoalCard extends StatelessWidget {
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: Text(
               'Sil',
-              style: TextStyle(color: Theme.of(dialogContext).colorScheme.error),
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
             ),
           ),
         ],
@@ -563,6 +442,7 @@ class _GoalCard extends StatelessWidget {
       await onDelete!(goal.id!);
     }
   }
+
   Future<int?> _showAddMoneySheet(BuildContext context) async {
     if (goal.id == null || onUpdateAmount == null) return null;
 
@@ -647,7 +527,9 @@ class _GoalCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Expanded(child: _StatusBadge(goal: goal, progress: progress)),
+              Expanded(
+                child: _StatusBadge(goal: goal, progress: progress),
+              ),
               if (onDelete != null && goal.id != null)
                 IconButton(
                   key: ValueKey('delete_savings_goal_${goal.id}'),

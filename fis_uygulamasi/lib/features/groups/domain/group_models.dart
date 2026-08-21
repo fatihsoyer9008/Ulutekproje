@@ -66,6 +66,7 @@ class Group {
     required this.createdAt,
     required this.updatedAt,
     required this.archivedAt,
+    this.imageUrl,
   });
 
   factory Group.fromJson(Map<String, Object?> json) {
@@ -80,6 +81,7 @@ class Group {
       createdAt: json['created_at']! as String,
       updatedAt: json['updated_at']! as String,
       archivedAt: json['archived_at'] as String?,
+      imageUrl: (json['image_url'] ?? json['photo_url']) as String?,
     );
   }
 
@@ -93,6 +95,7 @@ class Group {
   final String createdAt;
   final String updatedAt;
   final String? archivedAt;
+  final String? imageUrl;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
@@ -105,6 +108,7 @@ class Group {
     'created_at': createdAt,
     'updated_at': updatedAt,
     'archived_at': archivedAt,
+    if (imageUrl != null) 'image_url': imageUrl,
   };
 }
 
@@ -121,6 +125,7 @@ class GroupDetail extends Group {
     required super.updatedAt,
     required super.archivedAt,
     required this.members,
+    super.imageUrl,
   });
 
   factory GroupDetail.fromJson(Map<String, Object?> json) {
@@ -135,6 +140,7 @@ class GroupDetail extends Group {
       createdAt: json['created_at']! as String,
       updatedAt: json['updated_at']! as String,
       archivedAt: json['archived_at'] as String?,
+      imageUrl: (json['image_url'] ?? json['photo_url']) as String?,
       members: (json['members']! as List<Object?>)
           .map((item) => GroupMember.fromJson(item! as Map<String, Object?>))
           .toList(growable: false),
@@ -152,6 +158,7 @@ class GroupDetail extends Group {
     String? updatedAt,
     String? archivedAt,
     List<GroupMember>? members,
+    String? imageUrl,
   }) {
     return GroupDetail(
       id: id,
@@ -164,6 +171,7 @@ class GroupDetail extends Group {
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       archivedAt: archivedAt ?? this.archivedAt,
+      imageUrl: imageUrl ?? this.imageUrl,
       members: members ?? this.members,
     );
   }

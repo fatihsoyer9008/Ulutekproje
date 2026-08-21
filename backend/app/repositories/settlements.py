@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import select
@@ -55,6 +56,15 @@ class SettlementRepository:
                 Settlement.id.desc(),
             )
         )
+        return list((await self.session.scalars(statement)).all())
+
+    async def list_for_groups(
+        self,
+        group_ids: Sequence[uuid.UUID],
+    ) -> list[Settlement]:
+        if not group_ids:
+            return []
+        statement = select(Settlement).where(Settlement.group_id.in_(group_ids))
         return list((await self.session.scalars(statement)).all())
 
     async def try_reserve_idempotency(

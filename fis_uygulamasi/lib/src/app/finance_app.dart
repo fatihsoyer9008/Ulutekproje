@@ -72,9 +72,12 @@ class _FinanceAppState extends ConsumerState<FinanceApp>
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
   String? _pendingGroupInvitationToken;
+  String? _pendingFriendInvitationToken;
   final Set<String> _handledDeepLinkKeys = <String>{};
   bool _acceptingGroupInvitation = false;
+  bool _acceptingFriendInvitation = false;
   bool _invitationLoginMessageShown = false;
+  bool _friendInvitationLoginMessageShown = false;
   bool? _lastKnownOnline;
   int _connectivityObservationVersion = 0;
 
@@ -109,6 +112,7 @@ class _FinanceAppState extends ConsumerState<FinanceApp>
         if (widget.enableAuth && previous?.status != next.status) {
           _router?.refresh();
           _continuePendingInvitation(next.status);
+          _continuePendingFriendInvitation(next.status);
         }
       }, fireImmediately: true);
     }
@@ -237,6 +241,14 @@ class _FinanceAppState extends ConsumerState<FinanceApp>
       _openEmailVerification(token);
       return;
     }
+    if (uri.path == '/friend-invitation') {
+      _pendingFriendInvitationToken = token;
+      _friendInvitationLoginMessageShown = false;
+      _continuePendingFriendInvitation(
+        ref.read(authSessionControllerProvider).status,
+      );
+      return;
+    }
     if (uri.path != '/group-invitation') return;
 
     _pendingGroupInvitationToken = token;
@@ -338,6 +350,82 @@ class _FinanceAppState extends ConsumerState<FinanceApp>
       };
     }
     return 'Grup daveti kabul edilemedi. Lütfen tekrar deneyin.';
+  }
+
+  void _continuePendingFriendInvitation(AuthStatus status) {
+    if (_pendingFriendInvitationToken == null) return;
+
+    switch (status) {
+      case AuthStatus.authenticated:
+        unawaited(_acceptPendingFriendInvitation());
+      case AuthStatus.unauthenticated || AuthStatus.guest:
+        _openFriendInvitationLogin();
+      case AuthStatus.emailVerificationRequired:
+        _showFriendInvitationLoginMessage(
+          'Daveti kabul etmek için e-posta adresinizi doğrulayın.',
+        );
+      case AuthStatus.initializing:
+        break;
+    }
+  }
+
+  void _openFriendInvitationLogin() {
+    WidgetsBinding.instance.scheduleFrame();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _pendingFriendInvitationToken == null) return;
+      _router?.go('/login');
+      _showFriendInvitationLoginMessage(
+        'Arkadaşlık davetini kabul etmek için giriş yapın.',
+      );
+    });
+  }
+
+  void _showFriendInvitationLoginMessage(String message) {
+    if (_friendInvitationLoginMessageShown) return;
+    _friendInvitationLoginMessageShown = true;
+    _showMessage(message);
+  }
+
+  Future<void> _acceptPendingFriendInvitation() async {
+    if (_acceptingFriendInvitation) return;
+    final token = _pendingFriendInvitationToken;
+    if (token == null) return;
+
+    _acceptingFriendInvitation = true;
+    try {
+      await ref.read(friendRepositoryProvider).acceptInvitation(token);
+      if (_pendingFriendInvitationToken == token) {
+        _pendingFriendInvitationToken = null;
+      }
+      ref.invalidate(friendsProvider);
+      _navigateAfterInvitation('/friends', 'Arkadaşlık daveti kabul edildi.');
+    } catch (error) {
+      if (_pendingFriendInvitationToken == token) {
+        _pendingFriendInvitationToken = null;
+      }
+      _showMessage(_friendInvitationErrorMessage(error));
+    } finally {
+      _acceptingFriendInvitation = false;
+      if (_pendingFriendInvitationToken != null &&
+          ref.read(authSessionControllerProvider).status ==
+              AuthStatus.authenticated) {
+        unawaited(_acceptPendingFriendInvitation());
+      }
+    }
+  }
+
+  String _friendInvitationErrorMessage(Object error) {
+    if (error is GroupApiException) {
+      return switch (error.error.detail.code) {
+        'invitation_expired_or_used' =>
+          'Bu davetin süresi dolmuş veya davet daha önce kullanılmış.',
+        'invitation_email_mismatch' =>
+          'Bu davet farklı bir e-posta hesabına ait.',
+        'cannot_friend_self' => 'Kendinizle arkadaş olamazsınız.',
+        _ => 'Arkadaşlık daveti kabul edilemedi. Lütfen tekrar deneyin.',
+      };
+    }
+    return 'Arkadaşlık daveti kabul edilemedi. Lütfen tekrar deneyin.';
   }
 
   void _navigateAfterInvitation(String location, String message) {

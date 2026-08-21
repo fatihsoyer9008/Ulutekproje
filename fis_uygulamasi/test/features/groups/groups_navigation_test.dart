@@ -15,6 +15,7 @@ import 'package:app_main/features/groups/data/fake_group_repository.dart'
 import 'package:app_main/features/groups/data/group_providers.dart';
 import 'package:app_main/features/groups/data/group_repository.dart';
 import 'package:app_main/features/groups/domain/group_models.dart';
+import 'package:app_main/features/groups/presentation/activity_page.dart';
 import 'package:app_main/features/groups/presentation/group_ocr_page.dart';
 import 'package:app_main/features/groups/presentation/groups_page.dart';
 import 'package:app_main/features/groups/presentation/fast_split_page.dart';
@@ -29,10 +30,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import '../../fixtures/group_fixtures.dart';
 
 void main() {
+  setUpAll(() => initializeDateFormatting('tr_TR'));
+
   testWidgets('authenticated user opens groups from the drawer', (
     tester,
   ) async {
@@ -45,13 +49,28 @@ void main() {
     expect(find.byType(GroupsPage), findsOneWidget);
   });
 
-  testWidgets('grup detayındaki Fiş Tara ayrı grup OCR routeunu açar', (
+  testWidgets('gruplar alt navigasyonundan Hareketler ekranı açılır', (
     tester,
   ) async {
     final controller = AuthSessionController(_NavigationAuthRepository());
     await controller.login('user@example.com', 'password');
 
     await _pumpApp(tester, controller);
+    await _openGroupsFromDrawer(tester);
+    await tester.tap(find.text('Hareketler'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ActivityPage), findsOneWidget);
+    expect(find.text('Son hareketler'), findsOneWidget);
+  });
+
+  testWidgets('grup detayındaki Fiş Tara ayrı grup OCR routeunu açar', (
+    tester,
+  ) async {
+    final controller = AuthSessionController(_NavigationAuthRepository());
+    await controller.login('user@example.com', 'password');
+
+    await _pumpApp(tester, controller, scanReceipt: (_) async => null);
     await _openGroupsFromDrawer(tester);
     await tester.tap(find.text('Ev Arkadaşları'));
     await tester.pumpAndSettle();
@@ -94,8 +113,6 @@ void main() {
         ),
       );
       await _openGroupOcr(tester);
-      await tester.tap(find.byKey(const Key('group_ocr_camera_button')));
-      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('share_with_group_button')));
       await tester.pumpAndSettle();
       expect(find.byType(FastSplitPage), findsOneWidget);
@@ -156,8 +173,6 @@ void main() {
         ),
       );
       await _openGroupOcr(tester);
-      await tester.tap(find.byKey(const Key('group_ocr_camera_button')));
-      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('share_with_group_button')));
       await tester.pumpAndSettle();
       expect(find.byType(ItemizedSplitPage), findsOneWidget);
@@ -320,7 +335,9 @@ void main() {
       // (no /home beneath it), so the screen must offer its own way out
       // instead of leaving the user stuck.
       expect(find.byType(GroupsPage), findsOneWidget);
-      await tester.tap(find.byType(BackButton));
+      await tester.tap(
+        find.widgetWithIcon(IconButton, Icons.arrow_back_rounded),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byType(GroupsPage), findsNothing);
@@ -578,7 +595,12 @@ class _NavigationAuthRepository implements AuthRepositoryBase {
   Future<AuthUser> login({
     required String email,
     required String password,
-  }) async => AuthUser(id: currentUserId, email: email, isEmailVerified: true);
+  }) async => AuthUser(
+    id: currentUserId,
+    email: email,
+    isEmailVerified: true,
+    avatarId: 'woman',
+  );
 
   @override
   Future<AuthUser> signInWithGoogle() =>

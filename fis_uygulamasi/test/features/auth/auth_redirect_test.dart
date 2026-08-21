@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('safeGroupsRedirect', () {
-    test('accepts only the groups route tree', () {
+    test('accepts only the protected group surface routes', () {
       expect(safeGroupsRedirect('/groups'), '/groups');
+      expect(safeGroupsRedirect('/friends'), '/friends');
+      expect(safeGroupsRedirect('/activity'), '/activity');
       expect(
         safeGroupsRedirect('/groups/550e8400-e29b-41d4-a716-446655440000'),
         '/groups/550e8400-e29b-41d4-a716-446655440000',

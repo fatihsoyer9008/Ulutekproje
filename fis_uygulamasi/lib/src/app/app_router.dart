@@ -30,6 +30,8 @@ import '../../features/groups/domain/group_expense_draft.dart';
 import '../../features/groups/domain/group_models.dart';
 import '../../features/groups/presentation/fast_split_page.dart';
 import '../../features/groups/presentation/itemized_split_page.dart';
+import '../../features/groups/presentation/activity_page.dart';
+import '../../features/groups/presentation/friends_page.dart';
 import '../../features/groups/presentation/groups_page.dart';
 import '../../features/groups/presentation/group_detail_page.dart';
 import '../../features/groups/presentation/group_ocr_page.dart';
@@ -203,6 +205,8 @@ GoRouter createAppRouter({
         builder: (_, _) => const CategoryManagementPage(),
       ),
       GoRoute(path: '/groups', builder: (_, _) => const GroupsPage()),
+      GoRoute(path: '/friends', builder: (_, _) => const FriendsPage()),
+      GoRoute(path: '/activity', builder: (_, _) => const ActivityPage()),
       GoRoute(
         path: '/groups/:groupId',
         builder: (_, state) =>
@@ -216,6 +220,11 @@ GoRouter createAppRouter({
 
           return _GroupOcrRoutePage(
             groupId: groupId,
+            initialSource: switch (state.uri.queryParameters['source']) {
+              'camera' => GroupReceiptSource.camera,
+              'gallery' => GroupReceiptSource.gallery,
+              _ => null,
+            },
             initialGroup:
                 selectedGroup is GroupDetail && selectedGroup.id == groupId
                 ? selectedGroup
@@ -335,6 +344,7 @@ class _GroupOcrRoutePage extends ConsumerWidget {
     required this.groupId,
     required this.initialGroup,
     required this.scanReceipt,
+    required this.initialSource,
     this.parseReceipt,
   });
 
@@ -342,6 +352,7 @@ class _GroupOcrRoutePage extends ConsumerWidget {
   final GroupDetail? initialGroup;
   final ReceiptScanLauncher? scanReceipt;
   final ReceiptParseHandler? parseReceipt;
+  final GroupReceiptSource? initialSource;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -395,6 +406,7 @@ class _GroupOcrRoutePage extends ConsumerWidget {
 
     return GroupOcrPage(
       group: group,
+      initialSource: initialSource,
       scanReceipt: scanReceipt,
       parseReceipt: parseReceipt ?? parser.parse,
       onFastSplitSubmit: (draft, value, idempotencyKey) =>

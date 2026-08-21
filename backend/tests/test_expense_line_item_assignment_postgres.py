@@ -163,7 +163,7 @@ async def test_assignment_migration_is_at_head(
         ),
     }
 
-    assert revision == "20260819_0001"
+    assert revision == "20260821_0001"
     assert table_names == {
         "expense_line_item_assignments",
         "expense_extra_amounts",

@@ -3,7 +3,10 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.activity_log import ActivityType
 from app.models.settlement import Settlement
+from app.models.user import User
+from app.repositories.activity_log import ActivityLogRepository
 from app.repositories.groups import GroupRepository
 from app.repositories.settlements import SettlementRepository
 
@@ -20,6 +23,7 @@ class SettlementService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repository = SettlementRepository(session)
+        self.activity_log = ActivityLogRepository(session)
 
     async def create(
         self,
@@ -69,7 +73,7 @@ class SettlementService:
         if required_member_ids - active_member_ids:
             raise SettlementValidationError("member_not_found")
 
-        return await self.repository.create(
+        settlement = await self.repository.create(
             group_id=group_id,
             from_user_id=from_user_id,
             to_user_id=to_user_id,
@@ -78,3 +82,21 @@ class SettlementService:
             settled_at=settled_at,
             note=note,
         )
+        actor = await self.session.get(User, actor_user_id)
+        self.activity_log.record(
+            group_id=group_id,
+            actor_user_id=actor_user_id,
+            type=ActivityType.settlement_created,
+            payload={
+                "actor_display_name": (
+                    (actor.display_name or actor.email) if actor is not None else None
+                )
+                or "Silinmiş kullanıcı",
+                "settlement_id": str(settlement.id),
+                "from_user_id": str(from_user_id),
+                "to_user_id": str(to_user_id),
+                "amount_in_minor": amount_in_minor,
+                "currency": normalized_currency,
+            },
+        )
+        return settlement

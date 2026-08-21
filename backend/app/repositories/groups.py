@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.models.group import Group, GroupMember, GroupRole
 
@@ -23,12 +23,14 @@ class GroupRepository:
         created_by: uuid.UUID,
         description: str | None = None,
         currency: str = "TRY",
+        is_direct: bool = False,
     ) -> Group:
         group = Group(
             name=name,
             description=description,
             currency=currency.upper(),
             created_by=created_by,
+            is_direct=is_direct,
         )
         group.members.append(
             GroupMember(
@@ -69,6 +71,9 @@ class GroupRepository:
             .where(
                 GroupMember.user_id == user_id,
                 GroupMember.left_at.is_(None),
+                # Direct (friend) groups are hidden from the regular groups
+                # list; they only surface through the /friends endpoint.
+                Group.is_direct.is_(False),
             )
             .options(
                 selectinload(Group.members).selectinload(GroupMember.user)
@@ -79,6 +84,57 @@ class GroupRepository:
         if not include_archived:
             statement = statement.where(Group.archived_at.is_(None))
         return list((await self.session.scalars(statement)).all())
+
+    async def list_direct_for_user(
+        self,
+        user_id: uuid.UUID,
+        *,
+        include_archived: bool = False,
+    ) -> list[Group]:
+        """Active is_direct=true groups for a user.
+
+        Kept separate from ``list_for_user`` (which excludes direct groups
+        for the regular groups list) so the Friends feature does not depend
+        on that method continuing to include them.
+        """
+        statement = (
+            select(Group)
+            .join(GroupMember)
+            .where(
+                GroupMember.user_id == user_id,
+                GroupMember.left_at.is_(None),
+                Group.is_direct.is_(True),
+            )
+            .options(selectinload(Group.members).selectinload(GroupMember.user))
+            .order_by(Group.created_at, Group.id)
+            .execution_options(populate_existing=True)
+        )
+        if not include_archived:
+            statement = statement.where(Group.archived_at.is_(None))
+        return list((await self.session.scalars(statement)).all())
+
+    async def get_direct_group(
+        self,
+        user_a_id: uuid.UUID,
+        user_b_id: uuid.UUID,
+    ) -> Group | None:
+        member_a = aliased(GroupMember)
+        member_b = aliased(GroupMember)
+        statement = (
+            select(Group)
+            .join(member_a, member_a.group_id == Group.id)
+            .join(member_b, member_b.group_id == Group.id)
+            .where(
+                Group.is_direct.is_(True),
+                member_a.user_id == user_a_id,
+                member_a.left_at.is_(None),
+                member_b.user_id == user_b_id,
+                member_b.left_at.is_(None),
+            )
+            .options(selectinload(Group.members).selectinload(GroupMember.user))
+            .execution_options(populate_existing=True)
+        )
+        return await self.session.scalar(statement)
 
     async def add_member(
         self,

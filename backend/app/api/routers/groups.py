@@ -211,25 +211,16 @@ async def get_group_expense(
     return await _expense_response(expense, db)
 
 
-@router.post(
-    "/{group_id}/expenses",
-    response_model=GroupExpenseEnvelope,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_group_expense(
+async def create_expense_for_group(
+    *,
     group_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
     payload: GroupExpenseCreateRequest | ItemizedExpenseCreateRequest,
     response: Response,
-    actor_membership: GroupMember = Depends(require_group_member),
-    idempotency_key: str = Header(
-        alias="Idempotency-Key",
-        min_length=8,
-        max_length=128,
-    ),
-    db: AsyncSession = Depends(get_db_session),
-    debt_cache: DebtSummaryCache = Depends(get_debt_summary_cache),
+    idempotency_key: str,
+    db: AsyncSession,
+    debt_cache: DebtSummaryCache,
 ) -> GroupExpenseEnvelope:
-    actor_user_id = actor_membership.user_id
     request_hash = _group_expense_request_hash(payload)
     key_hash = privacy_hash(
         f"group-expense-create:{group_id}:{actor_user_id}:{idempotency_key}"
@@ -302,7 +293,7 @@ async def create_group_expense(
             group_id=group_id,
             receipt_client_record_id=idempotency_record.id,
             payload=payload,
-            actor_membership=actor_membership,
+            actor_user_id=actor_user_id,
             db=db,
         )
     else:
@@ -363,6 +354,35 @@ async def create_group_expense(
     await db.commit()
     await debt_cache.invalidate_best_effort(group_id)
     return await _expense_response(expense, db)
+
+
+@router.post(
+    "/{group_id}/expenses",
+    response_model=GroupExpenseEnvelope,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_group_expense(
+    group_id: uuid.UUID,
+    payload: GroupExpenseCreateRequest | ItemizedExpenseCreateRequest,
+    response: Response,
+    actor_membership: GroupMember = Depends(require_group_member),
+    idempotency_key: str = Header(
+        alias="Idempotency-Key",
+        min_length=8,
+        max_length=128,
+    ),
+    db: AsyncSession = Depends(get_db_session),
+    debt_cache: DebtSummaryCache = Depends(get_debt_summary_cache),
+) -> GroupExpenseEnvelope:
+    return await create_expense_for_group(
+        group_id=group_id,
+        actor_user_id=actor_membership.user_id,
+        payload=payload,
+        response=response,
+        idempotency_key=idempotency_key,
+        db=db,
+        debt_cache=debt_cache,
+    )
 
 
 _ERRORS = {
@@ -651,11 +671,9 @@ async def create_itemized_expense(
     group_id: uuid.UUID,
     receipt_client_record_id: uuid.UUID,
     payload: ItemizedExpenseCreateRequest,
-    actor_membership: GroupMember,
+    actor_user_id: uuid.UUID,
     db: AsyncSession,
 ) -> GroupExpense:
-    actor_user_id = actor_membership.user_id
-
     extra_amounts = [
         ExtraAmountInput(
             type=extra_amount.type,

@@ -1,7 +1,7 @@
 const groupsRootRoute = '/groups';
 
 final RegExp _safeGroupsRoutePattern = RegExp(
-  r'^/groups(?:/[A-Za-z0-9_-]+)*$',
+  r'^/(?:groups(?:/[A-Za-z0-9_-]+)*|friends|activity)$',
 );
 
 String? safeGroupsRedirect(String? value) {
@@ -21,8 +21,7 @@ String? safeGroupsRedirect(String? value) {
   return uri.path;
 }
 
-bool isGroupsRoute(String location) =>
-    safeGroupsRedirect(location) != null;
+bool isGroupsRoute(String location) => safeGroupsRedirect(location) != null;
 
 String groupsLoginLocation([String redirect = groupsRootRoute]) {
   final safeRedirect = safeGroupsRedirect(redirect) ?? groupsRootRoute;

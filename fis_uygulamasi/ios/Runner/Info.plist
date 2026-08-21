@@ -41,6 +41,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Fişleri tarayabilmek için kamera erişimi gereklidir.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Galeriden fiş seçebilmek için fotoğraf arşivi erişimi gereklidir.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

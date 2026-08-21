@@ -21,6 +21,14 @@ class EmailSender(Protocol):
         group_name: str,
     ) -> None: ...
 
+    async def send_friend_invitation(
+        self,
+        *,
+        email: str,
+        token: str,
+        inviter_display_name: str,
+    ) -> None: ...
+
 
 class DisabledEmailSender:
     async def send_verification(self, *, email: str, token: str) -> None:
@@ -37,6 +45,15 @@ class DisabledEmailSender:
         group_name: str,
     ) -> None:
         del email, token, group_name
+
+    async def send_friend_invitation(
+        self,
+        *,
+        email: str,
+        token: str,
+        inviter_display_name: str,
+    ) -> None:
+        del email, token, inviter_display_name
 
 
 class SMTPEmailSender:
@@ -104,6 +121,35 @@ class SMTPEmailSender:
             ),
         )
 
+    async def send_friend_invitation(
+        self,
+        *,
+        email: str,
+        token: str,
+        inviter_display_name: str,
+    ) -> None:
+        invitation_url = self._friend_invitation_url(token)
+        safe_inviter_name = html.escape(inviter_display_name)
+        safe_invitation_url = html.escape(invitation_url, quote=True)
+        await self._send(
+            recipient=email,
+            subject="EconBuddy arkadaşlık daveti",
+            body=(
+                f"{inviter_display_name} seni arkadaş olarak eklemek istiyor. "
+                "Daveti kabul etmek için bağlantıyı aç:\n\n"
+                f"{invitation_url}\n\n"
+                "Bu bağlantı 24 saat geçerlidir ve yalnızca davet edilen "
+                "e-posta hesabıyla kullanılabilir."
+            ),
+            html_body=(
+                f"<p><strong>{safe_inviter_name}</strong> seni arkadaş olarak "
+                "eklemek istiyor.</p>"
+                f'<p><a href="{safe_invitation_url}">Arkadaşlık davetini kabul et</a></p>'
+                "<p>Bu bağlantı 24 saat geçerlidir ve yalnızca davet edilen "
+                "e-posta hesabıyla kullanılabilir.</p>"
+            ),
+        )
+
     @staticmethod
     def _action_url(action: str, token: str) -> str:
         base_url = settings.email_action_base_url.rstrip("/")
@@ -117,6 +163,11 @@ class SMTPEmailSender:
     def _group_invitation_url(token: str) -> str:
         base_url = settings.app_deep_link_base_url.rstrip("/")
         return f"{base_url}/group-invitation?{urlencode({'token': token})}"
+
+    @staticmethod
+    def _friend_invitation_url(token: str) -> str:
+        base_url = settings.app_deep_link_base_url.rstrip("/")
+        return f"{base_url}/friend-invitation?{urlencode({'token': token})}"
 
     async def _send(
         self,
