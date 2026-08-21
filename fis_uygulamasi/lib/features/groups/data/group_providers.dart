@@ -113,6 +113,16 @@ final friendsProvider = FutureProvider<List<FriendSummary>>(
   (ref) => ref.watch(friendRepositoryProvider).listFriends(),
 );
 
+final pendingFriendInvitationsProvider =
+    FutureProvider<List<PendingFriendInvitation>>(
+      (ref) => ref.watch(friendRepositoryProvider).listPendingInvitations(),
+    );
+
+final pendingGroupInvitationsProvider =
+    FutureProvider<List<PendingGroupInvitation>>(
+      (ref) => ref.watch(groupRepositoryProvider).listPendingInvitations(),
+    );
+
 final groupExpenseRepositoryProvider = Provider<GroupExpenseRepository>(
   (ref) => ref.watch(groupRepositoryProvider),
 );

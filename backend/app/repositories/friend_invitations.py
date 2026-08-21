@@ -41,3 +41,33 @@ class FriendInvitationRepository:
         if for_update:
             statement = statement.with_for_update()
         return await self.session.scalar(statement)
+
+    async def get_by_id(
+        self,
+        invitation_id: uuid.UUID,
+        *,
+        for_update: bool = False,
+    ) -> FriendInvitation | None:
+        statement = select(FriendInvitation).where(
+            FriendInvitation.id == invitation_id
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return await self.session.scalar(statement)
+
+    async def list_pending_for_email(
+        self,
+        email: str,
+        *,
+        now: datetime,
+    ) -> list[FriendInvitation]:
+        statement = (
+            select(FriendInvitation)
+            .where(
+                FriendInvitation.invited_email == email,
+                FriendInvitation.accepted_at.is_(None),
+                FriendInvitation.expires_at > now,
+            )
+            .order_by(FriendInvitation.created_at.desc())
+        )
+        return list((await self.session.scalars(statement)).all())

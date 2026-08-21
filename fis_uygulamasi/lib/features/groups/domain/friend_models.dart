@@ -41,6 +41,48 @@ class FriendSummary {
   final List<String> sharedGroupIds;
 }
 
+/// A friend invitation addressed to the current user's verified e-mail,
+/// still waiting to be accepted. Matches `GET /api/v1/friends/invitations/pending`.
+class PendingFriendInvitation {
+  const PendingFriendInvitation({
+    required this.id,
+    required this.inviterDisplayName,
+    required this.createdAt,
+    required this.expiresAt,
+  });
+
+  factory PendingFriendInvitation.fromJson(Map<String, Object?> json) =>
+      PendingFriendInvitation(
+        id: json['id']! as String,
+        inviterDisplayName: json['inviter_display_name']! as String,
+        createdAt: json['created_at']! as String,
+        expiresAt: json['expires_at']! as String,
+      );
+
+  final String id;
+  final String inviterDisplayName;
+  final String createdAt;
+  final String expiresAt;
+}
+
+class PendingFriendInvitationsResponse {
+  const PendingFriendInvitationsResponse({required this.invitations});
+
+  factory PendingFriendInvitationsResponse.fromJson(
+    Map<String, Object?> json,
+  ) => PendingFriendInvitationsResponse(
+    invitations: (json['invitations']! as List<Object?>)
+        .map(
+          (item) => PendingFriendInvitation.fromJson(
+            item! as Map<String, Object?>,
+          ),
+        )
+        .toList(growable: false),
+  );
+
+  final List<PendingFriendInvitation> invitations;
+}
+
 class FriendsResponse {
   const FriendsResponse({required this.friends});
 

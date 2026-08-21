@@ -1,5 +1,8 @@
 import 'package:app_main/features/groups/data/fake_friend_repository.dart';
+import 'package:app_main/features/groups/data/fake_group_repository.dart';
 import 'package:app_main/features/groups/data/group_providers.dart';
+import 'package:app_main/features/groups/domain/friend_models.dart';
+import 'package:app_main/features/groups/domain/group_models.dart';
 import 'package:app_main/features/groups/presentation/activity_page.dart';
 import 'package:app_main/features/groups/presentation/friends_page.dart';
 import 'package:flutter/material.dart';
@@ -8,13 +11,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
+import '../../fixtures/group_fixtures.dart';
+
 void main() {
   setUpAll(() => initializeDateFormatting('tr_TR'));
 
-  Future<void> pumpFriendsPage(WidgetTester tester) => tester.pumpWidget(
+  Future<void> pumpFriendsPage(
+    WidgetTester tester, {
+    FakeFriendRepository? friendRepository,
+    FakeGroupRepository? groupRepository,
+  }) => tester.pumpWidget(
     ProviderScope(
       overrides: [
-        friendRepositoryProvider.overrideWithValue(FakeFriendRepository()),
+        friendRepositoryProvider.overrideWithValue(
+          friendRepository ?? FakeFriendRepository(),
+        ),
+        if (groupRepository != null)
+          groupRepositoryProvider.overrideWithValue(groupRepository),
       ],
       child: const MaterialApp(home: FriendsPage()),
     ),
@@ -76,6 +89,75 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Arkadaşlık daveti gönderildi.'), findsOneWidget);
+  });
+
+  testWidgets('bekleyen arkadaşlık daveti gösterilir ve kabul edilebilir', (
+    tester,
+  ) async {
+    final friendRepository = FakeFriendRepository(
+      friends: const [],
+      pendingInvitations: const [
+        PendingFriendInvitation(
+          id: 'friend-invite-1',
+          inviterDisplayName: 'Ege Başaran',
+          createdAt: '2026-08-21T10:00:00Z',
+          expiresAt: '2026-08-22T10:00:00Z',
+        ),
+      ],
+    );
+    await pumpFriendsPage(tester, friendRepository: friendRepository);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bekleyen davetler'), findsOneWidget);
+    expect(find.textContaining('Ege Başaran'), findsOneWidget);
+    expect(
+      find.textContaining('seni arkadaş olarak eklemek istiyor'),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const Key('accept_friend_invitation_friend-invite-1')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Arkadaşlık daveti kabul edildi.'), findsOneWidget);
+    expect(find.text('Bekleyen davetler'), findsNothing);
+  });
+
+  testWidgets('bekleyen grup daveti gösterilir ve kabul edilebilir', (
+    tester,
+  ) async {
+    final groupRepository = FakeGroupRepository(
+      groups: const <GroupDetail>[twoMemberGroup],
+      pendingGroupInvitations: const [
+        PendingGroupInvitation(
+          id: 'group-invite-1',
+          groupId: twoMemberGroupId,
+          groupName: 'Ev Arkadaşları',
+          role: 'member',
+          inviterDisplayName: 'Zafer Tuna',
+          createdAt: '2026-08-21T10:00:00Z',
+          expiresAt: '2026-08-22T10:00:00Z',
+        ),
+      ],
+    );
+    await pumpFriendsPage(tester, groupRepository: groupRepository);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bekleyen davetler'), findsOneWidget);
+    expect(find.textContaining('Ev Arkadaşları'), findsOneWidget);
+    expect(find.textContaining('grubuna davet etti'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const Key('accept_group_invitation_group-invite-1')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Ev Arkadaşları grubuna katıldınız.'),
+      findsOneWidget,
+    );
+    expect(find.text('Bekleyen davetler'), findsNothing);
   });
 
   testWidgets('alt navigasyonda Arkadaşlar sekmesi aktif gösterilir', (

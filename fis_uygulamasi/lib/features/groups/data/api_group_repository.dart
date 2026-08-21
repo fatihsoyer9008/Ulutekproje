@@ -226,6 +226,26 @@ class ApiGroupRepository implements GroupRepository {
   }
 
   @override
+  Future<List<PendingGroupInvitation>> listPendingInvitations() async {
+    final body = await _send(
+      () => _apiClient.dio.get<Map<String, dynamic>>(
+        '/api/v1/groups/invitations/pending',
+      ),
+    );
+    return PendingGroupInvitationsResponse.fromJson(body).invitations;
+  }
+
+  @override
+  Future<GroupMember> acceptInvitationById(String invitationId) async {
+    final body = await _send(
+      () => _apiClient.dio.post<Map<String, dynamic>>(
+        '/api/v1/groups/invitations/$invitationId/accept',
+      ),
+    );
+    return GroupMemberEnvelopeApiResponse.fromJson(body).toDomain();
+  }
+
+  @override
   Future<void> removeMember({
     required String groupId,
     required String userId,

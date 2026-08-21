@@ -295,6 +295,91 @@ async def test_accept_invitation_creates_friend_entry_and_is_one_time(
 
 
 @pytest.mark.asyncio
+async def test_list_pending_invitations_shows_only_own_unexpired_ones(
+    friend_invitation_api_context,
+) -> None:
+    client, session_factory, current, owner, member, outsider, _, sender, _ = (
+        friend_invitation_api_context
+    )
+    await _verify_user(session_factory, member)
+
+    created = await client.post(
+        "/api/v1/friends/invitations",
+        json={"email": member.email},
+    )
+    assert created.status_code == 202
+
+    current["value"] = member
+    empty = await client.get("/api/v1/friends/invitations/pending")
+    assert empty.status_code == 200
+    assert len(empty.json()["invitations"]) == 1
+    item = empty.json()["invitations"][0]
+    assert item["inviter_display_name"] == (owner.display_name or owner.email)
+    assert "id" in item and "expires_at" in item
+
+    current["value"] = outsider
+    unrelated = await client.get("/api/v1/friends/invitations/pending")
+    assert unrelated.json()["invitations"] == []
+
+
+@pytest.mark.asyncio
+async def test_accept_by_id_creates_friend_entry_and_is_one_time(
+    friend_invitation_api_context,
+) -> None:
+    client, session_factory, current, owner, member, _, _, sender, _ = (
+        friend_invitation_api_context
+    )
+    await _verify_user(session_factory, member)
+    created = await client.post(
+        "/api/v1/friends/invitations",
+        json={"email": member.email},
+    )
+    assert created.status_code == 202
+    current["value"] = member
+
+    pending = await client.get("/api/v1/friends/invitations/pending")
+    invitation_id = pending.json()["invitations"][0]["id"]
+
+    accepted = await client.post(
+        f"/api/v1/friends/invitations/{invitation_id}/accept"
+    )
+    assert accepted.status_code == 201
+    assert accepted.json()["friend"]["user_id"] == str(owner.id)
+
+    replay = await client.post(
+        f"/api/v1/friends/invitations/{invitation_id}/accept"
+    )
+    assert replay.status_code == 410
+    assert replay.json()["detail"]["code"] == "invitation_expired_or_used"
+
+
+@pytest.mark.asyncio
+async def test_accept_by_id_requires_matching_verified_email(
+    friend_invitation_api_context,
+) -> None:
+    client, session_factory, current, _, member, outsider, _, sender, _ = (
+        friend_invitation_api_context
+    )
+    await _verify_user(session_factory, member)
+    created = await client.post(
+        "/api/v1/friends/invitations",
+        json={"email": member.email},
+    )
+    assert created.status_code == 202
+    current["value"] = member
+    pending = await client.get("/api/v1/friends/invitations/pending")
+    invitation_id = pending.json()["invitations"][0]["id"]
+
+    await _verify_user(session_factory, outsider)
+    current["value"] = outsider
+    denied = await client.post(
+        f"/api/v1/friends/invitations/{invitation_id}/accept"
+    )
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["code"] == "invitation_email_mismatch"
+
+
+@pytest.mark.asyncio
 async def test_accept_requires_matching_verified_email_and_keeps_token_usable(
     friend_invitation_api_context,
 ) -> None:

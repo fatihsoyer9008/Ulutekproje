@@ -6,4 +6,8 @@ abstract interface class FriendRepository {
   Future<void> createInvitation({required String email});
 
   Future<FriendSummary> acceptInvitation(String token);
+
+  Future<List<PendingFriendInvitation>> listPendingInvitations();
+
+  Future<FriendSummary> acceptInvitationById(String invitationId);
 }

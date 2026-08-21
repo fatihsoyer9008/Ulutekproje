@@ -18,10 +18,14 @@ class FakeGroupRepository implements GroupRepository {
         const <String, DebtSummary>{},
     Map<String, List<Settlement>> settlementsByGroup =
         const <String, List<Settlement>>{},
+    List<PendingGroupInvitation>? pendingGroupInvitations,
     this.latency = Duration.zero,
     this.error,
     DateTime Function()? clock,
-  }) : _clock = clock ?? DateTime.now {
+  }) : _clock = clock ?? DateTime.now,
+       _pendingGroupInvitations = List<PendingGroupInvitation>.of(
+         pendingGroupInvitations ?? const [],
+       ) {
     for (final group in groups) {
       final copy = GroupDetail.fromJson(group.toJson());
       _groupsById[copy.id] = copy;
@@ -53,6 +57,7 @@ class FakeGroupRepository implements GroupRepository {
   GroupRepositoryCapabilities get capabilities =>
       const GroupRepositoryCapabilities(supportsInvitations: true);
 
+  final List<PendingGroupInvitation> _pendingGroupInvitations;
   final Map<String, GroupDetail> _groupsById = <String, GroupDetail>{};
   final Map<String, List<GroupExpense>> _expensesByGroup =
       <String, List<GroupExpense>>{};
@@ -337,6 +342,46 @@ class FakeGroupRepository implements GroupRepository {
         message: 'Davet süresi dolmuş veya daha önce kullanılmış.',
       );
     }
+    return GroupMember.fromJson(member.toJson());
+  }
+
+  @override
+  Future<List<PendingGroupInvitation>> listPendingInvitations() async {
+    await _beforeRequest();
+    return List<PendingGroupInvitation>.unmodifiable(
+      _pendingGroupInvitations,
+    );
+  }
+
+  @override
+  Future<GroupMember> acceptInvitationById(String invitationId) async {
+    await _beforeRequest();
+    final invitation = _pendingGroupInvitations
+        .where((item) => item.id == invitationId)
+        .firstOrNull;
+    if (invitation == null) {
+      throw _apiException(
+        statusCode: 410,
+        code: 'invitation_expired_or_used',
+        message: 'Davet süresi dolmuş veya daha önce kullanılmış.',
+      );
+    }
+    final group = _requireGroup(invitation.groupId);
+    final member = GroupMember(
+      groupId: invitation.groupId,
+      userId: currentUserId,
+      displayName: currentUserDisplayName,
+      role: GroupRole.values.byName(invitation.role),
+      joinedAt: _timestamp(),
+      leftAt: null,
+    );
+    final members = <GroupMember>[...group.members, member];
+    _groupsById[invitation.groupId] = group.copyWith(
+      memberCount: members.where((item) => item.leftAt == null).length,
+      members: members,
+      updatedAt: _timestamp(),
+    );
+    _pendingGroupInvitations.removeWhere((item) => item.id == invitationId);
     return GroupMember.fromJson(member.toJson());
   }
 

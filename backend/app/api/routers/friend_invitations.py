@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from fastapi.responses import HTMLResponse
@@ -20,6 +21,7 @@ from app.friend_invitation_schemas import (
     FriendInvitationAcceptResponse,
     FriendInvitationCreateRequest,
     FriendInvitationRequestReceived,
+    PendingFriendInvitationsResponse,
 )
 from app.models.user import User
 from app.services.email_service import EmailSender
@@ -86,6 +88,39 @@ async def create_friend_invitation(
         )
 
     return FriendInvitationRequestReceived()
+
+
+@router.get(
+    "/api/v1/friends/invitations/pending",
+    response_model=PendingFriendInvitationsResponse,
+)
+async def list_pending_friend_invitations(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> PendingFriendInvitationsResponse:
+    invitations = await FriendInvitationService(db).list_pending(email=user.email)
+    return PendingFriendInvitationsResponse(invitations=invitations)
+
+
+@router.post(
+    "/api/v1/friends/invitations/{invitation_id}/accept",
+    response_model=FriendInvitationAcceptResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def accept_friend_invitation_by_id(
+    invitation_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> FriendInvitationAcceptResponse:
+    try:
+        friend = await FriendInvitationService(db).accept_by_id(
+            invitation_id=invitation_id,
+            user=user,
+        )
+    except FriendInvitationError as error:
+        _raise_invitation_error(error)
+
+    return FriendInvitationAcceptResponse(friend=friend)
 
 
 @router.get(

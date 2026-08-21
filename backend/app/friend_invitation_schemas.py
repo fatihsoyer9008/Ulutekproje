@@ -1,3 +1,5 @@
+import uuid
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr
@@ -17,3 +19,14 @@ class FriendInvitationRequestReceived(BaseModel):
 
 class FriendInvitationAcceptResponse(BaseModel):
     friend: FriendEntry
+
+
+class PendingFriendInvitation(BaseModel):
+    id: uuid.UUID
+    inviter_display_name: str
+    created_at: datetime
+    expires_at: datetime
+
+
+class PendingFriendInvitationsResponse(BaseModel):
+    invitations: list[PendingFriendInvitation]

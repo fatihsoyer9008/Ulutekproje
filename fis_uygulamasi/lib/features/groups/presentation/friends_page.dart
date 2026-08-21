@@ -8,6 +8,7 @@ import '../../transaction_draft/model/turkish_money.dart';
 import '../data/group_api_failure.dart';
 import '../data/group_providers.dart';
 import '../domain/friend_models.dart';
+import '../domain/group_models.dart';
 import 'widgets/groups_bottom_navigation.dart';
 
 const _teal = Color(0xFF20C5A7);
@@ -261,6 +262,7 @@ class _FriendsOverview extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(22, 8, 22, 104),
       children: [
+        const _PendingInvitationsSection(),
         Row(
           children: [
             Expanded(child: _OverallBalance(netAmountInMinor: totalNetInMinor)),
@@ -428,6 +430,213 @@ class _FriendsEmptyState extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _PendingInvitationsSection extends ConsumerWidget {
+  const _PendingInvitationsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final friendInvitations =
+        ref.watch(pendingFriendInvitationsProvider).valueOrNull ?? const [];
+    final groupInvitations =
+        ref.watch(pendingGroupInvitationsProvider).valueOrNull ?? const [];
+    if (friendInvitations.isEmpty && groupInvitations.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Bekleyen davetler',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          for (final invitation in friendInvitations) ...[
+            _PendingFriendInvitationCard(invitation: invitation),
+            const SizedBox(height: 10),
+          ],
+          for (final invitation in groupInvitations) ...[
+            _PendingGroupInvitationCard(invitation: invitation),
+            const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingFriendInvitationCard extends ConsumerStatefulWidget {
+  const _PendingFriendInvitationCard({required this.invitation});
+
+  final PendingFriendInvitation invitation;
+
+  @override
+  ConsumerState<_PendingFriendInvitationCard> createState() =>
+      _PendingFriendInvitationCardState();
+}
+
+class _PendingFriendInvitationCardState
+    extends ConsumerState<_PendingFriendInvitationCard> {
+  bool _accepting = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      key: Key('pending_friend_invitation_${widget.invitation.id}'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: widget.invitation.inviterDisplayName,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: ' seni arkadaş olarak eklemek istiyor.'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            key: Key('accept_friend_invitation_${widget.invitation.id}'),
+            onPressed: _accepting ? null : _accept,
+            child: _accepting
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Kabul et'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _accept() async {
+    setState(() => _accepting = true);
+    try {
+      await ref
+          .read(friendRepositoryProvider)
+          .acceptInvitationById(widget.invitation.id);
+      ref.invalidate(friendsProvider);
+      ref.invalidate(pendingFriendInvitationsProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Arkadaşlık daveti kabul edildi.')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              groupUserMessage(
+                error,
+                fallbackMessage: 'Davet kabul edilemedi. Lütfen tekrar deneyin.',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _accepting = false);
+    }
+  }
+}
+
+class _PendingGroupInvitationCard extends ConsumerStatefulWidget {
+  const _PendingGroupInvitationCard({required this.invitation});
+
+  final PendingGroupInvitation invitation;
+
+  @override
+  ConsumerState<_PendingGroupInvitationCard> createState() =>
+      _PendingGroupInvitationCardState();
+}
+
+class _PendingGroupInvitationCardState
+    extends ConsumerState<_PendingGroupInvitationCard> {
+  bool _accepting = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      key: Key('pending_group_invitation_${widget.invitation.id}'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: widget.invitation.inviterDisplayName,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: ' sizi '),
+                TextSpan(
+                  text: widget.invitation.groupName,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: ' grubuna davet etti.'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            key: Key('accept_group_invitation_${widget.invitation.id}'),
+            onPressed: _accepting ? null : _accept,
+            child: _accepting
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Kabul et'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _accept() async {
+    setState(() => _accepting = true);
+    try {
+      final member = await ref
+          .read(groupRepositoryProvider)
+          .acceptInvitationById(widget.invitation.id);
+      ref.invalidate(groupsProvider);
+      ref.invalidate(groupDetailProvider(member.groupId));
+      ref.invalidate(pendingGroupInvitationsProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${widget.invitation.groupName} grubuna katıldınız.'),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              groupUserMessage(
+                error,
+                fallbackMessage: 'Davet kabul edilemedi. Lütfen tekrar deneyin.',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _accepting = false);
+    }
   }
 }
 
