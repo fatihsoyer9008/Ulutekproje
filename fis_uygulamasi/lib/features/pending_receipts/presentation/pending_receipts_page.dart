@@ -80,9 +80,7 @@ class _PendingReceiptsList extends ConsumerWidget {
               child: const Icon(Icons.delete_outline),
             ),
             confirmDismiss: (_) => _confirmReject(context),
-            onDismissed: (_) => ref
-                .read(pendingReceiptsControllerProvider.notifier)
-                .reject(receipt.id),
+            onDismissed: (_) => _rejectSilently(ref, receipt),
             child: ListTile(
               title: Text(
                 (receipt.merchantName?.isNotEmpty ?? false)
@@ -94,11 +92,24 @@ class _PendingReceiptsList extends ConsumerWidget {
                     ? 'Tarih bulunamadı'
                     : _formatDate(receipt.receiptDate!),
               ),
-              trailing: Text(
-                receipt.totalAmountInMinor == null
-                    ? '-'
-                    : formatMinorAsTurkishLira(receipt.totalAmountInMinor!),
-                style: Theme.of(context).textTheme.titleMedium,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    receipt.totalAmountInMinor == null
+                        ? '-'
+                        : formatMinorAsTurkishLira(
+                            receipt.totalAmountInMinor!,
+                          ),
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    tooltip: 'Reddet',
+                    color: Theme.of(context).colorScheme.error,
+                    onPressed: () => _reject(context, ref, receipt),
+                  ),
+                ],
               ),
               onTap: () => _review(context, ref, receipt),
             ),
@@ -129,6 +140,22 @@ class _PendingReceiptsList extends ConsumerWidget {
       ),
     );
     return result ?? false;
+  }
+
+  Future<void> _reject(
+    BuildContext context,
+    WidgetRef ref,
+    PendingReceipt receipt,
+  ) async {
+    final confirmed = await _confirmReject(context);
+    if (!confirmed) return;
+    await _rejectSilently(ref, receipt);
+  }
+
+  Future<void> _rejectSilently(WidgetRef ref, PendingReceipt receipt) {
+    return ref
+        .read(pendingReceiptsControllerProvider.notifier)
+        .reject(receipt.id);
   }
 
   Future<void> _review(
