@@ -130,15 +130,6 @@ class _GroupDetailContentState extends ConsumerState<_GroupDetailContent> {
                     ),
                     const SizedBox(height: 28),
                     _ActionButtons(
-                      onSettleUp: currentUserId == null
-                          ? null
-                          : () => _openDebtSummary(context, ref, currentUserId),
-                      onCharts: () =>
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Grup grafikleri yakında.'),
-                            ),
-                          ),
                       onBalances: currentUserId == null
                           ? null
                           : () => _openDebtSummary(context, ref, currentUserId),
@@ -1482,52 +1473,18 @@ class _BalanceSummary extends StatelessWidget {
 }
 
 class _ActionButtons extends StatelessWidget {
-  const _ActionButtons({
-    required this.onSettleUp,
-    required this.onCharts,
-    required this.onBalances,
-  });
-  final VoidCallback? onSettleUp;
-  final VoidCallback onCharts;
+  const _ActionButtons({required this.onBalances});
   final VoidCallback? onBalances;
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    child: Row(
-      children: [
-        FilledButton(
-          onPressed: onSettleUp,
-          style: FilledButton.styleFrom(
-            backgroundColor: _orange,
-            foregroundColor: Colors.white,
-            minimumSize: const Size(0, 48),
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-          ),
-          child: const Text('Ödeme yap'),
-        ),
-        const SizedBox(width: 12),
-        OutlinedButton.icon(
-          onPressed: onCharts,
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(0, 48),
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-          ),
-          icon: const Icon(Icons.diamond, color: Color(0xFF9B5DE5)),
-          label: const Text('Grafikler'),
-        ),
-        const SizedBox(width: 12),
-        OutlinedButton(
-          key: const Key('open_debt_summary_button'),
-          onPressed: onBalances,
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(0, 48),
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-          ),
-          child: const Text('Bakiyeler'),
-        ),
-      ],
+  Widget build(BuildContext context) => OutlinedButton(
+    key: const Key('open_debt_summary_button'),
+    onPressed: onBalances,
+    style: OutlinedButton.styleFrom(
+      minimumSize: const Size(0, 48),
+      padding: const EdgeInsets.symmetric(horizontal: 22),
     ),
+    child: const Text('Bakiyeler'),
   );
 }
 
