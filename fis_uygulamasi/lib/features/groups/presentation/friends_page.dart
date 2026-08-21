@@ -79,19 +79,6 @@ class FriendsPage extends ConsumerWidget {
             onInviteFriend: () => _showInviteFriendSheet(context, ref),
           ),
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          key: const Key('add_friend_expense_button'),
-          backgroundColor: _teal,
-          foregroundColor: Colors.white,
-          extendedPadding: const EdgeInsets.symmetric(horizontal: 28),
-          onPressed: () =>
-              _showSnackBar(context, 'Harcama ekleme yakında eklenecek.'),
-          icon: const Icon(Icons.receipt_long_outlined),
-          label: const Text(
-            'Harcama ekle',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
         bottomNavigationBar: GroupsBottomNavigation(
           activeTab: GroupsBottomTab.friends,
           isDark: isDark,

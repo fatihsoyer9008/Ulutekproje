@@ -14,9 +14,7 @@ void main() {
 
   final now = DateTime(2026, 8, 21, 15, 0);
 
-  testWidgets('başlık, arama ikonu ve harcama ekle FAB görünür', (
-    tester,
-  ) async {
+  testWidgets('başlık ve arama ikonu görünür', (tester) async {
     await _pumpPage(
       tester,
       now: now,
@@ -27,9 +25,8 @@ void main() {
     expect(find.byIcon(Icons.search_rounded), findsOneWidget);
     expect(
       find.byKey(const Key('add_activity_expense_button')),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(find.text('Harcama ekle'), findsOneWidget);
   });
 
   testWidgets('hareketleri en yeniden eskiye doğru sıralar', (tester) async {
