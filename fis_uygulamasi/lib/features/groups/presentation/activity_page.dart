@@ -91,7 +91,7 @@ class ActivityPage extends ConsumerWidget {
           onPressed: () => context.go('/groups'),
           icon: const Icon(Icons.receipt_long_outlined),
           label: const Text(
-            'Add expense',
+            'Harcama ekle',
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
@@ -124,7 +124,7 @@ class _ActivityFeed extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(22, 6, 22, 18),
           sliver: SliverToBoxAdapter(
             child: Text(
-              'Recent activity',
+              'Son hareketler',
               key: const Key('activity_page_title'),
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.w800,
@@ -219,7 +219,7 @@ class _ActivitySentence extends StatelessWidget {
   Widget build(BuildContext context) {
     final baseStyle = Theme.of(context).textTheme.bodyLarge;
     final boldStyle = baseStyle?.copyWith(fontWeight: FontWeight.w700);
-    final actor = entry.isCurrentUserActor ? 'You' : entry.actorName;
+    final actor = entry.isCurrentUserActor ? 'Siz' : entry.actorName;
 
     return Text.rich(
       key: Key('activity_message_${entry.id}'),
@@ -228,54 +228,54 @@ class _ActivitySentence extends StatelessWidget {
         children: switch (entry.type) {
           GroupActivityType.expenseAdded => [
             TextSpan(text: actor, style: boldStyle),
-            const TextSpan(text: ' added '),
-            TextSpan(text: '“${entry.subject}”', style: boldStyle),
-            const TextSpan(text: ' in '),
+            const TextSpan(text: ', '),
             TextSpan(text: '“${entry.groupName}”', style: boldStyle),
-            const TextSpan(text: '.'),
+            const TextSpan(text: ' grubuna '),
+            TextSpan(text: '“${entry.subject}”', style: boldStyle),
+            const TextSpan(text: ' harcamasını ekledi.'),
           ],
           GroupActivityType.expenseUpdated => [
             TextSpan(text: actor, style: boldStyle),
-            const TextSpan(text: ' updated '),
-            TextSpan(text: '“${entry.subject}”', style: boldStyle),
-            const TextSpan(text: ' in '),
+            const TextSpan(text: ', '),
             TextSpan(text: '“${entry.groupName}”', style: boldStyle),
-            const TextSpan(text: '.'),
+            const TextSpan(text: ' grubundaki '),
+            TextSpan(text: '“${entry.subject}”', style: boldStyle),
+            const TextSpan(text: ' harcamasını güncelledi.'),
           ],
           GroupActivityType.expenseDeleted => [
             TextSpan(text: actor, style: boldStyle),
-            const TextSpan(text: ' deleted '),
-            TextSpan(text: '“${entry.subject}”', style: boldStyle),
-            const TextSpan(text: ' from '),
+            const TextSpan(text: ', '),
             TextSpan(text: '“${entry.groupName}”', style: boldStyle),
-            const TextSpan(text: '.'),
+            const TextSpan(text: ' grubundan '),
+            TextSpan(text: '“${entry.subject}”', style: boldStyle),
+            const TextSpan(text: ' harcamasını sildi.'),
           ],
           GroupActivityType.groupCreated => [
             TextSpan(text: actor, style: boldStyle),
-            const TextSpan(text: ' created the group '),
+            const TextSpan(text: ', '),
             TextSpan(text: '“${entry.groupName}”', style: boldStyle),
-            const TextSpan(text: '.'),
+            const TextSpan(text: ' grubunu oluşturdu.'),
           ],
           GroupActivityType.settlementRecorded => [
             TextSpan(text: actor, style: boldStyle),
-            const TextSpan(text: ' recorded a settlement in '),
+            const TextSpan(text: ', '),
             TextSpan(text: '“${entry.groupName}”', style: boldStyle),
-            const TextSpan(text: '.'),
+            const TextSpan(text: ' grubunda bir ödeme kaydetti.'),
           ],
           GroupActivityType.memberJoined ||
           GroupActivityType.invitationAccepted => [
             TextSpan(text: actor, style: boldStyle),
-            const TextSpan(text: ' added '),
+            const TextSpan(text: ', '),
             TextSpan(text: entry.subject, style: boldStyle),
-            const TextSpan(text: ' to '),
+            const TextSpan(text: ' kişisini '),
             TextSpan(text: '“${entry.groupName}”', style: boldStyle),
-            const TextSpan(text: '.'),
+            const TextSpan(text: ' grubuna ekledi.'),
           ],
           GroupActivityType.memberLeft => [
             TextSpan(text: entry.subject, style: boldStyle),
-            const TextSpan(text: ' left '),
+            const TextSpan(text: ', '),
             TextSpan(text: '“${entry.groupName}”', style: boldStyle),
-            const TextSpan(text: '.'),
+            const TextSpan(text: ' grubundan ayrıldı.'),
           ],
         },
       ),
@@ -361,14 +361,14 @@ class _ActivityEmptyState extends StatelessWidget {
             const Icon(Icons.history_rounded, size: 58, color: _teal),
             const SizedBox(height: 16),
             Text(
-              'No activity yet',
+              'Henüz hareket yok',
               style: Theme.of(
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(
-              'Group expenses and settlements will appear here.',
+              'Grup harcamaları ve ödemeler burada görünecek.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -396,7 +396,7 @@ class _ActivityErrorState extends StatelessWidget {
             const Icon(Icons.error_outline_rounded, size: 48),
             const SizedBox(height: 12),
             Text(
-              'Activity could not be loaded',
+              'Hareketler yüklenemedi',
               style: Theme.of(
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
@@ -413,7 +413,7 @@ class _ActivityErrorState extends StatelessWidget {
               key: const Key('activity_retry_button'),
               onPressed: onRetry,
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Try again'),
+              label: const Text('Tekrar dene'),
             ),
           ],
         ),
@@ -425,14 +425,14 @@ class _ActivityErrorState extends StatelessWidget {
 String _balanceLabel(GroupActivityEntry entry) {
   if (entry.balanceEffect == GroupActivityBalanceEffect.neutral ||
       entry.amountInMinor == 0) {
-    return 'You do not owe anything';
+    return 'Borcunuz yok';
   }
   final amount =
       '${entry.currency == 'TRY' ? 'TL' : entry.currency ?? ''}'
       '${formatMinorAsTurkishLira(entry.amountInMinor.abs())}';
   return entry.balanceEffect == GroupActivityBalanceEffect.receivable
-      ? 'You get back $amount'
-      : 'You owe $amount';
+      ? '$amount alacaksınız'
+      : '$amount borcunuz var';
 }
 
 String _relativeTimestamp(DateTime occurredAt, DateTime now) {
@@ -445,12 +445,12 @@ String _relativeTimestamp(DateTime occurredAt, DateTime now) {
   );
   final currentDate = DateTime(localNow.year, localNow.month, localNow.day);
   final dayDifference = currentDate.difference(occurredDate).inDays;
-  final time = DateFormat('HH:mm').format(localOccurredAt);
+  final time = DateFormat('HH:mm', 'tr_TR').format(localOccurredAt);
 
-  if (dayDifference <= 0) return 'Today at $time';
-  if (dayDifference == 1) return '1 day ago, $time';
-  if (dayDifference < 14) return '$dayDifference days ago, $time';
-  return DateFormat('MMM d, HH:mm').format(localOccurredAt);
+  if (dayDifference <= 0) return 'Bugün, $time';
+  if (dayDifference == 1) return '1 gün önce, $time';
+  if (dayDifference < 14) return '$dayDifference gün önce, $time';
+  return DateFormat('d MMM, HH:mm', 'tr_TR').format(localOccurredAt);
 }
 
 String _semanticLabel(GroupActivityEntry entry) =>

@@ -4,8 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 void main() {
+  setUpAll(() => initializeDateFormatting('tr_TR'));
+
   testWidgets('AppBar arama ve kişi ekleme ikonlarını gösterir', (
     tester,
   ) async {
@@ -109,6 +112,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ActivityPage), findsOneWidget);
-    expect(find.text('Recent activity'), findsOneWidget);
+    expect(find.text('Son hareketler'), findsOneWidget);
   });
 }

@@ -7,8 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 void main() {
+  setUpAll(() => initializeDateFormatting('tr_TR'));
+
   final now = DateTime(2026, 8, 21, 15, 0);
 
   testWidgets('başlık, arama ikonu ve harcama ekle FAB görünür', (
@@ -20,13 +23,13 @@ void main() {
       activities: [_entry(id: 'header', subject: 'Elektrik', occurredAt: now)],
     );
 
-    expect(find.text('Recent activity'), findsOneWidget);
+    expect(find.text('Son hareketler'), findsOneWidget);
     expect(find.byIcon(Icons.search_rounded), findsOneWidget);
     expect(
       find.byKey(const Key('add_activity_expense_button')),
       findsOneWidget,
     );
-    expect(find.text('Add expense'), findsOneWidget);
+    expect(find.text('Harcama ekle'), findsOneWidget);
   });
 
   testWidgets('hareketleri en yeniden eskiye doğru sıralar', (tester) async {
@@ -65,10 +68,10 @@ void main() {
       ],
     );
 
-    expect(find.textContaining('You added'), findsOneWidget);
+    expect(find.textContaining('ekledi'), findsOneWidget);
     expect(find.textContaining('Elektrik'), findsOneWidget);
-    expect(find.text('You get back TL153,50'), findsOneWidget);
-    expect(find.textContaining('2 days ago'), findsOneWidget);
+    expect(find.text('TL153,50 alacaksınız'), findsOneWidget);
+    expect(find.textContaining('2 gün önce'), findsOneWidget);
     expect(find.byIcon(Icons.receipt_long_outlined), findsWidgets);
     expect(find.byType(AvatarBadge), findsOneWidget);
   });
@@ -95,8 +98,8 @@ void main() {
       ],
     );
 
-    expect(find.text('You owe TL40,00'), findsOneWidget);
-    expect(find.text('You do not owe anything'), findsOneWidget);
+    expect(find.text('TL40,00 borcunuz var'), findsOneWidget);
+    expect(find.text('Borcunuz yok'), findsOneWidget);
     expect(find.byType(AvatarBadge), findsNWidgets(2));
     expect(find.byIcon(Icons.groups_outlined), findsOneWidget);
   });
@@ -104,9 +107,9 @@ void main() {
   testWidgets('boş hareket listesinde empty state gösterilir', (tester) async {
     await _pumpPage(tester, now: now, activities: const []);
 
-    expect(find.text('No activity yet'), findsOneWidget);
+    expect(find.text('Henüz hareket yok'), findsOneWidget);
     expect(
-      find.text('Group expenses and settlements will appear here.'),
+      find.text('Grup harcamaları ve ödemeler burada görünecek.'),
       findsOneWidget,
     );
   });
@@ -128,7 +131,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Activity could not be loaded'), findsOneWidget);
+    expect(find.text('Hareketler yüklenemedi'), findsOneWidget);
     expect(
       find.text(
         'Hareketler yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.',
@@ -140,7 +143,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.calls, 2);
-    expect(find.text('Recent activity'), findsOneWidget);
+    expect(find.text('Son hareketler'), findsOneWidget);
     expect(find.textContaining('İnternet'), findsOneWidget);
   });
 
