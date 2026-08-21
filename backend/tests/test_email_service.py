@@ -81,6 +81,22 @@ async def test_smtp_sender_uses_real_provider_configuration(
         in invitation_plain_body.get_content()
     )
 
+    await SMTPEmailSender().send_friend_invitation(
+        email="invitee@example.com",
+        token="friend-invitation-token",
+        inviter_display_name="Ege Başaran",
+    )
+    friend_invitation_message = send.await_args.args[0]
+    friend_invitation_plain_body = friend_invitation_message.get_body(
+        preferencelist=("plain",)
+    )
+    assert friend_invitation_plain_body is not None
+    assert (
+        "fiskon://auth/friend-invitation?token=friend-invitation-token"
+        in friend_invitation_plain_body.get_content()
+    )
+    assert "Ege Başaran" in friend_invitation_plain_body.get_content()
+
 
 def test_legacy_smtp_variable_names_remain_supported() -> None:
     configured = Settings(

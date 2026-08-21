@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     group_invitation_user_hourly_limit: int = Field(default=20, ge=1, le=10_000)
     group_invitation_group_hourly_limit: int = Field(default=50, ge=1, le=100_000)
     group_invitation_email_daily_limit: int = Field(default=5, ge=1, le=10_000)
+    friend_invitation_user_hourly_limit: int = Field(default=20, ge=1, le=10_000)
+    friend_invitation_email_daily_limit: int = Field(default=5, ge=1, le=10_000)
     trust_proxy_headers: bool = False
     trusted_client_ip_header: str = ""
     trusted_proxy_cidrs: str = ""

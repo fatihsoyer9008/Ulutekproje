@@ -138,6 +138,7 @@ async def test_list_friends_combines_direct_and_shared_group_balances(
     friend = body["friends"][0]
     assert friend["user_id"] == str(member.id)
     assert friend["display_name"] == member.display_name
+    assert friend["email"] == member.email
     assert friend["direct_group_id"] == str(direct_group.id)
     # 5000 (direct expense) - 1000 (settlement) - 3000 (shared group expense) = 1000.
     assert friend["net_amount_in_minor"] == 1_000

@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.routers.activity import router as activity_router
 from app.api.routers.assistant import router as assistant_router
 from app.api.routers.auth import router as auth_router
+from app.api.routers.friend_invitations import router as friend_invitations_router
 from app.api.routers.friends import router as friends_router
 from app.api.routers.group_invitations import router as group_invitations_router
 from app.api.routers.groups import router as groups_router
@@ -157,6 +158,7 @@ if settings.cors_origins:
 app.include_router(activity_router)
 app.include_router(assistant_router)
 app.include_router(auth_router)
+app.include_router(friend_invitations_router)
 app.include_router(friends_router)
 app.include_router(groups_router)
 app.include_router(group_invitations_router)
@@ -167,16 +169,35 @@ app.include_router(settlements_router)
 app.include_router(sync_router)
 
 
+_STRUCTURED_UNAUTHORIZED_EXACT_PATHS = (
+    "/api/v1/groups",
+    "/api/v1/friends",
+    "/api/v1/activity",
+)
+_STRUCTURED_UNAUTHORIZED_PATH_PREFIXES = (
+    "/api/v1/groups/",
+    "/api/v1/group-invitations/",
+    "/api/v1/friends/",
+    "/api/v1/friend-invitations/",
+    "/api/v1/me/",
+)
+
+
+def _uses_structured_unauthorized_response(path: str) -> bool:
+    return path in _STRUCTURED_UNAUTHORIZED_EXACT_PATHS or path.startswith(
+        _STRUCTURED_UNAUTHORIZED_PATH_PREFIXES
+    )
+
+
 @app.exception_handler(StarletteHTTPException)
 async def api_http_exception_handler(
     request: Request,
     exc: StarletteHTTPException,
 ) -> Response:
     if (
-        request.url.path == "/api/v1/groups"
-        or request.url.path.startswith("/api/v1/groups/")
-        or request.url.path.startswith("/api/v1/group-invitations/")
-    ) and exc.status_code == status.HTTP_401_UNAUTHORIZED:
+        _uses_structured_unauthorized_response(request.url.path)
+        and exc.status_code == status.HTTP_401_UNAUTHORIZED
+    ):
         return JSONResponse(
             status_code=exc.status_code,
             content={
