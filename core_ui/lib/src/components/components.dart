@@ -117,8 +117,8 @@ class FinanceBottomNavBar extends StatelessWidget {
         label: 'İstatistik',
       ),
       NavigationDestination(
-        icon: Icon(Icons.savings_outlined),
-        selectedIcon: Icon(Icons.savings_rounded),
+        icon: Icon(Icons.monetization_on_outlined),
+        selectedIcon: Icon(Icons.monetization_on_rounded),
         label: 'Kumbara',
       ),
       NavigationDestination(
