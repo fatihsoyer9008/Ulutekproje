@@ -182,7 +182,7 @@ class _MonthlySummary extends StatelessWidget {
           child: _SummaryItem(
             key: const Key('calendar_monthly_income'),
             label: 'Gelir',
-            amount: _formatMoney(incomeInMinor),
+            amount: '+${_formatMoney(incomeInMinor)}',
             color: AppColors.income,
           ),
         ),
@@ -191,7 +191,7 @@ class _MonthlySummary extends StatelessWidget {
           child: _SummaryItem(
             key: const Key('calendar_monthly_expense'),
             label: 'Gider',
-            amount: _formatMoney(expenseInMinor),
+            amount: '-${_formatMoney(expenseInMinor)}',
             color: AppColors.expense,
           ),
         ),
@@ -344,8 +344,15 @@ String _formatMoney(int amountInMinor) => NumberFormat.currency(
   decimalDigits: 2,
 ).format(amountInMinor / 100);
 
-String _formatSignedMoney(int amountInMinor) =>
-    '${amountInMinor >= 0 ? '+' : '-'}${_formatMoney(amountInMinor.abs())}';
+String _formatSignedMoney(int amountInMinor) {
+  if (amountInMinor > 0) {
+    return '+${_formatMoney(amountInMinor)}';
+  } else if (amountInMinor < 0) {
+    return '-${_formatMoney(amountInMinor.abs())}';
+  } else {
+    return _formatMoney(amountInMinor);
+  }
+}
 
 String _categoryName(TransactionCategory category) => switch (category) {
   TransactionCategory.market => 'Market',
